@@ -38,7 +38,7 @@ const MANIFEST := {
 	"amb_vila_0": ["world/loop_windchimes1.ogg"],
 	"amb_vila_1": ["world/loop_windchimes2.ogg"],
 	"amb_vila_2": ["world/loop_windchimes3.ogg"],
-	"amb_vila_3": ["world/loop_springbirds.ogg"],
+	"amb_vila_3": ["world/loop_SpringBirds.ogg"],
 	"fundo_bosque": ["world/loop_forest_day1.ogg"],
 	"fundo_pradaria": ["world/loop_prairie_day.ogg"],
 }
