@@ -17,8 +17,13 @@ var address := "127.0.0.1"
 var port := DEFAULT_PORT
 var player_name := "Criatura"
 var world_seed := 0
+var seed_from_cmdline := false
+## Onde o servidor salva o mundo. --novo-mundo ignora o save existente.
+var save_path := "user://mundo.json"
+var new_world := false
 
 ## Comandos automáticos para testes (ex.: --auto=N,N,L,ARREDORES,SAIR).
+## Com eles, os minigames terminam sozinhos com sucesso.
 var auto_commands: PackedStringArray = []
 
 
@@ -78,6 +83,11 @@ func _parse_cmdline() -> void:
 				player_name = value
 			"--seed":
 				world_seed = int(value)
+				seed_from_cmdline = true
+			"--mundo":
+				save_path = value
+			"--novo-mundo":
+				new_world = true
 			"--auto":
 				auto_commands = value.split(",", false)
 	# Sem tela, só faz sentido rodar como servidor dedicado ou em teste.

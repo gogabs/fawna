@@ -62,3 +62,12 @@ static func surroundings(world: WorldGen, pos: Vector2i, others: Array) -> Strin
 
 static func _distance(offset: Vector2i) -> int:
 	return absi(offset.x) + absi(offset.y)
+
+
+static func garden_status(garden: Dictionary) -> String:
+	var stage := int(garden.get("stage", 0))
+	if stage >= Economy.GARDEN_STAGES.size():
+		return "A %s está completa." % Economy.GARDEN_NAME
+	var missing := Economy.stage_missing(stage, garden.get("delivered", {}))
+	var next_name: String = Economy.GARDEN_STAGES[stage]["name"]
+	return "A %s precisa de %s para virar %s." % [Economy.GARDEN_NAME, Economy.items_text(missing), next_name]

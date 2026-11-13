@@ -36,9 +36,95 @@ static func chime() -> AudioStreamWAV:
 	return _cache["chime"]
 
 
+## Metrônomo da contagem.
+static func tick() -> AudioStreamWAV:
+	if not _cache.has("tick"):
+		_cache["tick"] = _tone([1320.0], 0.05, 0.4)
+	return _cache["tick"]
+
+
+## Batida do serrote.
+static func saw() -> AudioStreamWAV:
+	if not _cache.has("saw"):
+		_cache["saw"] = _noise_burst(0.16, 0.2, 0.5, 77)
+	return _cache["saw"]
+
+
+## Acerto no ritmo.
+static func tok() -> AudioStreamWAV:
+	if not _cache.has("tok"):
+		_cache["tok"] = _tone([440.0], 0.08, 0.5)
+	return _cache["tok"]
+
+
+## Pegou um recurso.
+static func pickup() -> AudioStreamWAV:
+	if not _cache.has("pickup"):
+		_cache["pickup"] = _tone([523.25, 783.99], 0.18, 0.35)
+	return _cache["pickup"]
+
+
+## Água caindo na muda.
+static func water_splash() -> AudioStreamWAV:
+	if not _cache.has("splash"):
+		_cache["splash"] = _noise_burst(0.35, 0.5, 0.45, 99)
+	return _cache["splash"]
+
+
+## Uma obra coletiva cresceu.
+static func fanfare() -> AudioStreamWAV:
+	if not _cache.has("fanfare"):
+		_cache["fanfare"] = _tone([523.25, 659.25, 783.99, 1046.5], 1.0, 0.35)
+	return _cache["fanfare"]
+
+
+## Muda do minigame de jardinagem: saudável soa clara; com sede, murcha e
+## descendo de tom. "pan" vai de -1 (esquerda) a 1 (direita).
+static func seedling(pan: float, thirsty: bool) -> AudioStreamWAV:
+	var key := "muda_%.2f_%s" % [pan, thirsty]
+	if _cache.has(key):
+		return _cache[key]
+	var count := int(0.45 * RATE)
+	var left := PackedFloat32Array()
+	var right := PackedFloat32Array()
+	left.resize(count)
+	right.resize(count)
+	var gain_l := sqrt((1.0 - pan) * 0.5)
+	var gain_r := sqrt((1.0 + pan) * 0.5)
+	for i in count:
+		var t := float(i) / RATE
+		var env := exp(-4.0 * t)
+		var value: float
+		if thirsty:
+			var freq := 392.0 * (1.0 - 0.35 * t / 0.45)
+			value = sin(TAU * freq * t + 0.8 * sin(TAU * 7.0 * t)) * env * 0.4
+		else:
+			value = (sin(TAU * 659.25 * t) + 0.3 * sin(TAU * 1318.5 * t)) * env * 0.35
+		left[i] = value * gain_l
+		right[i] = value * gain_r
+	_cache[key] = _to_wav_stereo(left, right)
+	return _cache[key]
+
+
+static func _to_wav_stereo(left: PackedFloat32Array, right: PackedFloat32Array) -> AudioStreamWAV:
+	var data := PackedByteArray()
+	data.resize(left.size() * 4)
+	for i in left.size():
+		data.encode_s16(i * 4, int(clampf(left[i], -1.0, 1.0) * 32767.0))
+		data.encode_s16(i * 4 + 2, int(clampf(right[i], -1.0, 1.0) * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = RATE
+	wav.stereo = true
+	wav.data = data
+	return wav
+
+
 ## Som contínuo (em loop) de cada coisa do mundo, para o áudio espacial.
-static func ambient(thing: WorldGen.Thing) -> AudioStreamWAV:
-	var key := "amb_%d" % thing
+## "level" é o quanto a vila já cresceu (estágios concluídos da horta):
+## a vila soa mais cheia e viva a cada obra concluída.
+static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
+	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.VILA else 0]
 	if not _cache.has(key):
 		match thing:
 			WorldGen.Thing.RIACHO:
@@ -48,7 +134,7 @@ static func ambient(thing: WorldGen.Thing) -> AudioStreamWAV:
 			WorldGen.Thing.ARBUSTO:
 				_cache[key] = _bees_loop()
 			WorldGen.Thing.VILA:
-				_cache[key] = _village_loop()
+				_cache[key] = _village_loop(level)
 			_:
 				return null
 	return _cache[key]
@@ -94,9 +180,11 @@ static func _bees_loop() -> AudioStreamWAV:
 	return _to_wav(samples, true)
 
 
-## Vila: sininhos numa escala pentatônica, como um sino de vento.
-static func _village_loop() -> AudioStreamWAV:
-	var notes := [523.25, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33]
+## Vila: sininhos numa escala pentatônica, como um sino de vento. A cada
+## estágio da horta concluído, ganha mais notas, um baixo e passarinhos.
+static func _village_loop(level: int) -> AudioStreamWAV:
+	var notes := [523.25, 659.25, 783.99, 659.25] if level == 0 else \
+		[523.25, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33]
 	var count := RATE * 4
 	var samples := PackedFloat32Array()
 	samples.resize(count)
@@ -105,6 +193,19 @@ static func _village_loop() -> AudioStreamWAV:
 		for i in step:
 			var t := float(i) / RATE
 			samples[n * step + i] += sin(TAU * notes[n] * t) * exp(-3.0 * t) * 0.22
+	if level >= 2:
+		for i in count:
+			var t := float(i) / RATE
+			samples[i] += sin(TAU * 130.81 * t) * 0.06 * (0.5 + 0.5 * sin(TAU * t / 4.0))
+	if level >= 3:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5
+		for b in 6:
+			var start := rng.randi_range(0, count - 3000)
+			for i in 2600:
+				var t := float(i) / RATE
+				var freq := 2600.0 + 900.0 * sin(TAU * 18.0 * t)
+				samples[start + i] += sin(TAU * freq * t) * sin(PI * i / 2600.0) * 0.07
 	return _to_wav(samples, true)
 
 
