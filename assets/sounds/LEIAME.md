@@ -11,3 +11,9 @@ ocarina, um arquivo por nível da horta. São gerados por `tools/musica_vila.py`
 a partir dos MIDIs em `assets/music/`, com o soundfont FluidR3_GM (licença
 MIT). Composição do próprio projeto. Para mudar a música, edite as notas no
 script (ou os .mid) e rode o script de novo.
+
+## Bússola (bussola/)
+
+Cliques da bússola, gerados por `tools/sons_bussola.py` (sons do próprio
+projeto): `norte.ogg` agudo, `sul.ogg` grave, `lateral.ogg` para leste e
+oeste, `colateral.ogg` abafado para as diagonais.

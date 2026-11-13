@@ -57,7 +57,7 @@ func _test_gardening(choose_right: bool) -> void:
 		await get_tree().create_timer(0.1).timeout
 		var target := game._thirsty if choose_right else (game._thirsty + 1) % GardeningMinigame.SEEDLINGS
 		for i in target:
-			_act(game, "mover_leste")
+			_act(game, "passo_direita")
 		_act(game, "interagir")
 		await get_tree().create_timer(1.7).timeout
 	while outcome.is_empty():

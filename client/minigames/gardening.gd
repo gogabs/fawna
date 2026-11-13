@@ -22,9 +22,9 @@ func start() -> void:
 
 
 func handle_input(event: InputEvent) -> void:
-	if event.is_action("mover_oeste"):
+	if event.is_action("passo_esquerda") or event.is_action("girar_esquerda"):
 		_select(_selected - 1)
-	elif event.is_action("mover_leste"):
+	elif event.is_action("passo_direita") or event.is_action("girar_direita"):
 		_select(_selected + 1)
 	elif Minigame.is_confirm(event):
 		_water()

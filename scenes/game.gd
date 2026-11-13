@@ -5,10 +5,21 @@ extends Node
 ## Fluxo:
 ##   cliente conecta -> pede para entrar (request_join)
 ##   servidor responde com a semente e os jogadores (welcome)
-##   cliente pede para andar (request_move) -> servidor valida e avisa todos
+##   cliente anda sozinho e manda a posição (request_move_to)
+##   servidor confere e avisa todos (player_moved), ou corrige (move_corrected)
+##
+## Primeira pessoa: W/S andam para frente e para trás, A/D de lado, Q/E giram
+## 45°. Posições são contínuas, em casas (1 casa = 1,5 m).
 
-const MOVE_REPEAT_SECONDS := 0.18
-const HEARING_RADIUS := 8  # passos de outras criaturas são ouvidos até aqui
+const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
+const BACK_FACTOR := 0.6  # andar de costas é mais devagar
+const STEP_LENGTH := 0.55  # casas entre um passo e outro (cerca de 80 cm)
+const SEND_INTERVAL := 0.1  # segundos entre envios da posição
+const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
+const BUMP_SOUND_COOLDOWN := 0.45
+const BUMP_SPEECH_COOLDOWN := 1.5
+const COLLECT_REACH := 1.4  # casas, do centro da criatura ao centro da coisa
+const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
 
 @onready var view: GameView = $View
@@ -22,12 +33,21 @@ var _save_timer := 0.0
 # Lado do cliente (inclusive quem hospeda)
 var world: WorldGen
 var my_id := 0
-var players := {}  # id -> { "name", "pos" }
+var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}
 var garden := {}
-var _waiting_move := false
-var _move_cooldown := 0.0
-var _facing := Vector2i.UP  # última direção em que tentou andar
+var _pos := Vector2.ZERO  # posição local (o servidor confere)
+var _heading := 0  # 0 norte, 1 nordeste... (Compass)
+var _cell := WorldGen.NO_CELL
+var _step_distance := 0.0
+var _send_timer := 0.0
+var _last_sent := Vector2.INF
+var _turn_cooldown := 0.0
+var _bump_sound_cooldown := 0.0
+var _bump_speech_cooldown := 0.0
+var _last_bump_cell := WorldGen.NO_CELL
+var _others_step := {}  # id -> distância andada desde o último passo ouvido
+var _auto_target: Variant = null  # testes: anda sozinho até este ponto
 var _village_menu := false
 var _minigame: Minigame = null
 var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
@@ -61,22 +81,37 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
-	_move_cooldown = maxf(_move_cooldown - delta, 0.0)
 	if state != null:
 		_save_timer += delta
 		if _save_timer >= SAVE_INTERVAL:
 			_save_timer = 0.0
 			_save_world()
-	if world == null or _minigame != null or _village_menu:
+	if world == null or not players.has(my_id):
 		return
-	for action in ["mover_norte", "mover_sul", "mover_oeste", "mover_leste"]:
-		if Input.is_action_pressed(action):
-			_try_step(_action_dir(action))
-			break
+	_turn_cooldown = maxf(_turn_cooldown - delta, 0.0)
+	_bump_sound_cooldown = maxf(_bump_sound_cooldown - delta, 0.0)
+	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
+	if _minigame == null and not _village_menu:
+		_walk(_wanted_motion() * delta)
+	_send_timer += delta
+	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
+		_send_timer = 0.0
+		_last_sent = _pos
+		request_move_to.rpc_id(1, _pos)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world == null or _minigame != null or not event.is_pressed() or event.is_echo():
+	if world == null or _minigame != null or not event.is_pressed():
+		return
+	if not _village_menu:
+		# Girar aceita a tecla segurada (repetição), com um intervalo.
+		for action: String in ["girar_esquerda", "girar_direita"]:
+			if event.is_action(action):
+				if _turn_cooldown <= 0.0 or not event.is_echo():
+					_turn(-1 if action == "girar_esquerda" else 1)
+				get_viewport().set_input_as_handled()
+				return
+	if event.is_echo():
 		return
 	if _village_menu:
 		_village_menu_input(event)
@@ -91,7 +126,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action("ouvir_arredores"):
 		_say_surroundings()
 	elif event.is_action("onde_estou"):
-		Speech.say(Narrator.where_am_i(world, _my_pos()))
+		Speech.say(Narrator.where_am_i(world, _pos, _heading))
+	elif event.is_action("direcao"):
+		Speech.say("Olhando para o %s." % Compass.name_of(_heading))
 	elif event.is_action("quem_esta_aqui"):
 		_say_who()
 	elif event.is_action("repetir_fala"):
@@ -119,16 +156,16 @@ func request_join(player_name: String) -> void:
 			player_joined.rpc_id(other_id, id, accepted_name, pos)
 
 
-@rpc("any_peer", "call_local", "reliable")
-func request_move(dir: Vector2i) -> void:
+@rpc("any_peer", "call_local", "unreliable_ordered")
+func request_move_to(pos: Vector2) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	var result := state.try_move(id, dir)
+	var result := state.move_to(id, pos)
 	if result["ok"]:
 		player_moved.rpc(id, result["pos"])
 	elif state.players.has(id):
-		move_blocked.rpc_id(id, result["thing"])
+		move_corrected.rpc_id(id, result["pos"])
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -162,7 +199,7 @@ func request_contribute() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	if not state.players.has(id) or state.players[id]["pos"] != WorldGen.center():
+	if not state.near_village(id):
 		return
 	var result := state.contribute(id)
 	if result["given"].is_empty():
@@ -185,8 +222,13 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	players = snapshot
 	inventory = my_inventory
 	garden = garden_state
+	_pos = players[my_id]["pos"]
+	_heading = 0
+	_cell = WorldGen.cell_of(_pos)
 	view.setup(world, players, my_id)
+	view.heading = _heading
 	audio.setup(world)
+	audio.set_heading(_heading, false)
 	audio.set_village_level(int(garden.get("stage", 0)))
 	Music.set_level(int(garden.get("stage", 0)))
 	Music.start()
@@ -197,7 +239,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	var company := "Você está só por enquanto." if others == 0 else \
 		"Há mais %d criatura%s no mundo." % [others, "" if others == 1 else "s"]
 	Speech.say("Boas-vindas ao Fawna, %s. %s %s %s Aperte H para ouvir os comandos." % [
-		me["name"], Narrator.where_am_i(world, me["pos"]), company, Narrator.garden_status(garden)])
+		me["name"], Narrator.where_am_i(world, _pos, _heading), company, Narrator.garden_status(garden)])
 	_run_auto_commands()
 
 
@@ -220,7 +262,7 @@ func action_failed(reason: String, detail: String) -> void:
 		return
 	match reason:
 		"nada":
-			Speech.say("Não há nada para coletar aqui. Fique sobre um arbusto ou de frente para uma árvore ou para a água.")
+			Speech.say("Não há nada para coletar aqui. Chegue bem perto de uma árvore, de um arbusto ou da água.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
 		"faltam":
@@ -254,7 +296,7 @@ func garden_changed(garden_state: Dictionary, contributor_id: int, contributor_n
 
 
 @rpc("authority", "call_local", "reliable")
-func player_joined(id: int, player_name: String, pos: Vector2i) -> void:
+func player_joined(id: int, player_name: String, pos: Vector2) -> void:
 	if world == null:
 		return
 	players[id] = {"name": player_name, "pos": pos}
@@ -269,37 +311,34 @@ func player_left(id: int) -> void:
 		return
 	var player_name: String = players[id]["name"]
 	players.erase(id)
+	_others_step.erase(id)
 	view.queue_redraw()
 	Speech.say("%s saiu do mundo." % player_name, false)
 
 
-@rpc("authority", "call_local", "reliable")
-func player_moved(id: int, pos: Vector2i) -> void:
-	if world == null or not players.has(id):
+## Posição confirmada pelo servidor. A própria criatura já andou localmente,
+## então só as outras são atualizadas aqui.
+@rpc("authority", "call_local", "unreliable_ordered")
+func player_moved(id: int, pos: Vector2) -> void:
+	if world == null or not players.has(id) or id == my_id:
 		return
-	var old_pos: Vector2i = players[id]["pos"]
+	var old_pos: Vector2 = players[id]["pos"]
 	players[id]["pos"] = pos
 	view.queue_redraw()
-	if id == my_id:
-		_waiting_move = false
-		_update_listener()
-		_play(Sounds.footstep(world.biome_at(pos)))
-		_announce_arrival(old_pos, pos)
-		_update_biome_bed()
-	else:
+	var walked: float = _others_step.get(id, 0.0) + old_pos.distance_to(pos)
+	if walked >= STEP_LENGTH:
+		walked = 0.0
 		_play_other_step(pos)
+	_others_step[id] = walked
 
 
+## O servidor recusou a posição (rápido demais ou dentro de algo): volta.
 @rpc("authority", "call_local", "reliable")
-func move_blocked(thing: int) -> void:
+func move_corrected(pos: Vector2) -> void:
 	if world == null:
 		return
-	_waiting_move = false
-	_play(Sounds.bump(thing))
-	if thing == WorldGen.Thing.NADA:
-		Speech.say("Fim do caminho.")
-	else:
-		Speech.say(WorldGen.THING_NAMES[thing])
+	_set_pos(pos)
+	_last_sent = pos
 
 
 # --- Mundo salvo (servidor) --------------------------------------------------
@@ -365,37 +404,125 @@ func _back_to_menu() -> void:
 
 # --- Lado do jogador ---------------------------------------------------------
 
-func _try_step(dir: Vector2i) -> void:
-	if _waiting_move or _move_cooldown > 0.0:
+## Para onde as teclas mandam andar agora (em casas por segundo, no mundo).
+func _wanted_motion() -> Vector2:
+	if _auto_target != null:
+		var to_target: Vector2 = _auto_target - _pos
+		if to_target.length() < 0.1:
+			_auto_target = null
+			return Vector2.ZERO
+		return to_target.normalized() * minf(WALK_SPEED, to_target.length() * 10.0)
+	var ahead := Input.get_axis("andar_tras", "andar_frente")
+	var side := Input.get_axis("passo_esquerda", "passo_direita")
+	if ahead == 0.0 and side == 0.0:
+		return Vector2.ZERO
+	var motion := Compass.forward(_heading) * ahead + Compass.right(_heading) * side
+	var speed := WALK_SPEED * (BACK_FACTOR if ahead < 0.0 else 1.0)
+	return motion.normalized() * speed
+
+
+## Anda com colisão: se bater de frente, tenta deslizar ao longo do
+## obstáculo; se não der para andar nada, esbarra.
+func _walk(motion: Vector2) -> void:
+	if motion == Vector2.ZERO:
 		return
-	_facing = dir
-	_waiting_move = true
-	_move_cooldown = MOVE_REPEAT_SECONDS
-	request_move.rpc_id(1, dir)
+	var target := _pos + motion
+	if world.is_free(target):
+		_set_pos(target)
+		return
+	var moved := false
+	for part in [Vector2(motion.x, 0.0), Vector2(0.0, motion.y)]:
+		if part != Vector2.ZERO and world.is_free(_pos + part):
+			_set_pos(_pos + part)
+			moved = true
+	if not moved:
+		_bump(target)
 
 
-func _announce_arrival(old_pos: Vector2i, pos: Vector2i) -> void:
-	var biome := world.biome_at(pos)
-	if biome != world.biome_at(old_pos):
+func _set_pos(new_pos: Vector2) -> void:
+	var walked := _pos.distance_to(new_pos)
+	_pos = new_pos
+	players[my_id]["pos"] = new_pos
+	audio.move_listener(new_pos)
+	view.queue_redraw()
+	_step_distance += walked
+	if _step_distance >= STEP_LENGTH:
+		_step_distance = 0.0
+		_play(Sounds.footstep(world.biome_at(WorldGen.cell_of(new_pos))))
+	var cell := WorldGen.cell_of(new_pos)
+	if cell != _cell:
+		var old_cell := _cell
+		_cell = cell
+		_announce_arrival(old_cell, cell)
+		_update_biome_bed()
+
+
+## Esbarrou: o som vem de onde está o obstáculo, e a fala diz o que é.
+func _bump(target: Vector2) -> void:
+	var cell := world.blocker_at(target)
+	var thing := world.thing_at(cell) if cell != WorldGen.NO_CELL else WorldGen.Thing.NADA
+	if _bump_sound_cooldown <= 0.0:
+		_bump_sound_cooldown = BUMP_SOUND_COOLDOWN
+		var where := WorldGen.cell_center(cell) if thing != WorldGen.Thing.NADA else target
+		audio.play_at_point(where, Sounds.bump(thing))
+	if _bump_speech_cooldown <= 0.0 or cell != _last_bump_cell:
+		_bump_speech_cooldown = BUMP_SPEECH_COOLDOWN
+		_last_bump_cell = cell
+		Speech.say("Fim do caminho." if thing == WorldGen.Thing.NADA else WorldGen.THING_NAMES[thing])
+
+
+## Gira 45° (step -1 para a esquerda, 1 para a direita), com o clique da
+## bússola soando na nova direção.
+func _turn(step: int) -> void:
+	_turn_cooldown = TURN_REPEAT
+	_heading = posmod(_heading + step, Compass.STEPS)
+	audio.play_compass(_heading)
+	audio.set_heading(_heading)
+	view.heading = _heading
+	view.queue_redraw()
+
+
+func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
+	var biome := world.biome_at(cell)
+	if old_cell != WorldGen.NO_CELL and biome != world.biome_at(old_cell):
 		Speech.say(WorldGen.BIOME_NAMES[biome])
-	var thing := world.thing_at(pos)
+	var thing := world.thing_at(cell)
 	if thing != WorldGen.Thing.NADA:
 		Speech.say(WorldGen.THING_NAMES[thing], false)
 
 
-## Espaço: na vila abre o menu; fora dela, coleta o que estiver por perto
-## (primeiro onde está, depois à frente, depois ao redor).
+## Espaço: na vila abre o menu; fora dela, coleta o que estiver ao alcance,
+## dando preferência ao que está à frente.
 func _interact() -> void:
-	var pos := _my_pos()
-	if pos == WorldGen.center():
+	if _pos.distance_to(WorldGen.village_point()) <= WorldState.VILLAGE_REACH * 0.8:
 		_open_village_menu()
 		return
-	var candidates := [pos, pos + _facing, pos + Vector2i.UP, pos + Vector2i.DOWN, pos + Vector2i.LEFT, pos + Vector2i.RIGHT]
-	for cell: Vector2i in candidates:
-		if Economy.COLLECT.has(world.thing_at(cell)):
-			request_collect.rpc_id(1, cell)
-			return
-	action_failed("nada", "")
+	var target := _collect_target()
+	if target != WorldGen.NO_CELL:
+		request_collect.rpc_id(1, target)
+	else:
+		action_failed("nada", "")
+
+
+func _collect_target() -> Vector2i:
+	var best := WorldGen.NO_CELL
+	var best_score := INF
+	var here := WorldGen.cell_of(_pos)
+	var ahead := Compass.forward(_heading)
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var cell := here + Vector2i(dx, dy)
+			if not Economy.COLLECT.has(world.thing_at(cell)):
+				continue
+			var offset := WorldGen.cell_center(cell) - _pos
+			var distance := offset.length()
+			if distance > COLLECT_REACH:
+				continue
+			var score := distance - (0.6 if distance > 0.01 and ahead.dot(offset / distance) > 0.5 else 0.0)
+			if score < best_score:
+				best_score = score
+				best = cell
+	return best
 
 
 func _open_village_menu() -> void:
@@ -461,7 +588,7 @@ func _say_inventory() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W, A, S e D, ou as setas: andar para norte, oeste, sul e leste. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. A vila fica no centro do mundo.")
+	Speech.say("W e S, ou seta para cima e para baixo: andar para frente e para trás. A e D: passo para o lado. Q e E, ou seta para os lados: girar. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. A vila fica no centro do mundo.")
 
 
 func _say_surroundings() -> void:
@@ -469,7 +596,7 @@ func _say_surroundings() -> void:
 	for id in players:
 		if id != my_id:
 			others.append(players[id])
-	Speech.say(Narrator.surroundings(world, _my_pos(), others))
+	Speech.say(Narrator.surroundings(world, _pos, _heading, others))
 
 
 func _say_who() -> void:
@@ -486,16 +613,15 @@ func _play(stream: AudioStream) -> void:
 
 
 ## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
-func _play_other_step(pos: Vector2i) -> void:
-	var offset := pos - _my_pos()
-	if absi(offset.x) + absi(offset.y) > HEARING_RADIUS:
+func _play_other_step(pos: Vector2) -> void:
+	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
-	audio.play_at(pos, Sounds.footstep(world.biome_at(pos)))
+	audio.play_at_point(pos, Sounds.footstep(world.biome_at(WorldGen.cell_of(pos))))
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
 func _update_biome_bed() -> void:
-	var biome := world.biome_at(_my_pos())
+	var biome := world.biome_at(WorldGen.cell_of(_pos))
 	if biome == _bed_biome:
 		return
 	_bed_biome = biome
@@ -516,11 +642,7 @@ func _update_biome_bed() -> void:
 
 
 func _update_listener() -> void:
-	audio.move_listener(_my_pos())
-
-
-func _my_pos() -> Vector2i:
-	return players[my_id]["pos"] if players.has(my_id) else WorldGen.center()
+	audio.move_listener(_pos)
 
 
 func _sender_id() -> int:
@@ -528,28 +650,17 @@ func _sender_id() -> int:
 	return id if id != 0 else multiplayer.get_unique_id()
 
 
-static func _action_dir(action: String) -> Vector2i:
-	match action:
-		"mover_norte":
-			return Vector2i.UP
-		"mover_sul":
-			return Vector2i.DOWN
-		"mover_oeste":
-			return Vector2i.LEFT
-	return Vector2i.RIGHT
-
 
 # --- Testes automáticos ------------------------------------------------------
 
-## Só para testes: pede passos até chegar na vila (sem obstáculos no entorno).
-func _walk_to_village_now() -> void:
-	while _my_pos() != WorldGen.center():
-		var d := WorldGen.center() - _my_pos()
-		var dir := Vector2i(signi(d.x), 0) if d.x != 0 else Vector2i(0, signi(d.y))
-		_waiting_move = false
-		_move_cooldown = 0.0
-		_try_step(dir)
-		await get_tree().create_timer(0.3).timeout
+## Só para testes: anda sozinho até um ponto (ou desiste depois de um tempo).
+func _auto_walk(target: Vector2, timeout := 6.0) -> void:
+	_auto_target = target
+	var deadline := Time.get_ticks_msec() + int(timeout * 1000)
+	while _auto_target != null and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	_auto_target = null
+
 
 func _run_auto_commands() -> void:
 	if Net.auto_commands.is_empty():
@@ -557,15 +668,21 @@ func _run_auto_commands() -> void:
 	for command in Net.auto_commands:
 		await get_tree().create_timer(0.4).timeout
 		match command:
-			"N", "S", "L", "O":
-				var dirs := {"N": Vector2i.UP, "S": Vector2i.DOWN, "L": Vector2i.RIGHT, "O": Vector2i.LEFT}
-				_waiting_move = false
-				_move_cooldown = 0.0
-				_try_step(dirs[command])
+			"N", "S", "L", "O":  # anda 1 casa nessa direção do mapa
+				var dirs := {"N": Vector2.UP, "S": Vector2.DOWN, "L": Vector2.RIGHT, "O": Vector2.LEFT}
+				await _auto_walk(_pos + dirs[command])
+			"FRENTE":
+				await _auto_walk(_pos + Compass.forward(_heading))
+			"GIRAR_D":
+				_turn(1)
+			"GIRAR_E":
+				_turn(-1)
+			"DIRECAO":
+				Speech.say("Olhando para o %s." % Compass.name_of(_heading))
 			"ARREDORES":
 				_say_surroundings()
 			"ONDE":
-				Speech.say(Narrator.where_am_i(world, _my_pos()))
+				Speech.say(Narrator.where_am_i(world, _pos, _heading))
 			"QUEM":
 				_say_who()
 			"ESPERAR":
@@ -582,7 +699,7 @@ func _run_auto_commands() -> void:
 				request_contribute.rpc_id(1)
 			"VILA":
 				_village_menu = false
-				await _walk_to_village_now()
+				await _auto_walk(WorldGen.village_point())
 			"SAIR":
 				Net.stop()
 				get_tree().quit()

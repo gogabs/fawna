@@ -27,41 +27,38 @@ static func direction(offset: Vector2i) -> String:
 	return " e ".join(parts)
 
 
-static func where_am_i(world: WorldGen, pos: Vector2i) -> String:
-	var biome: String = WorldGen.BIOME_IN[world.biome_at(pos)]
-	var to_village := WorldGen.center() - pos
-	if to_village == Vector2i.ZERO:
-		return "Você está na vila, %s." % biome
-	return "Você está %s. A vila fica %s." % [biome, direction(to_village)]
+static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
+	var biome: String = WorldGen.BIOME_IN[world.biome_at(WorldGen.cell_of(pos))]
+	var facing := "olhando para o %s" % Compass.name_of(heading)
+	var to_village := WorldGen.village_point() - pos
+	if to_village.length() <= WorldState.VILLAGE_REACH:
+		return "Você está na vila, %s, %s." % [biome, facing]
+	return "Você está %s, %s. A vila fica %s." % [biome, facing, Compass.describe(to_village, heading)]
 
 
-## Lista o que está por perto, do mais próximo ao mais distante.
-static func surroundings(world: WorldGen, pos: Vector2i, others: Array) -> String:
+## Lista o que está por perto, do mais próximo ao mais distante, em relação
+## a para onde a criatura olha.
+static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array) -> String:
 	var found := []
+	var here := WorldGen.cell_of(pos)
 	var r := SURROUNDINGS_RADIUS
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
-			var offset := Vector2i(dx, dy)
-			if offset == Vector2i.ZERO:
-				continue
-			var thing := world.thing_at(pos + offset)
+			var cell := here + Vector2i(dx, dy)
+			var thing := world.thing_at(cell)
 			if thing != WorldGen.Thing.NADA:
-				found.append({"name": WorldGen.THING_NAMES[thing], "offset": offset})
+				found.append({"name": WorldGen.THING_NAMES[thing], "offset": WorldGen.cell_center(cell) - pos})
 	for other in others:
-		var offset: Vector2i = other["pos"] - pos
-		if absi(offset.x) <= r and absi(offset.y) <= r:
+		var offset: Vector2 = other["pos"] - pos
+		if offset.length() <= r:
 			found.append({"name": other["name"], "offset": offset})
 	if found.is_empty():
-		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(pos)]
-	found.sort_custom(func(a, b): return _distance(a["offset"]) < _distance(b["offset"]))
+		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(here)]
+	found.sort_custom(func(a, b): return a["offset"].length() < b["offset"].length())
 	var lines: PackedStringArray = []
 	for item in found.slice(0, SURROUNDINGS_MAX_ITEMS):
-		lines.append("%s, %s" % [item["name"], direction(item["offset"])])
+		lines.append("%s, %s" % [item["name"], Compass.describe(item["offset"], heading)])
 	return ". ".join(lines) + "."
-
-
-static func _distance(offset: Vector2i) -> int:
-	return absi(offset.x) + absi(offset.y)
 
 
 static func garden_status(garden: Dictionary) -> String:

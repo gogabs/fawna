@@ -41,7 +41,10 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 
 | Ação | Tecla |
 | --- | --- |
-| Andar (norte, oeste, sul, leste) | W, A, S, D ou setas |
+| Andar para frente / para trás | W / S, ou seta para cima / para baixo |
+| Passo para o lado | A / D |
+| Girar 45° para a esquerda / direita | Q / E, ou seta para a esquerda / direita |
+| Para onde estou olhando | F |
 | Coletar / menu da vila | Espaço |
 | Inventário | I |
 | Ajuda (lista de comandos) | H |
@@ -49,6 +52,12 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Onde estou | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
+
+O jogo é em primeira pessoa: a criatura anda livremente (não mais de casa
+em casa) e olha para uma de 8 direções. A cada giro, uma bússola dá um
+clique em 3D, vindo da nova direção: agudo no norte, grave no sul, igual no
+leste e no oeste, e abafado nas diagonais. As falas dizem onde as coisas
+estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
 ## Como se joga (por enquanto)
 

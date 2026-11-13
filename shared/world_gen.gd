@@ -32,6 +32,12 @@ const THING_NAMES := {
 ## Coisas que não deixam passar.
 const BLOCKING := [Thing.ARVORE, Thing.RIACHO]
 
+## Posições no mundo são contínuas, medidas em casas (1 casa = 1,5 m). A casa
+## (x, y) cobre de x a x+1 e de y a y+1; norte é y negativo.
+const METERS_PER_CELL := 1.5
+const PLAYER_RADIUS := 0.3  # casas
+const NO_CELL := Vector2i(-9999, -9999)
+
 var world_seed: int
 var _biome_noise := FastNoiseLite.new()
 var _water_noise := FastNoiseLite.new()
@@ -47,6 +53,19 @@ func _init(new_seed: int) -> void:
 
 static func center() -> Vector2i:
 	return Vector2i(SIZE / 2, SIZE / 2)
+
+
+static func cell_of(pos: Vector2) -> Vector2i:
+	return Vector2i(floori(pos.x), floori(pos.y))
+
+
+static func cell_center(cell: Vector2i) -> Vector2:
+	return Vector2(cell) + Vector2(0.5, 0.5)
+
+
+## Ponto central da vila.
+static func village_point() -> Vector2:
+	return cell_center(center())
 
 
 func in_bounds(cell: Vector2i) -> bool:
@@ -87,6 +106,31 @@ func thing_at(cell: Vector2i) -> Thing:
 
 func is_passable(cell: Vector2i) -> bool:
 	return in_bounds(cell) and not BLOCKING.has(thing_at(cell))
+
+
+## A primeira casa que impede uma criatura de ficar em "pos" (um círculo de
+## raio "radius"), ou NO_CELL se o lugar está livre. Fora do mapa também
+## bloqueia (e thing_at devolve NADA para essas casas: "fim do caminho").
+func blocker_at(pos: Vector2, radius := PLAYER_RADIUS) -> Vector2i:
+	var min_cell := cell_of(pos - Vector2.ONE * radius)
+	var max_cell := cell_of(pos + Vector2.ONE * radius)
+	var best := NO_CELL
+	var best_distance := INF
+	for y in range(min_cell.y, max_cell.y + 1):
+		for x in range(min_cell.x, max_cell.x + 1):
+			var cell := Vector2i(x, y)
+			if is_passable(cell):
+				continue
+			var closest := Vector2(clampf(pos.x, x, x + 1), clampf(pos.y, y, y + 1))
+			var distance := pos.distance_to(closest)
+			if distance < radius and distance < best_distance:
+				best = cell
+				best_distance = distance
+	return best
+
+
+func is_free(pos: Vector2, radius := PLAYER_RADIUS) -> bool:
+	return blocker_at(pos, radius) == NO_CELL
 
 
 ## Número entre 0 e 1, fixo para cada célula e semente.
