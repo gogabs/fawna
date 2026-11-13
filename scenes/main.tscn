@@ -1,6 +1,16 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[sub_resource type="Gradient" id="Gradient_bg"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0.113, 0.231, 0.165, 1, 0.059, 0.125, 0.094, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_bg"]
+gradient = SubResource("Gradient_bg")
+fill_from = Vector2(0.5, 0)
+fill_to = Vector2(0.5, 1)
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -11,14 +21,15 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_main")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.13, 0.22, 0.16, 1)
+texture = SubResource("GradientTexture2D_bg")
+expand_mode = 1
 
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
@@ -28,43 +39,93 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Form" type="VBoxContainer" parent="Center"]
-custom_minimum_size = Vector2(360, 0)
+[node name="Card" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(420, 0)
 layout_mode = 2
-theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="Center/Form"]
+[node name="Pages" type="VBoxContainer" parent="Center/Card"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 40
+
+[node name="MainPage" type="VBoxContainer" parent="Center/Card/Pages"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Logo" type="TextureRect" parent="Center/Card/Pages/MainPage"]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+texture = ExtResource("2_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="Center/Card/Pages/MainPage"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 52
 text = "Fawna"
 horizontal_alignment = 1
 
-[node name="NameLabel" type="Label" parent="Center/Form"]
+[node name="Subtitle" type="Label" parent="Center/Card/Pages/MainPage"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "um mundo para construir juntos"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Center/Card/Pages/MainPage"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+
+[node name="ConnectButton" type="Button" parent="Center/Card/Pages/MainPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Conectar"
+
+[node name="OptionsButton" type="Button" parent="Center/Card/Pages/MainPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Opções"
+
+[node name="QuitButton" type="Button" parent="Center/Card/Pages/MainPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Sair"
+
+[node name="OptionsPage" type="VBoxContainer" parent="Center/Card/Pages"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="OptionsTitle" type="Label" parent="Center/Card/Pages/OptionsPage"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Opções"
+horizontal_alignment = 1
+
+[node name="NameLabel" type="Label" parent="Center/Card/Pages/OptionsPage"]
 layout_mode = 2
 text = "Seu nome"
 
-[node name="NameEdit" type="LineEdit" parent="Center/Form"]
+[node name="NameEdit" type="LineEdit" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
 accessibility_name = "Seu nome"
 placeholder_text = "Como sua criatura se chama?"
+max_length = 24
 
-[node name="AddressLabel" type="Label" parent="Center/Form"]
+[node name="ServerLabel" type="Label" parent="Center/Card/Pages/OptionsPage"]
 layout_mode = 2
-text = "Endereço do servidor"
+text = "Servidor"
 
-[node name="AddressEdit" type="LineEdit" parent="Center/Form"]
+[node name="ServerEdit" type="LineEdit" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
-accessibility_name = "Endereço do servidor"
-placeholder_text = "127.0.0.1 ou ip:porta"
+accessibility_name = "Servidor"
+placeholder_text = "ip ou ip:porta"
 
-[node name="JoinButton" type="Button" parent="Center/Form"]
+[node name="BackButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Entrar no mundo"
+text = "Salvar e voltar"
 
-[node name="HostButton" type="Button" parent="Center/Form"]
+[node name="UiSound" type="AudioStreamPlayer" parent="."]
 unique_name_in_owner = true
-layout_mode = 2
-text = "Hospedar o mundo"

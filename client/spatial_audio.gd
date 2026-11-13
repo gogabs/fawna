@@ -88,7 +88,7 @@ func _refresh_ambient(center: Vector2i) -> void:
 	for cell: Vector2i in wanted:
 		if _ambient.has(cell):
 			continue
-		var stream := SoundBank.ambient(_world.thing_at(cell), village_level)
+		var stream := Sounds.ambient(_world.thing_at(cell), village_level)
 		if stream == null:
 			continue
 		var player := _new_player(stream, AMBIENT_VOLUME_DB)
@@ -105,7 +105,7 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var cell := center + Vector2i(dx, dy)
-			if SoundBank.ambient(_world.thing_at(cell)) != null:
+			if Sounds.has_ambient(_world.thing_at(cell)):
 				found.append(cell)
 	found.sort_custom(func(a, b): return (a - center).length_squared() < (b - center).length_squared())
 	return found.slice(0, MAX_AMBIENT_SOURCES)

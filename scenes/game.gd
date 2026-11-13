@@ -30,6 +30,8 @@ var _move_cooldown := 0.0
 var _facing := Vector2i.UP  # última direção em que tentou andar
 var _village_menu := false
 var _minigame: Minigame = null
+var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
+var _bed_biome := -1
 
 
 func _ready() -> void:
@@ -55,7 +57,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_save_world()
-	SoundBank.clear()
+	Sounds.clear()
 
 
 func _process(delta: float) -> void:
@@ -186,7 +188,10 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	view.setup(world, players, my_id)
 	audio.setup(world)
 	audio.set_village_level(int(garden.get("stage", 0)))
+	Music.set_level(int(garden.get("stage", 0)))
+	Music.start()
 	_update_listener()
+	_update_biome_bed()
 	var me: Dictionary = players[my_id]
 	var others := players.size() - 1
 	var company := "Você está só por enquanto." if others == 0 else \
@@ -203,7 +208,7 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String) ->
 	inventory = new_inventory
 	if verb.is_empty():
 		return
-	_play(SoundBank.pickup())
+	_play(Sounds.pickup(item))
 	var total := int(inventory.get(item, 0))
 	var what := "Você %s %s." % [verb, Economy.item_text(item, 1)]
 	Speech.say("%s Agora tem %d." % [what, total])
@@ -235,8 +240,9 @@ func garden_changed(garden_state: Dictionary, contributor_id: int, contributor_n
 	var who := "Você" if contributor_id == my_id else contributor_name
 	var text := "%s entregou %s para a %s." % [who, Economy.items_text(given), Economy.GARDEN_NAME]
 	if completed_stage >= 0:
-		_play(SoundBank.fanfare())
+		_play(Sounds.fanfare())
 		audio.set_village_level(int(garden["stage"]))
+		Music.set_level(int(garden["stage"]))
 		var stage_name: String = Economy.GARDEN_STAGES[completed_stage]["name"]
 		var helpers: Array = garden.get("contributors", [])
 		text += " A %s cresceu: agora é %s! Obrigado a %s." % [Economy.GARDEN_NAME, stage_name, ", ".join(PackedStringArray(helpers))]
@@ -253,7 +259,7 @@ func player_joined(id: int, player_name: String, pos: Vector2i) -> void:
 		return
 	players[id] = {"name": player_name, "pos": pos}
 	view.queue_redraw()
-	_play(SoundBank.chime())
+	_play(Sounds.chime())
 	Speech.say("%s chegou ao mundo." % player_name, false)
 
 
@@ -277,8 +283,9 @@ func player_moved(id: int, pos: Vector2i) -> void:
 	if id == my_id:
 		_waiting_move = false
 		_update_listener()
-		_play(SoundBank.footstep(world.biome_at(pos)))
+		_play(Sounds.footstep(world.biome_at(pos)))
 		_announce_arrival(old_pos, pos)
+		_update_biome_bed()
 	else:
 		_play_other_step(pos)
 
@@ -288,7 +295,7 @@ func move_blocked(thing: int) -> void:
 	if world == null:
 		return
 	_waiting_move = false
-	_play(SoundBank.bump())
+	_play(Sounds.bump(thing))
 	if thing == WorldGen.Thing.NADA:
 		Speech.say("Fim do caminho.")
 	else:
@@ -393,12 +400,14 @@ func _interact() -> void:
 
 func _open_village_menu() -> void:
 	_village_menu = true
+	_play(Sounds.ui_open())
 	Speech.say("Vila. 1: carpintaria, 2 madeiras viram 1 tábua. 2: jardinagem, 1 semente e 1 balde de água viram 1 muda. 3: entregar para a horta. 4: como está a horta. Esc para sair.")
 
 
 func _village_menu_input(event: InputEvent) -> void:
 	if event.is_action("ui_cancel"):
 		_village_menu = false
+		_play(Sounds.ui_close())
 		Speech.say("Saiu do menu da vila.")
 		return
 	if not event is InputEventKey:
@@ -481,7 +490,29 @@ func _play_other_step(pos: Vector2i) -> void:
 	var offset := pos - _my_pos()
 	if absi(offset.x) + absi(offset.y) > HEARING_RADIUS:
 		return
-	audio.play_at(pos, SoundBank.footstep(world.biome_at(pos)))
+	audio.play_at(pos, Sounds.footstep(world.biome_at(pos)))
+
+
+## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
+func _update_biome_bed() -> void:
+	var biome := world.biome_at(_my_pos())
+	if biome == _bed_biome:
+		return
+	_bed_biome = biome
+	var stream := Sounds.biome_bed(biome)
+	if stream == null:
+		return
+	var old := _bed
+	_bed = AudioStreamPlayer.new()
+	_bed.stream = stream
+	_bed.volume_db = -40.0
+	add_child(_bed)
+	_bed.play(randf() * stream.get_length())
+	var tween := create_tween().set_parallel()
+	tween.tween_property(_bed, "volume_db", -16.0, 1.5)
+	if old != null:
+		tween.tween_property(old, "volume_db", -40.0, 1.5)
+		tween.chain().tween_callback(old.queue_free)
 
 
 func _update_listener() -> void:

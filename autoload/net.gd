@@ -10,10 +10,13 @@ extends Node
 enum Mode { NONE, SERVER, HOST, CLIENT }
 
 const DEFAULT_PORT := 7350
+## Servidor de testes do Gabs (rede da VPN).
+const DEFAULT_ADDRESS := "26.127.36.156"
+const SETTINGS_PATH := "user://config.cfg"
 const MAX_PLAYERS := 128
 
 var mode := Mode.NONE
-var address := "127.0.0.1"
+var address := DEFAULT_ADDRESS
 var port := DEFAULT_PORT
 var player_name := "Criatura"
 var world_seed := 0
@@ -29,7 +32,43 @@ var auto_commands: PackedStringArray = []
 
 func _ready() -> void:
 	world_seed = randi()
+	load_settings()
 	_parse_cmdline()
+
+
+## Nome e servidor escolhidos em Opções ficam salvos entre sessões.
+func load_settings() -> void:
+	var config := ConfigFile.new()
+	if config.load(SETTINGS_PATH) != OK:
+		return
+	player_name = config.get_value("jogador", "nome", player_name)
+	var server: String = config.get_value("conexao", "servidor", "")
+	if not server.is_empty():
+		set_server(server)
+
+
+func save_settings() -> void:
+	var config := ConfigFile.new()
+	config.set_value("jogador", "nome", player_name)
+	config.set_value("conexao", "servidor", server_text())
+	config.save(SETTINGS_PATH)
+
+
+## Aceita "ip" ou "ip:porta".
+func set_server(text: String) -> void:
+	var clean := text.strip_edges()
+	if clean.is_empty():
+		clean = DEFAULT_ADDRESS
+	if clean.contains(":"):
+		port = int(clean.get_slice(":", 1))
+		clean = clean.get_slice(":", 0)
+	else:
+		port = DEFAULT_PORT
+	address = clean
+
+
+func server_text() -> String:
+	return address if port == DEFAULT_PORT else "%s:%d" % [address, port]
 
 
 func is_server() -> bool:

@@ -28,6 +28,7 @@ general/text_to_speech=true
 
 Speech="*res://autoload/speech.gd"
 Net="*res://autoload/net.gd"
+Music="*res://autoload/music.gd"
 
 [display]
 
