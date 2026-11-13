@@ -37,11 +37,25 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 
 | Ação | Tecla |
 | --- | --- |
-| Andar | Setas |
+| Andar (norte, oeste, sul, leste) | W, A, S, D ou setas |
+| Coletar / menu da vila | Espaço |
+| Inventário | I |
+| Ajuda (lista de comandos) | H |
 | Ouvir os arredores | Tab |
 | Onde estou | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
+
+## Como se joga (por enquanto)
+
+1. Ande até árvores, arbustos ou água e aperte **Espaço** para coletar madeira, sementes ou água. Os recursos se regeneram.
+2. Na vila (centro do mundo), aperte **Espaço** para abrir o menu:
+   - **1, carpintaria:** 2 madeiras viram 1 tábua. Aperte Espaço junto com as batidas do serrote (acerte 5 de 8).
+   - **2, jardinagem:** 1 semente e 1 balde de água viram 1 muda. Ouça as 4 mudas com A/D ou ←/→ e regue a que soa murcha (acerte 2 de 3).
+   - **3:** entregar para a horta comunitária. **4:** ouvir como ela está.
+3. A horta cresce em 3 estágios (canteiro, horta, horta com irrigação solar), com a ajuda de todos. A cada estágio a vila soa mais viva.
+
+Se o minigame não der certo, nada é perdido. O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
 
 ## Fala e leitores de tela
 
@@ -63,9 +77,9 @@ Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) insta
 
 ```
 autoload/   Speech (fala) e Net (modo de rede e conexão)
-shared/     Código que roda igual no servidor e no cliente (geração do mundo)
-server/     Estado autoritativo do mundo (só no servidor)
-client/     Narrador, áudio espacial, sons provisórios e visual de depuração
+shared/     Código que roda igual no servidor e no cliente (mundo, recursos, receitas, obras)
+server/     Estado autoritativo do mundo e salvamento (só no servidor)
+client/     Minigames, narrador, áudio espacial, sons provisórios e visual de depuração
 tools/      Scripts para baixar as extensões nativas
 scenes/     Menu (main) e jogo (game), que carrega as chamadas de rede
 tests/      Testes automáticos
@@ -77,6 +91,12 @@ O servidor é autoritativo: os clientes só enviam intenções, como andar, e o 
 
 ```sh
 godot --headless --path . --script res://tests/test_world.gd
+```
+
+Minigames (precisa rodar como cena):
+
+```sh
+godot --headless --path . res://tests/test_minigames.tscn
 ```
 
 Teste de rede com um servidor e dois clientes, todos sem tela:

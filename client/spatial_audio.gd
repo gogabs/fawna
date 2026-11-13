@@ -16,11 +16,13 @@ const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
 
 var using_hrtf := false
+var village_level := 0
 
 var _world: WorldGen
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
+var _listener_cell := Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -49,9 +51,23 @@ static func cell_to_3d(cell: Vector2i) -> Vector3:
 func move_listener(cell: Vector2i) -> void:
 	if _camera == null:
 		return
+	_listener_cell = cell
 	_camera.position = cell_to_3d(cell) + Vector3.UP * 0.2
 	if _world != null:
 		_refresh_ambient(cell)
+
+
+## A vila soa diferente conforme a horta cresce.
+func set_village_level(level: int) -> void:
+	if level == village_level:
+		return
+	village_level = level
+	var village := WorldGen.center()
+	if _ambient.has(village):
+		_ambient[village].queue_free()
+		_ambient.erase(village)
+	if _camera != null and _world != null:
+		_refresh_ambient(_listener_cell)
 
 
 ## Toca um som curto numa casa do mundo (ex.: passo de outra criatura).
@@ -72,7 +88,7 @@ func _refresh_ambient(center: Vector2i) -> void:
 	for cell: Vector2i in wanted:
 		if _ambient.has(cell):
 			continue
-		var stream := SoundBank.ambient(_world.thing_at(cell))
+		var stream := SoundBank.ambient(_world.thing_at(cell), village_level)
 		if stream == null:
 			continue
 		var player := _new_player(stream, AMBIENT_VOLUME_DB)
