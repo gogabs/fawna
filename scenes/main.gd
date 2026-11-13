@@ -44,6 +44,7 @@ func _ready() -> void:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
 
 	_show_main(false)
+	Music.start()
 	Speech.say("Fawna. Menu principal. Use as setas ou Tab para escolher e Enter para confirmar.")
 
 

@@ -143,13 +143,12 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
 	return stream
 
 
-## Musiquinha de ocarina da vila (tools/musica_vila.py), que cresce com a
+## Música de fundo (ocarina, tools/musica_vila.py), uma versão por nível da
 ## horta. Sem os arquivos, usa os sininhos gerados por código.
-static func village_melody(level: int) -> AudioStream:
+static func music(level: int) -> AudioStream:
 	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
 	if stream == null:
-		return SoundBank.ambient(WorldGen.Thing.VILA, level)
-	_make_loop(stream)
+		stream = SoundBank.ambient(WorldGen.Thing.VILA, level)
 	return stream
 
 

@@ -188,6 +188,8 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	view.setup(world, players, my_id)
 	audio.setup(world)
 	audio.set_village_level(int(garden.get("stage", 0)))
+	Music.set_level(int(garden.get("stage", 0)))
+	Music.start()
 	_update_listener()
 	_update_biome_bed()
 	var me: Dictionary = players[my_id]
@@ -240,6 +242,7 @@ func garden_changed(garden_state: Dictionary, contributor_id: int, contributor_n
 	if completed_stage >= 0:
 		_play(Sounds.fanfare())
 		audio.set_village_level(int(garden["stage"]))
+		Music.set_level(int(garden["stage"]))
 		var stage_name: String = Economy.GARDEN_STAGES[completed_stage]["name"]
 		var helpers: Array = garden.get("contributors", [])
 		text += " A %s cresceu: agora é %s! Obrigado a %s." % [Economy.GARDEN_NAME, stage_name, ", ".join(PackedStringArray(helpers))]

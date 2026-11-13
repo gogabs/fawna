@@ -1,4 +1,4 @@
-"""Gera a musiquinha da vila tocada por uma ocarina.
+"""Gera a música de fundo do jogo, tocada por uma ocarina.
 
 Escreve um MIDI por nível da horta (assets/music/vila_N.mid) e renderiza cada
 um em .ogg com o FluidSynth (assets/sounds/musica/vila_N.ogg). Os loops têm

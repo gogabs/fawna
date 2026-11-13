@@ -14,10 +14,6 @@ const METERS_PER_CELL := 1.5
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
-## A musiquinha de ocarina da vila toca junto com os sons gravados, para a
-## vila ter uma melodia que ajuda a achá-la.
-const MELODY_VOLUME_DB := -6.0
-const VILLAGE_RECORDING_DB := -16.0  # sinos gravados ficam por baixo da melodia
 
 var using_hrtf := false
 var village_level := 0
@@ -26,7 +22,6 @@ var _world: WorldGen
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
-var _melody: AudioStreamPlayer3D  # musiquinha da vila
 var _listener_cell := Vector2i.ZERO
 
 
@@ -71,7 +66,6 @@ func set_village_level(level: int) -> void:
 	if _ambient.has(village):
 		_ambient[village].queue_free()
 		_ambient.erase(village)
-	_stop_melody()
 	if _camera != null and _world != null:
 		_refresh_ambient(_listener_cell)
 
@@ -91,43 +85,18 @@ func _refresh_ambient(center: Vector2i) -> void:
 		if not wanted.has(cell):
 			_ambient[cell].queue_free()
 			_ambient.erase(cell)
-	var village := WorldGen.center()
-	if not wanted.has(village):
-		_stop_melody()
-	elif _melody == null:
-		_start_melody(village)
 	for cell: Vector2i in wanted:
 		if _ambient.has(cell):
 			continue
 		var stream := Sounds.ambient(_world.thing_at(cell), village_level)
 		if stream == null:
 			continue
-		var thing := _world.thing_at(cell)
-		var volume := VILLAGE_RECORDING_DB if thing == WorldGen.Thing.VILA else AMBIENT_VOLUME_DB
-		var player := _new_player(stream, volume)
+		var player := _new_player(stream, AMBIENT_VOLUME_DB)
 		player.position = cell_to_3d(cell)
 		add_child(player)
 		# Começa em pontos diferentes do loop para dois sons iguais não soarem em uníssono.
 		player.play(randf() * stream.get_length())
 		_ambient[cell] = player
-
-
-func _start_melody(cell: Vector2i) -> void:
-	var stream := Sounds.village_melody(village_level)
-	if stream == null:
-		return
-	# Pelo áudio 3D do Godot: pelo HRTF a melodia gerada por código não saía.
-	_melody = _new_player(stream, MELODY_VOLUME_DB, false)
-	_melody.position = cell_to_3d(cell)
-	add_child(_melody)
-	_melody.play()
-	print("[audio] musiquinha da vila tocando (nível %d)" % village_level)
-
-
-func _stop_melody() -> void:
-	if _melody != null:
-		_melody.queue_free()
-		_melody = null
 
 
 func _nearest_sounding_cells(center: Vector2i) -> Array:
@@ -142,9 +111,9 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	return found.slice(0, MAX_AMBIENT_SOURCES)
 
 
-func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioStreamPlayer3D:
+func _new_player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
 	var player: AudioStreamPlayer3D
-	if using_hrtf and hrtf:
+	if using_hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
 	else:
