@@ -1,0 +1,115 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scenes/updater.gd" id="1_updater"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[sub_resource type="Gradient" id="Gradient_bg"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0.113, 0.231, 0.165, 1, 0.059, 0.125, 0.094, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_bg"]
+gradient = SubResource("Gradient_bg")
+fill_from = Vector2(0.5, 0)
+fill_to = Vector2(0.5, 1)
+
+[node name="Updater" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_updater")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("GradientTexture2D_bg")
+expand_mode = 1
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Card" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+
+[node name="Page" type="VBoxContainer" parent="Center/Card"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Logo" type="TextureRect" parent="Center/Card/Page"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+texture = ExtResource("2_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="Center/Card/Page"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Fawna"
+horizontal_alignment = 1
+
+[node name="Status" type="Label" parent="Center/Card/Page"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(500, 0)
+layout_mode = 2
+text = "Procurando atualizações..."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="Notes" type="RichTextLabel" parent="Center/Card/Page"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(500, 120)
+layout_mode = 2
+focus_mode = 2
+accessibility_name = "Novidades da versão"
+theme_override_colors/default_color = Color(0.122, 0.165, 0.141, 1)
+theme_override_font_sizes/normal_font_size = 18
+theme_override_font_sizes/bold_font_size = 20
+bbcode_enabled = true
+selection_enabled = true
+
+[node name="Progress" type="ProgressBar" parent="Center/Card/Page"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+accessibility_name = "Progresso do download"
+
+[node name="PrimaryButton" type="Button" parent="Center/Card/Page"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Baixar e instalar"
+
+[node name="NotesButton" type="Button" parent="Center/Card/Page"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Ouvir novidades"
+
+[node name="SkipButton" type="Button" parent="Center/Card/Page"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Pular"
+
+[node name="UiSound" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+
+[node name="Http" type="HTTPRequest" parent="."]
+unique_name_in_owner = true
+use_threads = true

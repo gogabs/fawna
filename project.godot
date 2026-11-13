@@ -12,7 +12,8 @@ config_version=5
 
 config/name="Fawna"
 config/description="Jogo cooperativo e acessível num mundo solarpunk."
-run/main_scene="res://scenes/main.tscn"
+config/version="0.1.0"
+run/main_scene="res://scenes/updater.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://icon.svg"
 

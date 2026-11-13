@@ -1,0 +1,128 @@
+# Exporta o Fawna para Windows e Linux e publica uma release no GitHub.
+# O atualizador do jogo procura a release mais nova e baixa o zip do sistema
+# da pessoa (fawna-<versão>-windows.zip ou fawna-<versão>-linux.zip).
+#
+# Para publicar uma versão:
+#   - Actions > Publicar versão > Run workflow, informando a versão (ex.: 0.2.0); ou
+#   - git tag v0.2.0 && git push origin v0.2.0
+name: Publicar versão
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão nova, ex.: 0.2.0 (cria a tag v0.2.0)"
+        required: true
+      notas:
+        description: "Novidades (opcional; vazio gera a lista de mudanças sozinho)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE: "stable"
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir a versão
+        id: versao
+        env:
+          EVENTO: ${{ github.event_name }}
+          ENTRADA: ${{ inputs.versao }}
+        run: |
+          if [ "$EVENTO" = "workflow_dispatch" ]; then V="$ENTRADA"; else V="$GITHUB_REF_NAME"; fi
+          V="${V#v}"
+          if ! echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão inválida: '$V'. Use o formato 1.2.3."
+            exit 1
+          fi
+          echo "versao=$V" >> "$GITHUB_OUTPUT"
+          sed -i "s/^config\/version=.*/config\/version=\"$V\"/" project.godot
+          grep '^config/version' project.godot
+
+      - name: Cache do Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}
+
+      - name: Baixar Godot e modelos de exportação
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          TAG="${GODOT_VERSION}-${GODOT_RELEASE}"
+          BASE="https://github.com/godotengine/godot/releases/download/$TAG"
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip "$BASE/Godot_v${TAG}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${TAG}_linux.x86_64 ~/godot/godot
+          curl -fsSL -o /tmp/templates.tpz "$BASE/Godot_v${TAG}_export_templates.tpz"
+          DEST=~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}
+          mkdir -p "$DEST"
+          unzip -q -j /tmp/templates.tpz \
+            'templates/windows_release_x86_64.exe' 'templates/windows_debug_x86_64.exe' \
+            'templates/linux_release.x86_64' 'templates/linux_debug.x86_64' \
+            'templates/version.txt' -d "$DEST"
+          rm /tmp/godot.zip /tmp/templates.tpz
+
+      - name: Testes
+        run: |
+          ~/godot/godot --headless --path . --import
+          ~/godot/godot --headless --path . --script res://tests/test_world.gd
+          ~/godot/godot --headless --path . --script res://tests/test_updater.gd
+
+      - name: Instalar extensões (fala e áudio 3D)
+        run: sh tools/instalar_extensoes.sh
+
+      # Com as extensões carregadas, o Godot às vezes cai ao fechar, mesmo
+      # depois de exportar tudo certo. Por isso conferimos os arquivos gerados
+      # em vez do código de saída.
+      - name: Exportar
+        run: |
+          ~/godot/godot --headless --path . --import || true
+          mkdir -p build/windows build/linux
+          ~/godot/godot --headless --path . --export-release "Windows" build/windows/Fawna.exe || true
+          ~/godot/godot --headless --path . --export-release "Linux" build/linux/Fawna.x86_64 || true
+          ls -la build/windows build/linux
+          for f in windows/Fawna.exe windows/Fawna.pck windows/nexus_resonance.dll \
+                   windows/prismatoid.windows.template_release.x86_64.dll \
+                   linux/Fawna.x86_64 linux/Fawna.pck; do
+            test -s "build/$f" || { echo "::error::Faltou build/$f na exportação"; exit 1; }
+          done
+
+      - name: Empacotar
+        env:
+          V: ${{ steps.versao.outputs.versao }}
+        run: |
+          cd build/windows && zip -qr "../fawna-$V-windows.zip" . && cd ../..
+          cd build/linux && zip -qr "../fawna-$V-linux.zip" . && cd ../..
+          ls -la build/*.zip
+
+      - name: Publicar a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.versao.outputs.versao }}
+          NOTAS: ${{ inputs.notas }}
+        run: |
+          if [ -n "$NOTAS" ]; then
+            printf '%s\n' "$NOTAS" > /tmp/notas.md
+            set -- --notes-file /tmp/notas.md
+          else
+            set -- --generate-notes
+          fi
+          gh release create "v$V" build/fawna-$V-windows.zip build/fawna-$V-linux.zip \
+            --title "Fawna $V" --target "$GITHUB_SHA" "$@"
