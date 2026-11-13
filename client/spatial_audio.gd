@@ -89,7 +89,8 @@ func set_heading(heading: int, smooth := true) -> void:
 ## lado e chegar à frente.
 func play_compass(heading: int) -> void:
 	var point := _listener_pos + Compass.forward(heading) * COMPASS_DISTANCE
-	play_at_point(point, Sounds.compass(heading), -4.0)
+	# Pelo áudio 3D do Godot: pelo HRTF os cliques não saíam no PC do Gabs.
+	play_at_point(point, Sounds.compass(heading), -4.0, false)
 
 
 ## A vila soa diferente conforme a horta cresce.
@@ -111,10 +112,10 @@ func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 
 
 ## Toca um som curto num ponto do mundo (ex.: esbarrão, passos de alguém).
-func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0) -> void:
+func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0, hrtf := true) -> void:
 	if _camera == null or stream == null:
 		return
-	var player := _new_player(stream, volume_db)
+	var player := _new_player(stream, volume_db, hrtf)
 	player.position = point_to_3d(point)
 	player.finished.connect(player.queue_free)
 	add_child(player)
@@ -153,9 +154,9 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	return found.slice(0, MAX_AMBIENT_SOURCES)
 
 
-func _new_player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
+func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioStreamPlayer3D:
 	var player: AudioStreamPlayer3D
-	if using_hrtf:
+	if using_hrtf and hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
 	else:
