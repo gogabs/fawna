@@ -14,6 +14,9 @@ const METERS_PER_CELL := 1.5
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
+## A musiquinha de sininhos da vila (gerada por código) toca junto com os
+## sons gravados, para a vila ter uma melodia que ajuda a achá-la.
+const MELODY_VOLUME_DB := -10.0
 
 var using_hrtf := false
 var village_level := 0
@@ -22,6 +25,7 @@ var _world: WorldGen
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
+var _melody: AudioStreamPlayer3D  # musiquinha da vila
 var _listener_cell := Vector2i.ZERO
 
 
@@ -66,6 +70,7 @@ func set_village_level(level: int) -> void:
 	if _ambient.has(village):
 		_ambient[village].queue_free()
 		_ambient.erase(village)
+	_stop_melody()
 	if _camera != null and _world != null:
 		_refresh_ambient(_listener_cell)
 
@@ -85,6 +90,11 @@ func _refresh_ambient(center: Vector2i) -> void:
 		if not wanted.has(cell):
 			_ambient[cell].queue_free()
 			_ambient.erase(cell)
+	var village := WorldGen.center()
+	if not wanted.has(village):
+		_stop_melody()
+	elif _melody == null:
+		_start_melody(village)
 	for cell: Vector2i in wanted:
 		if _ambient.has(cell):
 			continue
@@ -97,6 +107,22 @@ func _refresh_ambient(center: Vector2i) -> void:
 		# Começa em pontos diferentes do loop para dois sons iguais não soarem em uníssono.
 		player.play(randf() * stream.get_length())
 		_ambient[cell] = player
+
+
+func _start_melody(cell: Vector2i) -> void:
+	var stream := SoundBank.ambient(WorldGen.Thing.VILA, village_level)
+	if stream == null:
+		return
+	_melody = _new_player(stream, MELODY_VOLUME_DB)
+	_melody.position = cell_to_3d(cell)
+	add_child(_melody)
+	_melody.play()
+
+
+func _stop_melody() -> void:
+	if _melody != null:
+		_melody.queue_free()
+		_melody = null
 
 
 func _nearest_sounding_cells(center: Vector2i) -> Array:
