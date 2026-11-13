@@ -94,8 +94,8 @@ func _on_focus(control: Control) -> void:
 
 
 func _play(stream: AudioStream) -> void:
-	if stream == null:
-		return
+	if stream == null or not ui_sound.is_inside_tree():
+		return  # ex.: Conectar já trocou de cena
 	ui_sound.stream = stream
 	ui_sound.play()
 
