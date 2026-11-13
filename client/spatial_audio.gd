@@ -30,6 +30,7 @@ var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
 var _listener_cell := WorldGen.NO_CELL
 var _listener_pos := Vector2.ZERO
 var _turn_tween: Tween
+var _compass_players: Array[AudioStreamPlayer3D] = []  # um por hora do relógio
 
 
 func _ready() -> void:
@@ -43,6 +44,7 @@ func _ready() -> void:
 	_camera.add_child(listener)
 	listener.make_current()
 	_setup_resonance()
+	_setup_compass()
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
@@ -87,12 +89,28 @@ func set_heading(heading: int, smooth := true) -> void:
 	_turn_tween.tween_property(_camera, "rotation:y", goal, TURN_SECONDS)
 
 
-## Clique da bússola, soando na direção para onde a criatura passou a olhar.
-## Toca antes de o ouvinte terminar de girar, então dá para ouvi-lo vir do
-## lado e chegar à frente.
+## Bússola como um relógio em volta da cabeça: cada direção tem sua hora
+## fixa (norte ao meio-dia, à frente; leste às 3, à direita; sul às 6, atrás;
+## oeste às 9, à esquerda; as colaterais nas horas entre elas). As fontes
+## giram junto com a cabeça, então a posição de cada som nunca muda: o que
+## muda é qual delas toca. Ficam sempre criadas, para o Steam Audio já
+## conhecê-las quando o clique, que é bem curto, precisar tocar.
+func _setup_compass() -> void:
+	for heading in Compass.STEPS:
+		var player := _new_player(Sounds.compass(heading), -4.0)
+		var a := Compass.angle(heading)
+		player.position = Vector3(sin(a), 0.0, -cos(a)) * COMPASS_DISTANCE * METERS_PER_CELL
+		player.name = "Bussola_" + Compass.name_of(heading)
+		_camera.add_child(player)
+		_compass_players.append(player)
+
+
 func play_compass(heading: int) -> void:
-	var point := _listener_pos + Compass.forward(heading) * COMPASS_DISTANCE
-	play_at_point(point, Sounds.compass(heading), -4.0)
+	if _compass_players.is_empty():
+		return
+	var player := _compass_players[posmod(heading, Compass.STEPS)]
+	player.stop()
+	player.play()
 
 
 ## A vila soa diferente conforme a horta cresce.
