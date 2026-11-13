@@ -46,6 +46,10 @@ func _ready() -> void:
 		Speech.say("Conectando a %s..." % Net.address)
 
 
+func _exit_tree() -> void:
+	SoundBank.clear()
+
+
 func _process(delta: float) -> void:
 	_move_cooldown = maxf(_move_cooldown - delta, 0.0)
 	if world == null:

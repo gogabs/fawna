@@ -115,7 +115,11 @@ func _new_player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
 func _setup_resonance() -> void:
 	if not ClassDB.class_exists("ResonanceRuntime") or not ClassDB.class_exists("ResonancePlayer"):
 		return
-	var config: Resource = ClassDB.instantiate("ResonanceRuntimeConfig")
+	var config := _new_resonance_object("ResonanceRuntimeConfig") as Resource
+	_player_config = _new_resonance_object("ResonancePlayerConfig") as Resource
+	if config == null or _player_config == null:
+		push_warning("Nexus Resonance incompleto; usando o áudio 3D do Godot.")
+		return
 	config.set("direct_binaural", true)
 	config.set("realtime_rays", 0)
 	config.set("pathing_enabled", false)
@@ -127,10 +131,21 @@ func _setup_resonance() -> void:
 	var listener: Node3D = ClassDB.instantiate("ResonanceListener")
 	_camera.add_child(listener)
 
-	_player_config = ClassDB.instantiate("ResonancePlayerConfig")
 	_player_config.set("reflections_enabled", false)
 	_player_config.set("simulation_occlusion_enabled", false)
 	_player_config.set("air_absorption_enabled", false)
 	_player_config.set("min_distance", METERS_PER_CELL)
 	_player_config.set("max_distance", METERS_PER_CELL * (AMBIENT_RADIUS + 2))
 	using_hrtf = true
+
+
+## Cria uma classe do Nexus Resonance pelo nome. Algumas são nativas
+## (GDExtension) e outras são scripts com class_name, como as configs.
+## Não usamos os nomes direto no código para o jogo funcionar sem o addon.
+static func _new_resonance_object(class_name_str: String) -> Object:
+	if ClassDB.class_exists(class_name_str):
+		return ClassDB.instantiate(class_name_str)
+	for entry in ProjectSettings.get_global_class_list():
+		if entry["class"] == class_name_str:
+			return load(entry["path"]).new()
+	return null

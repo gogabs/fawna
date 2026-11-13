@@ -8,6 +8,11 @@ const RATE := 22050
 static var _cache := {}
 
 
+## Libera os sons gerados (chamado ao sair da cena do jogo).
+static func clear() -> void:
+	_cache.clear()
+
+
 ## Passo: ruído curto. No bosque é abafado e grave; na pradaria, mais aberto.
 static func footstep(biome: WorldGen.Biome) -> AudioStreamWAV:
 	var key := "passo_%d" % biome
