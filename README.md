@@ -8,7 +8,12 @@ Documento de design: <https://claude.ai/artifact/YTAHWweYCcywSAJtDc1GMh>
 
 O projeto usa **Godot 4.6 ou mais novo** e **GDScript**.
 
-Abra a pasta no editor do Godot e aperte F5. No menu, digite seu nome e escolha:
+1. Instale as extensões nativas (fala e áudio 3D), que não ficam no repositório por serem grandes:
+   - Windows (PowerShell): `./tools/instalar_extensoes.ps1`
+   - Linux/macOS: `sh tools/instalar_extensoes.sh`
+2. Abra a pasta no editor do Godot e aperte F5. Se for rodar só pela linha de comando, rode antes `godot --headless --path . --import` uma vez.
+
+O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, mas fica bem melhor com elas. No menu, digite seu nome e escolha:
 
 - **Hospedar o mundo:** o seu jogo vira o servidor e você joga nele ao mesmo tempo.
 - **Entrar no mundo:** conecta a um endereço (`ip` ou `ip:porta`). A porta padrão é 7350.
@@ -48,13 +53,20 @@ Os menus usam nós nativos do Godot, que o leitor de tela lê sozinho. Os anúnc
 
 Para instalar o Prism, baixe `prismatoid-gdextension` na [página de releases](https://github.com/ethindp/prism/releases) e extraia na raiz do projeto. Ele registra o singleton `Prism`, que o jogo detecta sozinho.
 
+## Áudio espacial
+
+Árvores, água, arbustos e a vila tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
+
+Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) instalado, o som usa o HRTF binaural do Steam Audio, que deixa frente e trás claros **com fone de ouvido**. Sem ele, o jogo usa o áudio 3D do Godot (esquerda, direita e distância). O console avisa qual está em uso (`[audio] HRTF ...`).
+
 ## Estrutura
 
 ```
 autoload/   Speech (fala) e Net (modo de rede e conexão)
 shared/     Código que roda igual no servidor e no cliente (geração do mundo)
 server/     Estado autoritativo do mundo (só no servidor)
-client/     Narrador, sons provisórios e visual de depuração
+client/     Narrador, áudio espacial, sons provisórios e visual de depuração
+tools/      Scripts para baixar as extensões nativas
 scenes/     Menu (main) e jogo (game), que carrega as chamadas de rede
 tests/      Testes automáticos
 ```

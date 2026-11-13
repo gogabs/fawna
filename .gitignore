@@ -10,3 +10,7 @@ Thumbs.db
 
 # Builds
 build/
+
+# Extensões baixadas por tools/instalar_extensoes (binários grandes)
+addons/prismatoid/
+addons/nexus_resonance/

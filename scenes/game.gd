@@ -12,7 +12,7 @@ const HEARING_RADIUS := 8  # passos de outras criaturas são ouvidos até aqui
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
-@onready var listener: AudioListener2D = $View/Listener
+@onready var audio: SpatialAudio = $SpatialAudio
 
 var state: WorldState  # só no servidor
 
@@ -110,6 +110,7 @@ func welcome(world_seed: int, snapshot: Dictionary) -> void:
 	world = WorldGen.new(world_seed)
 	players = snapshot
 	view.setup(world, players, my_id)
+	audio.setup(world)
 	_update_listener()
 	var me: Dictionary = players[my_id]
 	var others := players.size() - 1
@@ -245,24 +246,16 @@ func _play(stream: AudioStream) -> void:
 	sfx.play()
 
 
-## Passos de outras criaturas soam na posição delas (esquerda/direita, perto/longe).
-## O HRTF de verdade (Steam Audio) entra num próximo passo.
+## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
 func _play_other_step(pos: Vector2i) -> void:
 	var offset := pos - _my_pos()
 	if absi(offset.x) + absi(offset.y) > HEARING_RADIUS:
 		return
-	var player := AudioStreamPlayer2D.new()
-	player.stream = SoundBank.footstep(world.biome_at(pos))
-	player.position = view.cell_to_pixel(pos)
-	player.max_distance = view.TILE * (HEARING_RADIUS + 1)
-	player.finished.connect(player.queue_free)
-	view.add_child(player)
-	player.play()
+	audio.play_at(pos, SoundBank.footstep(world.biome_at(pos)))
 
 
 func _update_listener() -> void:
-	listener.position = view.cell_to_pixel(_my_pos())
-	listener.make_current()
+	audio.move_listener(_my_pos())
 
 
 func _my_pos() -> Vector2i:
