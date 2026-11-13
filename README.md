@@ -86,15 +86,34 @@ Para instalar o Prism, baixe `prismatoid-gdextension` na [página de releases](h
 
 Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) instalado, o som usa o HRTF binaural do Steam Audio, que deixa frente e trás claros **com fone de ouvido**. Sem ele, o jogo usa o áudio 3D do Godot (esquerda, direita e distância). O console avisa qual está em uso (`[audio] HRTF ...`).
 
+## Atualizações
+
+Ao abrir, o jogo procura a release mais nova em <https://github.com/gogabs/fawna/releases>. Se houver uma versão maior que a sua (`application/config/version` no `project.godot`), aparece a tela **Atualização disponível**, com fala e navegação por teclado:
+
+- **Baixar e instalar:** baixa o zip do seu sistema, confere o tamanho e o SHA-256, fecha o jogo, troca os arquivos e abre de novo, já na versão nova. Esc cancela o download e R repete o progresso.
+- **Ouvir novidades:** lê as notas da versão.
+- **Pular:** vai para o menu principal.
+
+Sem internet, ou sem versão nova, o jogo vai direto para o menu. Rodando pelo editor do Godot a verificação é pulada (use `--testar-atualizador` para ver a tela). `--sem-atualizar` pula a verificação. Se a pasta do jogo não aceitar escrita (ex.: dentro de Arquivos de Programas), o botão abre a página da versão para baixar à mão. O registro da troca de arquivos no Windows fica em `%TEMP%\fawna-atualizacao.log`.
+
+### Publicar uma versão
+
+O workflow `.github/workflows/publicar.yml` exporta o jogo para Windows e Linux (com as extensões de fala e áudio 3D) e cria a release com `fawna-<versão>-windows.zip` e `fawna-<versão>-linux.zip`. Para rodar:
+
+- No GitHub, **Actions > Publicar versão > Run workflow**, informando a versão (ex.: `0.2.0`) e, se quiser, as novidades; ou
+- `git tag v0.2.0 && git push origin v0.2.0`.
+
+O workflow escreve a versão no `project.godot` exportado, então não precisa editar o arquivo à mão. Só entram na versão os sons que estão no repositório.
+
 ## Estrutura
 
 ```
 autoload/   Speech (fala) e Net (modo de rede e conexão)
 shared/     Código que roda igual no servidor e no cliente (mundo, recursos, receitas, obras)
 server/     Estado autoritativo do mundo e salvamento (só no servidor)
-client/     Minigames, narrador, áudio espacial, sons provisórios e visual de depuração
+client/     Minigames, narrador, áudio espacial, sons, tema dos menus e atualizador
 tools/      Scripts para baixar as extensões nativas
-scenes/     Menu (main) e jogo (game), que carrega as chamadas de rede
+scenes/     Atualizador (primeira tela), menu (main) e jogo (game), que carrega as chamadas de rede
 tests/      Testes automáticos
 ```
 
@@ -104,6 +123,7 @@ O servidor é autoritativo: os clientes só enviam intenções, como andar, e o 
 
 ```sh
 godot --headless --path . --script res://tests/test_world.gd
+godot --headless --path . --script res://tests/test_updater.gd
 ```
 
 Minigames (precisa rodar como cena):
