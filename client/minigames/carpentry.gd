@@ -34,7 +34,7 @@ func handle_input(event: InputEvent) -> void:
 		return
 	if absi(elapsed - beat * BEAT_MS) <= WINDOW_MS:
 		_hits[beat] = true
-		play(SoundBank.tok())
+		play(Sounds.tok())
 
 
 func _process(_delta: float) -> void:
@@ -45,7 +45,7 @@ func _process(_delta: float) -> void:
 		return
 	var beat_now := elapsed / BEAT_MS
 	if beat_now >= _next_beat and _next_beat < COUNT_IN + BEATS:
-		play(SoundBank.tick() if _next_beat < COUNT_IN else SoundBank.saw())
+		play(Sounds.tick() if _next_beat < COUNT_IN else Sounds.saw())
 		_next_beat += 1
 	if elapsed > (COUNT_IN + BEATS) * BEAT_MS + WINDOW_MS + 300:
 		var hits := _hits.size()

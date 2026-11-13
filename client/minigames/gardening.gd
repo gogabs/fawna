@@ -45,7 +45,7 @@ func _water() -> void:
 	_round += 1
 	if _selected == _thirsty:
 		_correct += 1
-		play(SoundBank.water_splash())
+		play(Sounds.water_splash())
 		Speech.say("Isso! A muda %d estava com sede." % (_selected + 1))
 	else:
 		Speech.say("Essa estava bem. A com sede era a %d." % (_thirsty + 1))

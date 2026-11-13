@@ -8,15 +8,19 @@ Documento de design: <https://claude.ai/artifact/YTAHWweYCcywSAJtDc1GMh>
 
 O projeto usa **Godot 4.6 ou mais novo** e **GDScript**.
 
+1. (Opcional) Copie os sons do pacote World Sounds: `./tools/copiar_sons.ps1` (veja `assets/sounds/LEIAME.md`).
 1. Instale as extensões nativas (fala e áudio 3D), que não ficam no repositório por serem grandes:
    - Windows (PowerShell): `./tools/instalar_extensoes.ps1`
    - Linux/macOS: `sh tools/instalar_extensoes.sh`
 2. Abra a pasta no editor do Godot e aperte F5. Se for rodar só pela linha de comando, rode antes `godot --headless --path . --import` uma vez.
 
-O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, mas fica bem melhor com elas. No menu, digite seu nome e escolha:
+O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, mas fica bem melhor com elas. No menu principal:
 
-- **Hospedar o mundo:** o seu jogo vira o servidor e você joga nele ao mesmo tempo.
-- **Entrar no mundo:** conecta a um endereço (`ip` ou `ip:porta`). A porta padrão é 7350.
+- **Conectar:** entra no servidor configurado (padrão da versão de testes: `26.127.36.156`, pela VPN).
+- **Opções:** muda seu nome e o servidor (`ip` ou `ip:porta`; porta padrão 7350). Fica salvo em `user://config.cfg`.
+- **Sair.**
+
+Para hospedar, rode o servidor dedicado ou `--host` pela linha de comando (abaixo).
 
 ### Pela linha de comando
 
