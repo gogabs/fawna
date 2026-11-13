@@ -16,7 +16,8 @@ const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
 ## A musiquinha de sininhos da vila (gerada por código) toca junto com os
 ## sons gravados, para a vila ter uma melodia que ajuda a achá-la.
-const MELODY_VOLUME_DB := -10.0
+const MELODY_VOLUME_DB := 0.0
+const VILLAGE_RECORDING_DB := -16.0  # sinos gravados ficam por baixo da melodia
 
 var using_hrtf := false
 var village_level := 0
@@ -101,7 +102,9 @@ func _refresh_ambient(center: Vector2i) -> void:
 		var stream := Sounds.ambient(_world.thing_at(cell), village_level)
 		if stream == null:
 			continue
-		var player := _new_player(stream, AMBIENT_VOLUME_DB)
+		var thing := _world.thing_at(cell)
+		var volume := VILLAGE_RECORDING_DB if thing == WorldGen.Thing.VILA else AMBIENT_VOLUME_DB
+		var player := _new_player(stream, volume)
 		player.position = cell_to_3d(cell)
 		add_child(player)
 		# Começa em pontos diferentes do loop para dois sons iguais não soarem em uníssono.
@@ -117,6 +120,7 @@ func _start_melody(cell: Vector2i) -> void:
 	_melody.position = cell_to_3d(cell)
 	add_child(_melody)
 	_melody.play()
+	print("[audio] musiquinha da vila tocando (nível %d)" % village_level)
 
 
 func _stop_melody() -> void:
