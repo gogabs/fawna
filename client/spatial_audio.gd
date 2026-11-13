@@ -14,9 +14,9 @@ const METERS_PER_CELL := 1.5
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
-## A musiquinha de sininhos da vila (gerada por código) toca junto com os
-## sons gravados, para a vila ter uma melodia que ajuda a achá-la.
-const MELODY_VOLUME_DB := 0.0
+## A musiquinha de ocarina da vila toca junto com os sons gravados, para a
+## vila ter uma melodia que ajuda a achá-la.
+const MELODY_VOLUME_DB := -6.0
 const VILLAGE_RECORDING_DB := -16.0  # sinos gravados ficam por baixo da melodia
 
 var using_hrtf := false
@@ -113,7 +113,7 @@ func _refresh_ambient(center: Vector2i) -> void:
 
 
 func _start_melody(cell: Vector2i) -> void:
-	var stream := SoundBank.ambient(WorldGen.Thing.VILA, village_level)
+	var stream := Sounds.village_melody(village_level)
 	if stream == null:
 		return
 	# Pelo áudio 3D do Godot: pelo HRTF a melodia gerada por código não saía.

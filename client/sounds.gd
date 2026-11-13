@@ -39,6 +39,10 @@ const MANIFEST := {
 	"amb_vila_1": ["world/loop_windchimes2.ogg"],
 	"amb_vila_2": ["world/loop_windchimes3.ogg"],
 	"amb_vila_3": ["world/loop_SpringBirds.ogg"],
+	"musica_vila_0": ["musica/vila_0.ogg"],
+	"musica_vila_1": ["musica/vila_1.ogg"],
+	"musica_vila_2": ["musica/vila_2.ogg"],
+	"musica_vila_3": ["musica/vila_3.ogg"],
 	"fundo_bosque": ["world/loop_forest_day1.ogg"],
 	"fundo_pradaria": ["world/loop_prairie_day.ogg"],
 }
@@ -135,6 +139,16 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
 	var stream := _pick(key, func(): return null, false)
 	if stream == null:
 		return SoundBank.ambient(thing, level)
+	_make_loop(stream)
+	return stream
+
+
+## Musiquinha de ocarina da vila (tools/musica_vila.py), que cresce com a
+## horta. Sem os arquivos, usa os sininhos gerados por código.
+static func village_melody(level: int) -> AudioStream:
+	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
+	if stream == null:
+		return SoundBank.ambient(WorldGen.Thing.VILA, level)
 	_make_loop(stream)
 	return stream
 
