@@ -1,0 +1,19 @@
+==================================================
+World Sounds Audio Pack
+==================================================
+
+These sound effects and music tracks were created by Willy Wonka 
+for game projects that want natural sounding audio effects and music.
+
+To the extent possible under law, the creator has waived all copyright 
+and related or neighboring rights to this audio pack. 
+
+This work is published from the United States of America under the 
+Creative Commons CC0 1.0 Universal Public Domain Dedication.
+
+You can copy, modify, distribute, and perform the work, even for commercial 
+purposes, all without asking permission.
+
+---
+To view a copy of this license, visit:
+https://creativecommons.org/publicdomain/zero/1.0/
