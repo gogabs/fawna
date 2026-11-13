@@ -10,8 +10,8 @@ extends RefCounted
 const DIR := "res://assets/sounds/"
 
 ## nome lógico -> arquivos (relativos a DIR). Os da pasta world/ vêm do
-## "World Sounds Audio Pack" (CC0) do Gabs; ficam fora do git por enquanto e
-## são copiados por tools/copiar_sons.ps1.
+## "World Sounds Audio Pack" (CC0); para adicionar mais, inclua aqui e rode
+## tools/copiar_sons.ps1.
 const MANIFEST := {
 	"passo_pradaria": ["world/grassstep1.ogg", "world/grassstep2.ogg", "world/grassstep3.ogg", "world/grassstep4.ogg", "world/grassstep5.ogg"],
 	"passo_bosque": ["world/leavesstep1.ogg", "world/leavesstep2.ogg", "world/leavesstep3.ogg", "world/leavesstep4.ogg", "world/leavesstep5.ogg"],

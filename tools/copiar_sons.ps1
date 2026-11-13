@@ -15,6 +15,10 @@ New-Item -ItemType Directory -Force -Path $destino | Out-Null
 $manifesto = Get-Content -Raw -Encoding UTF8 (Join-Path $raiz "client/sounds.gd")
 $arquivos = [regex]::Matches($manifesto, '"world/([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
 
+# Licença do pacote vai junto.
+$licenca = Join-Path $Origem "license.txt"
+if (Test-Path -LiteralPath $licenca) { Copy-Item -LiteralPath $licenca -Destination $destino -Force }
+
 $faltando = @()
 foreach ($nome in $arquivos) {
     $origemArquivo = Join-Path $Origem $nome

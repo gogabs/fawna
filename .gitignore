@@ -14,7 +14,3 @@ build/
 # Extensões baixadas por tools/instalar_extensoes (binários grandes)
 addons/prismatoid/
 addons/nexus_resonance/
-
-# Sons do World Sounds Audio Pack (copiados por tools/copiar_sons.ps1;
-# fora do repositório público até a origem do pacote ser confirmada)
-assets/sounds/world/
