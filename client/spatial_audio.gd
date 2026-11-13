@@ -116,7 +116,8 @@ func _start_melody(cell: Vector2i) -> void:
 	var stream := SoundBank.ambient(WorldGen.Thing.VILA, village_level)
 	if stream == null:
 		return
-	_melody = _new_player(stream, MELODY_VOLUME_DB)
+	# Pelo áudio 3D do Godot: pelo HRTF a melodia gerada por código não saía.
+	_melody = _new_player(stream, MELODY_VOLUME_DB, false)
 	_melody.position = cell_to_3d(cell)
 	add_child(_melody)
 	_melody.play()
@@ -141,9 +142,9 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	return found.slice(0, MAX_AMBIENT_SOURCES)
 
 
-func _new_player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
+func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioStreamPlayer3D:
 	var player: AudioStreamPlayer3D
-	if using_hrtf:
+	if using_hrtf and hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
 	else:
