@@ -1,0 +1,70 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.13, 0.22, 0.16, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Form" type="VBoxContainer" parent="Center"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Form"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 40
+text = "Fawna"
+horizontal_alignment = 1
+
+[node name="NameLabel" type="Label" parent="Center/Form"]
+layout_mode = 2
+text = "Seu nome"
+
+[node name="NameEdit" type="LineEdit" parent="Center/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+accessibility_name = "Seu nome"
+placeholder_text = "Como sua criatura se chama?"
+
+[node name="AddressLabel" type="Label" parent="Center/Form"]
+layout_mode = 2
+text = "Endereço do servidor"
+
+[node name="AddressEdit" type="LineEdit" parent="Center/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+accessibility_name = "Endereço do servidor"
+placeholder_text = "127.0.0.1 ou ip:porta"
+
+[node name="JoinButton" type="Button" parent="Center/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Entrar no mundo"
+
+[node name="HostButton" type="Button" parent="Center/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hospedar o mundo"

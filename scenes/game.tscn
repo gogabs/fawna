@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://client/game_view.gd" id="2_view"]
+
+[node name="Game" type="Node"]
+script = ExtResource("1_game")
+
+[node name="View" type="Node2D" parent="."]
+position = Vector2(160, 0)
+script = ExtResource("2_view")
+
+[node name="Listener" type="AudioListener2D" parent="View"]
+
+[node name="Sfx" type="AudioStreamPlayer" parent="."]
