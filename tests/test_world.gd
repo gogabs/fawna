@@ -11,6 +11,8 @@ func _init() -> void:
 	_test_has_both_biomes()
 	_test_narrator_direction()
 	_test_world_state_moves()
+	_test_collision()
+	_test_compass()
 	_test_collect_craft_contribute()
 	_test_save_roundtrip()
 	if _failures == 0:
@@ -66,13 +68,48 @@ func _test_narrator_direction() -> void:
 func _test_world_state_moves() -> void:
 	var state := WorldState.new(42)
 	var pos := state.add_player(10, "Lua")
-	_check(state.world.is_passable(pos), "o ponto de entrada deveria ser livre")
-	var result := state.try_move(10, Vector2i(5, 5))
-	_check(not result["ok"], "movimento que não é de um passo deveria ser recusado")
-	result = state.try_move(99, Vector2i.UP)
+	_check(state.world.is_free(pos), "o ponto de entrada deveria ser livre")
+	_check(pos.distance_to(WorldGen.village_point()) < 2.0, "entra perto da vila")
+	var t := 100000
+	var result := state.move_to(10, pos + Vector2(6, 0), t)
+	_check(not result["ok"] and result["pos"] == pos, "teletransporte deveria ser recusado")
+	result = state.move_to(99, pos, t)
 	_check(not result["ok"], "jogador desconhecido não deveria andar")
-	result = state.try_move(10, Vector2i.UP)
-	_check(result["ok"], "andar em direção à vila deveria funcionar")
+	result = state.move_to(10, pos + Vector2(0, -0.15), t + 100)
+	_check(result["ok"], "andar um pouquinho em direção à vila deveria funcionar")
+	_check(state.near_village(10) == (state.players[10]["pos"].distance_to(WorldGen.village_point()) <= WorldState.VILLAGE_REACH), "perto da vila")
+	state.players[10]["pos"] = WorldGen.village_point()
+	_check(state.near_village(10), "no centro da vila")
+
+
+func _test_collision() -> void:
+	var world := WorldGen.new(42)
+	var tree := WorldGen.NO_CELL
+	for y in WorldGen.SIZE:
+		for x in WorldGen.SIZE:
+			if tree == WorldGen.NO_CELL and world.thing_at(Vector2i(x, y)) == WorldGen.Thing.ARVORE:
+				tree = Vector2i(x, y)
+	_check(tree != WorldGen.NO_CELL, "deveria haver uma árvore")
+	_check(not world.is_free(WorldGen.cell_center(tree)), "não dá para ficar dentro da árvore")
+	_check(world.blocker_at(WorldGen.cell_center(tree)) == tree, "o obstáculo é a árvore")
+	_check(not world.is_free(Vector2(0.1, 5.5)), "a borda do mapa bloqueia")
+	_check(world.is_free(WorldGen.village_point()), "a vila é livre")
+	_check(WorldGen.cell_of(Vector2(3.99, 4.0)) == Vector2i(3, 4), "casa de um ponto")
+
+
+func _test_compass() -> void:
+	_check(Compass.forward(0).is_equal_approx(Vector2(0, -1)), "norte é y negativo")
+	_check(Compass.forward(2).is_equal_approx(Vector2(1, 0)), "leste é x positivo")
+	_check(Compass.right(0).is_equal_approx(Vector2(1, 0)), "olhando para o norte, a direita é leste")
+	_check(Compass.name_of(-1) == "noroeste", "girar à esquerda do norte dá noroeste")
+	_check(Compass.relative(Vector2(0, -3), 0) == "à frente", "à frente")
+	_check(Compass.relative(Vector2(0, -3), 2) == "à esquerda", "olhando para leste, o norte fica à esquerda")
+	_check(Compass.relative(Vector2(2, 2), 0) == "atrás e à direita", "sudeste olhando para o norte")
+	_check(Compass.relative(Vector2(-1, 0), 4) == "à direita", "olhando para o sul, o oeste fica à direita")
+	_check(Compass.describe(Vector2(0, -2), 0) == "à frente, 3 metros", "descreve em metros")
+	_check(Sounds.compass_kind(0) == "norte" and Sounds.compass_kind(4) == "sul", "cliques de norte e sul")
+	_check(Sounds.compass_kind(2) == Sounds.compass_kind(6), "leste e oeste soam igual")
+	_check(Sounds.compass_kind(1) == "colateral" and Sounds.compass_kind(7) == "colateral", "colaterais abafados")
 
 
 func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
@@ -93,7 +130,7 @@ func _test_collect_craft_contribute() -> void:
 	state.add_player(1, "Lua")
 	var spot := _find_next_to(state, WorldGen.Thing.ARVORE)
 	_check(not spot.is_empty(), "deveria haver uma árvore acessível")
-	state.players[1]["pos"] = spot[0]
+	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
 	var far: Vector2i = spot[1] + Vector2i(5, 5)
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")
 	_check(state.collect(1, spot[1])["ok"], "deveria coletar madeira ao lado da árvore")

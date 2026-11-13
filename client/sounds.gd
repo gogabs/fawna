@@ -39,6 +39,10 @@ const MANIFEST := {
 	"amb_vila_1": ["world/loop_windchimes2.ogg"],
 	"amb_vila_2": ["world/loop_windchimes3.ogg"],
 	"amb_vila_3": ["world/loop_SpringBirds.ogg"],
+	"bussola_norte": ["bussola/norte.ogg"],
+	"bussola_sul": ["bussola/sul.ogg"],
+	"bussola_lateral": ["bussola/lateral.ogg"],
+	"bussola_colateral": ["bussola/colateral.ogg"],
 	"musica_vila_0": ["musica/vila_0.ogg"],
 	"musica_vila_1": ["musica/vila_1.ogg"],
 	"musica_vila_2": ["musica/vila_2.ogg"],
@@ -95,6 +99,24 @@ static func tok() -> AudioStream:
 
 static func water_splash() -> AudioStream:
 	return _pick("regar", SoundBank.water_splash)
+
+
+## Clique da bússola ao girar (tools/sons_bussola.py): agudo no norte, grave
+## no sul, igual para leste e oeste e abafado nos pontos colaterais.
+static func compass(heading: int) -> AudioStream:
+	var kind := compass_kind(heading)
+	return _pick("bussola_" + kind, func(): return SoundBank.compass(kind))
+
+
+static func compass_kind(heading: int) -> String:
+	match posmod(heading, Compass.STEPS):
+		0:
+			return "norte"
+		4:
+			return "sul"
+		2, 6:
+			return "lateral"
+	return "colateral"
 
 
 static func ui_move() -> AudioStream:

@@ -19,6 +19,7 @@ const THING_COLORS := {
 var _world: WorldGen
 var _players := {}
 var _my_id := 0
+var heading := 0  # para onde a criatura local olha
 
 
 func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
@@ -28,8 +29,8 @@ func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
 	queue_redraw()
 
 
-func cell_to_pixel(cell: Vector2i) -> Vector2:
-	return Vector2(cell) * TILE + Vector2.ONE * TILE * 0.5
+func point_to_pixel(point: Vector2) -> Vector2:
+	return point * TILE
 
 
 func _draw() -> void:
@@ -45,4 +46,7 @@ func _draw() -> void:
 				draw_rect(rect.grow(-4), THING_COLORS[thing])
 	for id in _players:
 		var color := Color.WHITE if id == _my_id else Color("ffb38a")
-		draw_circle(cell_to_pixel(_players[id]["pos"]), TILE * 0.35, color)
+		var center := point_to_pixel(_players[id]["pos"])
+		draw_circle(center, TILE * WorldGen.PLAYER_RADIUS, color)
+		if id == _my_id:
+			draw_line(center, center + Compass.forward(heading) * TILE * 0.7, Color("e8792b"), 3.0)

@@ -2,15 +2,17 @@ class_name SpatialAudio
 extends Node3D
 ## Áudio espacial do mundo.
 ##
-## O mundo é uma grade 2D, mas o som é posicionado em 3D: a casa (x, y) vira o
-## ponto (x, 0, y) * METERS_PER_CELL. A pessoa ouve sempre virada para o norte
-## (-Z), então "à esquerda" é oeste e "atrás" é sul.
+## O mundo é 2D, mas o som é posicionado em 3D: o ponto (x, y) do mundo vira
+## (x, 0, y) * METERS_PER_CELL. O ouvinte gira junto com a criatura: olhando
+## para o norte, ele encara -Z; cada giro de 45° vira o ouvinte também.
 ##
 ## Com o Nexus Resonance (Steam Audio) instalado, os sons usam HRTF binaural,
 ## o que deixa frente e trás claros num fone de ouvido. Sem ele, cai no
 ## AudioStreamPlayer3D do Godot (só esquerda/direita e distância).
 
-const METERS_PER_CELL := 1.5
+const METERS_PER_CELL := WorldGen.METERS_PER_CELL
+const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâneo
+const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
@@ -22,7 +24,9 @@ var _world: WorldGen
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
-var _listener_cell := Vector2i.ZERO
+var _listener_cell := WorldGen.NO_CELL
+var _listener_pos := Vector2.ZERO
+var _turn_tween: Tween
 
 
 func _ready() -> void:
@@ -43,18 +47,49 @@ func setup(world: WorldGen) -> void:
 	_world = world
 
 
+static func point_to_3d(point: Vector2) -> Vector3:
+	return Vector3(point.x, 0.0, point.y) * METERS_PER_CELL
+
+
+## Centro da casa, em 3D.
 static func cell_to_3d(cell: Vector2i) -> Vector3:
-	return Vector3(cell.x, 0.0, cell.y) * METERS_PER_CELL
+	return point_to_3d(WorldGen.cell_center(cell))
 
 
-## Move o ouvinte e atualiza os sons contínuos ao redor.
-func move_listener(cell: Vector2i) -> void:
+## Move o ouvinte e, ao trocar de casa, atualiza os sons contínuos ao redor.
+func move_listener(pos: Vector2) -> void:
 	if _camera == null:
 		return
-	_listener_cell = cell
-	_camera.position = cell_to_3d(cell) + Vector3.UP * 0.2
-	if _world != null:
+	_listener_pos = pos
+	_camera.position = point_to_3d(pos) + Vector3.UP * 0.2
+	var cell := WorldGen.cell_of(pos)
+	if cell != _listener_cell and _world != null:
+		_listener_cell = cell
 		_refresh_ambient(cell)
+
+
+## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
+func set_heading(heading: int, smooth := true) -> void:
+	if _camera == null:
+		return
+	var target := -Compass.angle(heading)
+	var current := _camera.rotation.y
+	var goal := current + wrapf(target - current, -PI, PI)
+	if _turn_tween != null:
+		_turn_tween.kill()
+	if not smooth:
+		_camera.rotation.y = goal
+		return
+	_turn_tween = create_tween()
+	_turn_tween.tween_property(_camera, "rotation:y", goal, TURN_SECONDS)
+
+
+## Clique da bússola, soando na direção para onde a criatura passou a olhar.
+## Toca antes de o ouvinte terminar de girar, então dá para ouvi-lo vir do
+## lado e chegar à frente.
+func play_compass(heading: int) -> void:
+	var point := _listener_pos + Compass.forward(heading) * COMPASS_DISTANCE
+	play_at_point(point, Sounds.compass(heading), -4.0)
 
 
 ## A vila soa diferente conforme a horta cresce.
@@ -66,14 +101,21 @@ func set_village_level(level: int) -> void:
 	if _ambient.has(village):
 		_ambient[village].queue_free()
 		_ambient.erase(village)
-	if _camera != null and _world != null:
+	if _camera != null and _world != null and _listener_cell != WorldGen.NO_CELL:
 		_refresh_ambient(_listener_cell)
 
 
 ## Toca um som curto numa casa do mundo (ex.: passo de outra criatura).
 func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
+	play_at_point(WorldGen.cell_center(cell), stream, volume_db)
+
+
+## Toca um som curto num ponto do mundo (ex.: esbarrão, passos de alguém).
+func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0) -> void:
+	if _camera == null or stream == null:
+		return
 	var player := _new_player(stream, volume_db)
-	player.position = cell_to_3d(cell)
+	player.position = point_to_3d(point)
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.play()

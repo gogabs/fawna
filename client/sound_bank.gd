@@ -50,6 +50,15 @@ static func saw() -> AudioStreamWAV:
 	return _cache["saw"]
 
 
+## Clique da bússola (só se faltarem os arquivos de assets/sounds/bussola).
+static func compass(kind: String) -> AudioStreamWAV:
+	var key := "bussola_" + kind
+	if not _cache.has(key):
+		var freq: float = {"norte": 2200.0, "sul": 520.0}.get(kind, 1100.0)
+		_cache[key] = _tone([freq], 0.06, 0.3 if kind == "colateral" else 0.5)
+	return _cache[key]
+
+
 ## Acerto no ritmo.
 static func tok() -> AudioStreamWAV:
 	if not _cache.has("tok"):
