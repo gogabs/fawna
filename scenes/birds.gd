@@ -12,8 +12,8 @@ const REACH := Aviary.HEARING  # casas: até onde um pássaro é ouvido
 const ARC_HEIGHT := 1.6  # metros: o voo sobe um pouco no meio do caminho
 ## Volumes de origem. Os pássaros ficam longe, então a distância já os deixa
 ## bem baixinhos; cantos discretos, abaixo da fala. BIRDS_DB baixa todos de
-## uma vez (o Gabs achou os pássaros altos na 0.3.0).
-const BIRDS_DB := -6.0
+## uma vez (o Gabs achou os pássaros altos na 0.3.0, e ainda altos com -6).
+const BIRDS_DB := -12.0
 const SONG_DB := {
 	Aviary.Species.SABIA: -9.0 + BIRDS_DB, Aviary.Species.CARRICA: -17.0 + BIRDS_DB, Aviary.Species.ROLINHA: -11.0 + BIRDS_DB,
 	Aviary.Species.CORVO: -10.0 + BIRDS_DB, Aviary.Species.CORUJA: -12.0 + BIRDS_DB, Aviary.Species.GAVIAO: -9.0 + BIRDS_DB,
