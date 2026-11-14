@@ -57,6 +57,13 @@ const MANIFEST := {
 	"mov_farfalhar": ["foley/farfalhar_1.ogg", "foley/farfalhar_2.ogg", "foley/farfalhar_3.ogg", "foley/farfalhar_4.ogg", "foley/farfalhar_5.ogg", "foley/farfalhar_6.ogg", "foley/farfalhar_7.ogg"],
 	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg", "foley/tornozeleira_1.ogg", "foley/tornozeleira_2.ogg", "foley/tornozeleira_3.ogg", "foley/tornozeleira_4.ogg", "foley/tornozeleira_5.ogg", "foley/tornozeleira_6.ogg", "foley/tornozeleira_7.ogg", "foley/tornozeleira_8.ogg", "foley/tornozeleira_9.ogg", "foley/tornozeleira_10.ogg"],
 	"caminheiro_batida": ["caminheiro/batida.ogg"],
+	# Bolsa, equipamento e machado. Sem os arquivos, sons gerados por código.
+	"machado_golpe": ["ferramentas/machado_golpe_1.ogg", "ferramentas/machado_golpe_2.ogg", "ferramentas/machado_golpe_3.ogg"],
+	"machado_impacto": ["ferramentas/machado_impacto_1.ogg", "ferramentas/machado_impacto_2.ogg", "ferramentas/machado_impacto_3.ogg"],
+	"machado_quebra": ["ferramentas/machado_quebra.ogg"],
+	"empunhar": ["ferramentas/empunhar.ogg"],
+	"guardar": ["ferramentas/guardar.ogg"],
+	"bolsa_abrir": ["ferramentas/bolsa_abrir.ogg"],
 }
 
 ## Início e parada do movimento: true troca os sintéticos pelos farfalhares
@@ -164,6 +171,33 @@ static func heartbeat() -> AudioStream:
 
 static func woosh() -> AudioStream:
 	return _pick("caminheiro_woosh", SoundBank.woosh)
+
+
+## Machado: o golpe no ar, a lâmina batendo (no bambu, por exemplo) e o
+## último golpe, quando a coisa cede.
+static func axe_swing() -> AudioStream:
+	return _pick("machado_golpe", SoundBank.axe_swing)
+
+
+static func axe_hit() -> AudioStream:
+	return _pick("machado_impacto", SoundBank.axe_hit)
+
+
+static func axe_break() -> AudioStream:
+	return _pick("machado_quebra", SoundBank.axe_break)
+
+
+## Tirar um item da bolsa para as mãos, e guardar de volta.
+static func wield() -> AudioStream:
+	return _pick("empunhar", SoundBank.wield)
+
+
+static func stow() -> AudioStream:
+	return _pick("guardar", SoundBank.stow)
+
+
+static func bag_open() -> AudioStream:
+	return _pick("bolsa_abrir", func(): return _pick("ui_abrir", SoundBank.stow))
 
 
 static func ui_move() -> AudioStream:

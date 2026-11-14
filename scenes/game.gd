@@ -52,6 +52,7 @@ const WIND_OPEN_DB := -12.0
 const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
 const WIND_LAKE_RADIUS := 4
+const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
@@ -70,7 +71,9 @@ var _save_timer := 0.0
 var world: WorldGen
 var my_id := 0
 var players := {}  # id -> { "name", "pos": Vector2 }
-var inventory := {}
+var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
+var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
+var _swing_cooldown := 0.0
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
@@ -137,6 +140,7 @@ func _process(delta: float) -> void:
 	_turn_cooldown = maxf(_turn_cooldown - delta, 0.0)
 	_bump_sound_cooldown = maxf(_bump_sound_cooldown - delta, 0.0)
 	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
+	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
 	var before := _pos
 	_walk(_wanted_motion() * delta)
 	_step_clock += delta
@@ -174,6 +178,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_interact()
 	elif event.is_action("inventario"):
 		_say_inventory()
+	elif event.is_action("golpear"):
+		_swing()
 	elif event.is_action("ajuda"):
 		_say_help()
 	elif event.is_action("ouvir_arredores"):
@@ -204,6 +210,7 @@ func request_join(player_name: String) -> void:
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
+	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	for other_id in state.players:
 		if other_id != id:
 			player_joined.rpc_id(other_id, id, accepted_name, pos)
@@ -235,6 +242,54 @@ func request_collect(cell: Vector2i) -> void:
 				player_collected.rpc_id(other_id, id, result["item"])
 	elif state.players.has(id):
 		action_failed.rpc_id(id, result["reason"], result.get("item", ""))
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_equip(item: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.equip(id, item)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, result["reason"], result.get("item", ""))
+		return
+	_dirty = true
+	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "empunhou", item)
+	_tell_others_handled(id, "empunhou")
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_stow() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.stow(id)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, result["reason"], "")
+		return
+	_dirty = true
+	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "guardou", result["item"])
+	_tell_others_handled(id, "guardou")
+
+
+## Golpe com o que estiver nas mãos. Por enquanto só soa (para quem está
+## perto ouvir); o efeito do golpe no bambu entra com os recursos novos.
+@rpc("any_peer", "call_local", "reliable")
+func request_swing() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	if state.wielding(id).is_empty():
+		return
+	_tell_others_handled(id, "golpeou")
+
+
+func _tell_others_handled(id: int, verb: String) -> void:
+	for other_id in state.players:
+		if other_id != id:
+			player_handled.rpc_id(other_id, id, verb)
 
 
 # --- Rede: avisos do servidor (executados nos clientes) ----------------------
@@ -280,6 +335,32 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String) ->
 	Speech.say("%s Agora tem %d." % [what, total])
 
 
+## A bolsa e as mãos mudaram. verb: "empunhou", "guardou" ou "" (só
+## sincroniza, ex.: ao entrar no mundo).
+@rpc("authority", "call_local", "reliable")
+func equipment_changed(new_bag: Dictionary, new_wielded: String, verb: String, item: String) -> void:
+	if world == null:
+		return
+	inventory = new_bag
+	wielded = new_wielded
+	match verb:
+		"empunhou":
+			_play(Sounds.wield())
+			Speech.say("Você empunha o %s. %s" % [Bag.spoken_name(item), Bag.WIELDABLE.get(item, "")])
+		"guardou":
+			_play(Sounds.stow())
+			Speech.say("Você guardou o %s na bolsa." % Bag.spoken_name(item))
+
+
+## Outra criatura empunhou, guardou ou golpeou: o som sai de onde ela está.
+@rpc("authority", "call_local", "reliable")
+func player_handled(id: int, verb: String) -> void:
+	if world == null or not players.has(id) or id == my_id:
+		return
+	var stream: AudioStream = {"empunhou": Sounds.wield(), "guardou": Sounds.stow(), "golpeou": Sounds.axe_swing()}.get(verb)
+	_play_other(players[id]["pos"], stream)
+
+
 @rpc("authority", "call_local", "reliable")
 func action_failed(reason: String, detail: String) -> void:
 	if world == null:
@@ -289,6 +370,12 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Não há nada para coletar aqui. Chegue bem perto de uma árvore, de um arbusto ou da água.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
+		"nao_tem":
+			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
+		"nao_empunha":
+			Speech.say("Não dá para empunhar %s." % Bag.spoken_name(detail))
+		"maos_livres":
+			Speech.say("Suas mãos já estão livres.")
 		_:
 			pass  # "devagar", "longe": ignora em silêncio
 
@@ -606,14 +693,30 @@ func _collect_target() -> Vector2i:
 
 
 func _say_inventory() -> void:
-	if Economy.items_text(inventory) == "nada":
-		Speech.say("Você ainda não tem nada. Aperte Espaço perto de árvores, arbustos ou água para coletar.")
+	var hands := "Mãos livres." if wielded.is_empty() else "Nas mãos: %s." % Bag.spoken_name(wielded)
+	var labels: PackedStringArray = []
+	for entry: Array in Bag.entries(inventory):
+		labels.append(Bag.entry_label(entry[0], entry[1]))
+	if labels.is_empty():
+		Speech.say("Bolsa vazia. %s" % hands)
 	else:
-		Speech.say("Você tem %s." % Economy.items_text(inventory))
+		Speech.say("Na bolsa: %s. %s" % ["; ".join(labels), hands])
+
+
+## J: golpeia com o que estiver nas mãos (por enquanto, só o machado).
+func _swing() -> void:
+	if wielded.is_empty():
+		Speech.say("Suas mãos estão livres. Empunhe o machado pela Bolsa, no menu das setas.")
+		return
+	if _swing_cooldown > 0.0:
+		return
+	_swing_cooldown = SWING_COOLDOWN
+	_play(Sounds.axe_swing(), true)
+	request_swing.rpc_id(1)
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -759,7 +862,52 @@ func _setup_caminheiro() -> void:
 
 
 func _menu_root() -> Array:
-	return [{"label": "Caminheiro", "open": _caminheiro_items}]
+	return [
+		{"label": "Caminheiro", "open": _caminheiro_items},
+		{"label": "Bolsa", "open": _bag_items, "empty": "vazia", "open_sound": "bolsa"},
+		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
+	]
+
+
+## Itens da bolsa, agrupados ("Argila, 2"). Os que têm ação abrem um
+## submenu (o machado: Empunhar); os outros só repetem o nome.
+func _bag_items() -> Array:
+	var items := []
+	for entry: Array in Bag.entries(inventory):
+		var item: String = entry[0]
+		var label := Bag.entry_label(item, entry[1])
+		if Bag.can_wield(item):
+			items.append({"label": label, "open": _bag_item_actions.bind(item)})
+		else:
+			items.append({"label": label, "info": label})
+	return items
+
+
+func _bag_item_actions(item: String) -> Array:
+	return [{"label": "Empunhar", "run": _equip.bind(item)}]
+
+
+## O que está nas mãos, com o botão Guardar.
+func _equipment_items() -> Array:
+	if wielded.is_empty():
+		return []
+	return [{"label": Bag.display_name(wielded), "open": _equipment_actions}]
+
+
+func _equipment_actions() -> Array:
+	return [{"label": "Guardar", "run": _stow}]
+
+
+## Empunhar e guardar passam pelo servidor; a resposta (equipment_changed)
+## é que fala e toca o som.
+func _equip(item: String) -> String:
+	request_equip.rpc_id(1, item)
+	return ""
+
+
+func _stow() -> String:
+	request_stow.rpc_id(1)
+	return ""
 
 
 ## Destinos do Caminheiro. Por enquanto, só a Origem.
@@ -799,6 +947,8 @@ func _on_menu_sound(kind: String) -> void:
 			_play(Sounds.ui_move())
 		"abrir":
 			_play(Sounds.ui_open())
+		"bolsa":
+			_play(Sounds.bag_open())
 		"confirmar":
 			_play(Sounds.ui_confirm())
 		"fechar":
@@ -847,6 +997,12 @@ func _run_auto_commands() -> void:
 				_interact()
 			"INV":
 				_say_inventory()
+			"EMPUNHAR":
+				_equip("machado")
+			"GUARDAR":
+				_stow()
+			"GOLPEAR":
+				_swing()
 			"MENU_CIMA", "MENU_BAIXO", "MENU_ESQUERDA", "MENU_DIREITA":
 				Speech.say(_menu.press(command.trim_prefix("MENU_").to_lower()))
 			"SEGUIR":  # segue o Caminheiro até ele se apagar (ou desistir)

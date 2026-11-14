@@ -197,6 +197,54 @@ static func woosh() -> AudioStreamWAV:
 	return _cache["woosh"]
 
 
+## Machado cortando o ar: um sopro curto.
+static func axe_swing() -> AudioStreamWAV:
+	if not _cache.has("machado_golpe"):
+		_cache["machado_golpe"] = _noise_burst(0.22, 0.75, 0.6, 4242)
+	return _cache["machado_golpe"]
+
+
+## Lâmina batendo em algo duro: estalo seco com um corpo grave.
+static func axe_hit() -> AudioStreamWAV:
+	if not _cache.has("machado_impacto"):
+		var noise := _noise_burst(0.12, 0.3, 0.7, 515)
+		var body := _tone([180.0], 0.12, 0.5)
+		_cache["machado_impacto"] = _mix(noise, body)
+	return _cache["machado_impacto"]
+
+
+## A coisa cede no último golpe: um estalo longo que se arrasta.
+static func axe_break() -> AudioStreamWAV:
+	if not _cache.has("machado_quebra"):
+		_cache["machado_quebra"] = _noise_burst(0.6, 0.55, 0.7, 616)
+	return _cache["machado_quebra"]
+
+
+## Pegar o machado da bolsa (couro e madeira) e guardar de volta.
+static func wield() -> AudioStreamWAV:
+	if not _cache.has("empunhar"):
+		_cache["empunhar"] = _noise_burst(0.18, 0.5, 0.45, 717)
+	return _cache["empunhar"]
+
+
+static func stow() -> AudioStreamWAV:
+	if not _cache.has("guardar"):
+		_cache["guardar"] = _noise_burst(0.25, 0.8, 0.45, 818)
+	return _cache["guardar"]
+
+
+## Soma dois sons gerados (mono, mesma taxa).
+static func _mix(a: AudioStreamWAV, b: AudioStreamWAV) -> AudioStreamWAV:
+	var count := maxi(a.data.size(), b.data.size()) / 2
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	for i in count:
+		var sa := a.data.decode_s16(i * 2) / 32767.0 if i * 2 < a.data.size() else 0.0
+		var sb := b.data.decode_s16(i * 2) / 32767.0 if i * 2 < b.data.size() else 0.0
+		samples[i] = sa + sb
+	return _to_wav(samples)
+
+
 static func _filtered_noise(count: int, smooth: float, volume: float, rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var samples := PackedFloat32Array()
 	samples.resize(count)
