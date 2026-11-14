@@ -28,7 +28,13 @@ static func direction(offset: Vector2i) -> String:
 
 
 static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
-	var biome: String = WorldGen.BIOME_IN[world.biome_at(WorldGen.cell_of(pos))]
+	var cell := WorldGen.cell_of(pos)
+	var biome: String = WorldGen.BIOME_IN[world.biome_at(cell)]
+	match world.thing_at(cell):
+		WorldGen.Thing.TRILHA:
+			biome = "numa trilha, " + biome
+		WorldGen.Thing.PONTE:
+			biome = "numa ponte, " + biome
 	var facing := "olhando para o %s" % Compass.name_of(heading)
 	var to_village := WorldGen.village_point() - pos
 	if to_village.length() <= WorldState.VILLAGE_REACH:
@@ -37,7 +43,8 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 
 
 ## Lista o que está por perto, do mais próximo ao mais distante, em relação
-## a para onde a criatura olha.
+## a para onde a criatura olha. De cada tipo de coisa, só a mais próxima; e,
+## se não estiver numa trilha, onde fica a trilha mais próxima.
 static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array) -> String:
 	var found := []
 	var here := WorldGen.cell_of(pos)
@@ -46,18 +53,26 @@ static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Ar
 		for dx in range(-r, r + 1):
 			var cell := here + Vector2i(dx, dy)
 			var thing := world.thing_at(cell)
-			if thing != WorldGen.Thing.NADA:
+			if not WorldGen.GROUND.has(thing):
 				found.append({"name": WorldGen.THING_NAMES[thing], "offset": WorldGen.cell_center(cell) - pos})
 	for other in others:
 		var offset: Vector2 = other["pos"] - pos
 		if offset.length() <= r:
 			found.append({"name": other["name"], "offset": offset})
-	if found.is_empty():
-		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(here)]
 	found.sort_custom(func(a, b): return a["offset"].length() < b["offset"].length())
 	var lines: PackedStringArray = []
-	for item in found.slice(0, SURROUNDINGS_MAX_ITEMS):
+	var seen := {}
+	for item in found:
+		if seen.has(item["name"]) or lines.size() >= SURROUNDINGS_MAX_ITEMS:
+			continue
+		seen[item["name"]] = true
 		lines.append("%s, %s" % [item["name"], Compass.describe(item["offset"], heading)])
+	if not world.is_trail(here):
+		var trail := world.nearest_trail(pos)
+		if trail != WorldGen.NO_CELL:
+			lines.append("trilha mais próxima, %s" % Compass.describe(WorldGen.cell_center(trail) - pos, heading))
+	if lines.is_empty():
+		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(here)]
 	return ". ".join(lines) + "."
 
 

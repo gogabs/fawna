@@ -18,7 +18,7 @@ const SCENE_CUSTOM_GODOT_PHYSICS := 3  # ResonanceRuntimeConfig.scene_type
 const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
-const AMBIENT_VOLUME_DB := -8.0
+const AMBIENT_VOLUME_DB := -12.0
 
 var using_hrtf := false
 var village_level := 0
@@ -168,7 +168,11 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var cell := center + Vector2i(dx, dy)
-			if Sounds.has_ambient(_world.thing_at(cell)):
+			var thing := _world.thing_at(cell)
+			# A lagoa ocupa muitas casas: uma fonte a cada 3, para não abafar o resto.
+			if thing == WorldGen.Thing.LAGO and (posmod(cell.x, 3) != 0 or posmod(cell.y, 3) != 0):
+				continue
+			if Sounds.has_ambient(thing):
 				found.append(cell)
 	found.sort_custom(func(a, b): return (a - center).length_squared() < (b - center).length_squared())
 	return found.slice(0, MAX_AMBIENT_SOURCES)

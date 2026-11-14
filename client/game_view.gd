@@ -5,13 +5,19 @@ extends Node2D
 
 const TILE := 20
 
+const VIEW_CELLS := Vector2i(48, 32)  # quantas casas cabem na tela, em volta da criatura
+
 const BIOME_COLORS := {
 	WorldGen.Biome.BOSQUE: Color("2f4a3a"),
 	WorldGen.Biome.PRADARIA: Color("8a9a3c"),
+	WorldGen.Biome.LAGOA: Color("4f7f6a"),
 }
 const THING_COLORS := {
 	WorldGen.Thing.ARVORE: Color("1d2e1f"),
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
+	WorldGen.Thing.LAGO: Color("2f65b5"),
+	WorldGen.Thing.TRILHA: Color("a07a4f"),
+	WorldGen.Thing.PONTE: Color("7a5230"),
 	WorldGen.Thing.ARBUSTO: Color("d98ad9"),
 	WorldGen.Thing.VILA: Color("f6c453"),
 }
@@ -29,17 +35,24 @@ func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
 	queue_redraw()
 
 
+## O mundo não tem bordas: a tela mostra só o entorno da criatura local.
+func _origin() -> Vector2:
+	var me: Vector2 = _players[_my_id]["pos"] if _players.has(_my_id) else WorldGen.village_point()
+	return me - Vector2(VIEW_CELLS) * 0.5
+
+
 func point_to_pixel(point: Vector2) -> Vector2:
-	return point * TILE
+	return (point - _origin()) * TILE
 
 
 func _draw() -> void:
 	if _world == null:
 		return
-	for y in WorldGen.SIZE:
-		for x in WorldGen.SIZE:
+	var first := WorldGen.cell_of(_origin())
+	for y in range(first.y, first.y + VIEW_CELLS.y + 2):
+		for x in range(first.x, first.x + VIEW_CELLS.x + 2):
 			var cell := Vector2i(x, y)
-			var rect := Rect2(Vector2(cell) * TILE, Vector2.ONE * TILE)
+			var rect := Rect2(point_to_pixel(Vector2(cell)), Vector2.ONE * TILE)
 			draw_rect(rect, BIOME_COLORS[_world.biome_at(cell)])
 			var thing := _world.thing_at(cell)
 			if THING_COLORS.has(thing):

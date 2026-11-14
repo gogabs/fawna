@@ -1,11 +1,18 @@
 extends Node
-## Música de fundo do jogo: a musiquinha de ocarina (tools/musica_vila.py).
+## Música de fundo do jogo (tools/musica_sombria.py): lenta, grave e esparsa,
+## no clima dark fantasy. Toca bem baixinho, sem posição no espaço, do menu
+## até o mundo.
 ##
-## Toca bem baixinho, sem posição no espaço, do menu até o mundo. Fica mais
-## cheia conforme a horta comunitária cresce (níveis 0 a 3), trocando de
-## versão no fim do loop para a melodia não ser cortada no meio.
+## A musiquinha de ocarina (tools/musica_vila.py) continua guardada: com
+## USE_OCARINA, ela volta a tocar e fica mais cheia conforme a horta cresce
+## (níveis 0 a 3), trocando de versão no fim do loop.
 
-const VOLUME_DB := -24.0
+const VOLUME_DB := -20.0
+## Todos os sons do jogo passam pelo barramento Master, que fica bem mais
+## baixo; a fala (Prism ou a voz do sistema) não passa por ele e continua
+## clara por cima.
+const MASTER_DB := -10.0
+const USE_OCARINA := false
 
 var level := 0
 
@@ -16,6 +23,7 @@ var _pending_level := -1
 func _ready() -> void:
 	if DisplayServer.get_name() == "headless":
 		return  # servidor dedicado e testes não tocam música
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Master"), MASTER_DB)
 	_player = AudioStreamPlayer.new()
 	_player.volume_db = VOLUME_DB
 	add_child(_player)
@@ -55,7 +63,7 @@ func _on_loop_end() -> void:
 
 ## Sem loop no arquivo: o fim de cada volta é o ponto de troca de nível.
 func _stream(lvl: int) -> AudioStream:
-	var stream := Sounds.music(lvl)
+	var stream := Sounds.music(lvl) if USE_OCARINA else Sounds.dark_music()
 	if stream is AudioStreamOggVorbis:
 		(stream as AudioStreamOggVorbis).loop = false
 	return stream

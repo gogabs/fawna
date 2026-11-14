@@ -17,3 +17,11 @@ script (ou os .mid) e rode o script de novo.
 Cliques da bússola, gerados por `tools/sons_bussola.py` (sons do próprio
 projeto): `norte.ogg` agudo, `sul.ogg` grave, `lateral.ogg` para leste e
 oeste, `colateral.ogg` abafado para as diagonais.
+
+## Música de fundo sombria (musica/sombria.ogg)
+
+Música dark fantasy do jogo: bordão grave de cordas, coro baixo, sinos e
+frases de shakuhachi, em ré menor. Gerada por `tools/musica_sombria.py`
+(MIDI em `assets/music/sombria.mid`, soundfont FluidR3_GM, licença MIT).
+Composição do próprio projeto. A musiquinha de ocarina (`musica/vila_*.ogg`)
+continua guardada; `USE_OCARINA` em `autoload/music.gd` a traz de volta.
