@@ -14,7 +14,7 @@ extends RefCounted
 ## está por perto eles somem. Chegar perto demais assusta: o pássaro (ou o
 ## bando inteiro) foge para um poleiro longe de quem chegou.
 
-enum Species { SABIA, CARRICA, ROLINHA }
+enum Species { SABIA, CARRICA, ROLINHA, CORVO, CORUJA, GAVIAO, PERIQUITO }
 
 ## Dados de cada espécie. Distâncias em casas, tempos em segundos, alturas
 ## em metros.
@@ -29,8 +29,8 @@ const SPECIES := {
 		"height": [3.5, 5.5],
 		"flee": 2.0,  # chega a essa distância e ele foge
 		"hop": [5.0, 13.0],  # distância de um voo normal
-		"songs": 3,  # frases de cada voz
-		"voices": 3,  # vozes diferentes: cada pássaro nasce com uma
+		"songs": 4,  # frases de cada voz
+		"voices": 5,  # vozes diferentes: cada pássaro nasce com uma
 	},
 	Species.CARRICA: {
 		"name": "carriça-do-cardo",
@@ -43,7 +43,7 @@ const SPECIES := {
 		"flee": 2.6,
 		"hop": [4.0, 11.0],
 		"songs": 4,
-		"voices": 3,
+		"voices": 6,
 	},
 	Species.ROLINHA: {
 		"name": "rolinha-do-junco",
@@ -58,14 +58,70 @@ const SPECIES := {
 		"songs": 3,
 		"voices": 1,
 	},
+	# Bando pequeno no alto das árvores, grasnando de longe.
+	Species.CORVO: {
+		"name": "corvo-cinza",
+		"perches": [WorldGen.Thing.ARVORE],
+		"group": [2, 4],
+		"song_every": [9.0, 28.0],
+		"stay": [30.0, 90.0],
+		"speed": 6.0,
+		"height": [5.0, 7.0],
+		"flee": 3.0,
+		"hop": [6.0, 13.0],
+		"songs": 3,
+		"voices": 6,
+	},
+	# Sozinha, quieta e parada por muito tempo; só se mexe quando é preciso.
+	Species.CORUJA: {
+		"name": "coruja-do-breu",
+		"perches": [WorldGen.Thing.ARVORE],
+		"group": [1, 1],
+		"song_every": [16.0, 45.0],
+		"stay": [90.0, 220.0],
+		"speed": 4.0,
+		"height": [4.0, 6.0],
+		"flee": 1.6,
+		"hop": [5.0, 12.0],
+		"songs": 2,
+		"voices": 6,
+	},
+	# Um gavião sozinho nas árvores altas da pradaria, chamando lá de cima.
+	Species.GAVIAO: {
+		"name": "gavião-peneira",
+		"perches": [WorldGen.Thing.ARVORE],
+		"group": [1, 1],
+		"song_every": [14.0, 35.0],
+		"stay": [40.0, 120.0],
+		"speed": 8.0,
+		"height": [7.0, 9.0],
+		"flee": 3.5,
+		"hop": [8.0, 13.0],
+		"songs": 3,
+		"voices": 1,
+	},
+	# Bando barulhento perto da água.
+	Species.PERIQUITO: {
+		"name": "periquito-do-brejo",
+		"perches": [WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO],
+		"group": [3, 6],
+		"song_every": [6.0, 18.0],
+		"stay": [20.0, 60.0],
+		"speed": 7.0,
+		"height": [2.0, 4.0],
+		"flee": 2.8,
+		"hop": [5.0, 12.0],
+		"songs": 4,
+		"voices": 1,
+	},
 }
 
 ## O que nasce em cada pedaço (CHUNK casas) de cada bioma: [espécie, chance
 ## de ter um grupo, quantos grupos no máximo].
 const SPAWNS := {
-	WorldGen.Biome.BOSQUE: [[Species.SABIA, 0.55, 1], [Species.CARRICA, 0.15, 1]],
-	WorldGen.Biome.PRADARIA: [[Species.CARRICA, 0.4, 1], [Species.SABIA, 0.1, 1]],
-	WorldGen.Biome.LAGOA: [[Species.ROLINHA, 0.7, 1], [Species.CARRICA, 0.25, 1]],
+	WorldGen.Biome.BOSQUE: [[Species.SABIA, 0.55, 1], [Species.CARRICA, 0.15, 1], [Species.CORVO, 0.15, 1], [Species.CORUJA, 0.15, 1]],
+	WorldGen.Biome.PRADARIA: [[Species.CARRICA, 0.4, 1], [Species.SABIA, 0.1, 1], [Species.CORVO, 0.1, 1], [Species.GAVIAO, 0.12, 1]],
+	WorldGen.Biome.LAGOA: [[Species.ROLINHA, 0.7, 1], [Species.CARRICA, 0.25, 1], [Species.PERIQUITO, 0.3, 1]],
 }
 
 const CHUNK := WorldGen.CHUNK

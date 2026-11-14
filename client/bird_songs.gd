@@ -15,7 +15,11 @@ extends RefCounted
 
 const RATE := 32000
 const DIR := "res://assets/sounds/passaros/"
-const FILE_NAMES := {Aviary.Species.SABIA: "sabia", Aviary.Species.CARRICA: "carrica", Aviary.Species.ROLINHA: "rolinha"}
+const FILE_NAMES := {
+	Aviary.Species.SABIA: "sabia", Aviary.Species.CARRICA: "carrica", Aviary.Species.ROLINHA: "rolinha",
+	Aviary.Species.CORVO: "corvo", Aviary.Species.CORUJA: "coruja", Aviary.Species.GAVIAO: "gaviao",
+	Aviary.Species.PERIQUITO: "periquito",
+}
 
 static var _cache := {}
 
@@ -43,6 +47,14 @@ static func song(species: int, song_id: int) -> AudioStream:
 				buf = _carrica(index)
 			Aviary.Species.ROLINHA:
 				buf = _rolinha(index)
+			Aviary.Species.CORVO:
+				buf = _corvo(index)
+			Aviary.Species.CORUJA:
+				buf = _coruja(index)
+			Aviary.Species.GAVIAO:
+				buf = _gaviao(index)
+			Aviary.Species.PERIQUITO:
+				buf = _periquito(index)
 		stream = _to_wav(_with_tail(buf, 0.55 if species == Aviary.Species.SABIA else 0.35))
 	_cache[key] = stream
 	return stream
@@ -50,7 +62,7 @@ static func song(species: int, song_id: int) -> AudioStream:
 
 ## Grito curto de susto, ao fugir de alguém (só sabiá e carriça).
 static func alarm(species: int) -> AudioStream:
-	if species == Aviary.Species.ROLINHA:
+	if species != Aviary.Species.SABIA and species != Aviary.Species.CARRICA:
 		return null
 	var key := "%s_alarme" % FILE_NAMES[species]
 	if _cache.has(key):
@@ -82,8 +94,10 @@ static func wings(species: int, seconds: float, startled := false) -> AudioStrea
 	var files := _wing_files()
 	if not files.is_empty():
 		return files[randi() % files.size()]
-	var rate: float = {Aviary.Species.SABIA: 13.0, Aviary.Species.CARRICA: 21.0, Aviary.Species.ROLINHA: 9.0}[species]
-	var body: float = {Aviary.Species.SABIA: 0.75, Aviary.Species.CARRICA: 0.55, Aviary.Species.ROLINHA: 0.85}[species]
+	var rate: float = {Aviary.Species.CARRICA: 21.0, Aviary.Species.ROLINHA: 9.0, Aviary.Species.CORVO: 7.0,
+		Aviary.Species.CORUJA: 6.0, Aviary.Species.GAVIAO: 8.0, Aviary.Species.PERIQUITO: 18.0}.get(species, 13.0)
+	var body: float = {Aviary.Species.CARRICA: 0.55, Aviary.Species.ROLINHA: 0.85, Aviary.Species.CORVO: 0.88,
+		Aviary.Species.CORUJA: 0.92, Aviary.Species.GAVIAO: 0.85, Aviary.Species.PERIQUITO: 0.6}.get(species, 0.75)
 	var buf := _buffer(seconds + 0.3)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key)
@@ -171,6 +185,45 @@ static func _rolinha(index: int) -> PackedFloat32Array:
 			_note(buf, 0.66, 0.72, 522.0, 492.0, 0.55, coo.merged({"curve": 2.0}))
 		2:
 			_note(buf, 0.0, 0.85, 500.0, 468.0, 0.6, coo.merged({"tremolo": 6.0}))
+	return buf
+
+
+## Corvo: grasnados roucos e graves, de dois a quatro.
+static func _corvo(index: int) -> PackedFloat32Array:
+	var buf := _buffer(2.0)
+	var caw := {"h2": 0.6, "h3": 0.45, "breath": 0.7, "attack": 0.02, "release": 0.08, "vib_rate": 70.0, "vib": 0.03}
+	for i in 2 + index % 3:
+		_note(buf, i * 0.42, 0.26, 620.0, 520.0, 0.5, caw)
+	return buf
+
+
+## Coruja: pios ocos e baixos, "hu... hu-hu".
+static func _coruja(index: int) -> PackedFloat32Array:
+	var buf := _buffer(2.2)
+	var hoot := {"h2": 0.15, "breath": 0.15, "attack": 0.05, "release": 0.15, "curve": 0.5}
+	_note(buf, 0.0, 0.45, 360.0, 390.0, 0.55, hoot)
+	if index % 2 == 0:
+		_note(buf, 0.85, 0.22, 380.0, 360.0, 0.4, hoot)
+		_note(buf, 1.15, 0.5, 375.0, 340.0, 0.45, hoot)
+	return buf
+
+
+## Gavião: "kii-kii-kii" agudo, de longe.
+static func _gaviao(index: int) -> PackedFloat32Array:
+	var buf := _buffer(1.6)
+	var kee := {"h2": 0.3, "breath": 0.2, "attack": 0.01, "release": 0.05}
+	for i in 3 + index % 2:
+		_note(buf, i * 0.19, 0.12, 2900.0, 2500.0, 0.4, kee)
+	return buf
+
+
+## Periquito: tagarelice estridente e rápida.
+static func _periquito(index: int) -> PackedFloat32Array:
+	var buf := _buffer(1.2)
+	var squeak := {"h2": 0.4, "h3": 0.2, "breath": 0.3, "attack": 0.005, "vib_rate": 45.0, "vib": 0.05}
+	for i in 4 + index % 3:
+		var f := 3200.0 + 500.0 * sin(i * 1.7 + index)
+		_note(buf, i * 0.13, 0.08, f, f * 0.8, 0.35, squeak)
 	return buf
 
 
@@ -275,7 +328,7 @@ static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 static func _wing_files() -> Array:
 	if not _cache.has("asas_arquivos"):
 		var found := []
-		for i in 8:
+		for i in 32:
 			var stream := _file("asas_%d" % i)
 			if stream != null:
 				found.append(stream)

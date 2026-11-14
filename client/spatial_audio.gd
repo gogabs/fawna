@@ -27,6 +27,10 @@ var village_level := 0
 var _world: WorldGen
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
+## Passa-baixa da distância: quanto mais longe, mais perto desse corte.
+const DISTANCE_FILTER_HZ := 8000.0
+const DISTANCE_FILTER_DB := -9.0
+
 var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
 var _listener_cell := WorldGen.NO_CELL
 var _listener_pos := Vector2.ZERO
@@ -254,6 +258,11 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 		player.unit_size = METERS_PER_CELL * 2.0
 		player.max_distance = METERS_PER_CELL * (AMBIENT_RADIUS + 2)
 		player.panning_strength = 1.5
+	# O Godot, por padrão, abafa os sons 3D com a distância (passa-baixa em
+	# 5 kHz, até -24 dB): os pássaros longe perdiam todo o brilho. Um filtro
+	# mais leve ainda dá a sensação de distância sem abafar.
+	player.attenuation_filter_cutoff_hz = DISTANCE_FILTER_HZ
+	player.attenuation_filter_db = DISTANCE_FILTER_DB
 	player.stream = stream
 	player.volume_db = volume_db
 	return player
