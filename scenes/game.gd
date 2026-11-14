@@ -21,6 +21,7 @@ const BUMP_SPEECH_COOLDOWN := 1.5
 const COLLECT_REACH := 1.4  # casas, do centro da criatura ao centro da coisa
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
+const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
@@ -45,9 +46,10 @@ var _last_sent := Vector2.INF
 var _turn_cooldown := 0.0
 var _bump_sound_cooldown := 0.0
 var _bump_speech_cooldown := 0.0
-var _last_bump_cell := WorldGen.NO_CELL
+var _last_bump_thing := -1
 var _others_step := {}  # id -> distância andada desde o último passo ouvido
 var _auto_target: Variant = null  # testes: anda sozinho até este ponto
+var _last_trail_notice := -100000
 var _village_menu := false
 var _minigame: Minigame = null
 var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
@@ -448,7 +450,8 @@ func _set_pos(new_pos: Vector2) -> void:
 	_step_distance += walked
 	if _step_distance >= STEP_LENGTH:
 		_step_distance = 0.0
-		_play(Sounds.footstep(world.biome_at(WorldGen.cell_of(new_pos))))
+		var step_cell := WorldGen.cell_of(new_pos)
+		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)))
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
 		var old_cell := _cell
@@ -465,9 +468,9 @@ func _bump(target: Vector2) -> void:
 		_bump_sound_cooldown = BUMP_SOUND_COOLDOWN
 		var where := WorldGen.cell_center(cell) if thing != WorldGen.Thing.NADA else target
 		audio.play_at_point(where, Sounds.bump(thing))
-	if _bump_speech_cooldown <= 0.0 or cell != _last_bump_cell:
+	if _bump_speech_cooldown <= 0.0 or thing != _last_bump_thing:
 		_bump_speech_cooldown = BUMP_SPEECH_COOLDOWN
-		_last_bump_cell = cell
+		_last_bump_thing = thing
 		Speech.say("Fim do caminho." if thing == WorldGen.Thing.NADA else WorldGen.THING_NAMES[thing])
 
 
@@ -487,7 +490,16 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 	if old_cell != WorldGen.NO_CELL and biome != world.biome_at(old_cell):
 		Speech.say(WorldGen.BIOME_NAMES[biome])
 	var thing := world.thing_at(cell)
-	if thing != WorldGen.Thing.NADA:
+	var old_thing := world.thing_at(old_cell) if old_cell != WorldGen.NO_CELL else WorldGen.Thing.NADA
+	if thing == WorldGen.Thing.TRILHA or thing == WorldGen.Thing.PONTE:
+		# Trilhas serpenteiam: só avisa ao entrar nelas (ou numa ponte), sem
+		# repetir a cada beirada.
+		var now := Time.get_ticks_msec()
+		if thing != old_thing and (thing == WorldGen.Thing.PONTE or now - _last_trail_notice > TRAIL_NOTICE_MS):
+			if old_thing != WorldGen.Thing.TRILHA or thing == WorldGen.Thing.PONTE:
+				Speech.say(WorldGen.THING_NAMES[thing], false)
+		_last_trail_notice = now
+	elif thing != WorldGen.Thing.NADA:
 		Speech.say(WorldGen.THING_NAMES[thing], false)
 
 
@@ -588,7 +600,7 @@ func _say_inventory() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S, ou seta para cima e para baixo: andar para frente e para trás. A e D: passo para o lado. Q e E, ou seta para os lados: girar. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. A vila fica no centro do mundo.")
+	Speech.say("W e S, ou seta para cima e para baixo: andar para frente e para trás. A e D: passo para o lado. Q e E, ou seta para os lados: girar. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -616,7 +628,8 @@ func _play(stream: AudioStream) -> void:
 func _play_other_step(pos: Vector2) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
-	audio.play_at_point(pos, Sounds.footstep(world.biome_at(WorldGen.cell_of(pos))))
+	var cell := WorldGen.cell_of(pos)
+	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.

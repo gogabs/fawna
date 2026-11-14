@@ -17,6 +17,7 @@ const COLLECT := {
 	WorldGen.Thing.ARVORE: "madeira",
 	WorldGen.Thing.ARBUSTO: "sementes",
 	WorldGen.Thing.RIACHO: "agua",
+	WorldGen.Thing.LAGO: "agua",
 }
 
 ## Profissões: o minigame transforma recursos brutos em peças.

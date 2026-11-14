@@ -47,6 +47,10 @@ const MANIFEST := {
 	"musica_vila_1": ["musica/vila_1.ogg"],
 	"musica_vila_2": ["musica/vila_2.ogg"],
 	"musica_vila_3": ["musica/vila_3.ogg"],
+	"passo_trilha": ["world/dirtstep1.ogg", "world/dirtstep2.ogg", "world/dirtstep3.ogg", "world/dirtstep4.ogg", "world/dirtstep5.ogg"],
+	"passo_ponte": ["world/bridgestep1.ogg", "world/bridgestep2.ogg", "world/bridgestep3.ogg", "world/bridgestep4.ogg", "world/bridgestep5.ogg"],
+	"amb_lago": ["world/loop_pond1.ogg"],
+	"fundo_lagoa": ["world/loop_wetland_frogs_chorus.ogg"],
 	"fundo_bosque": ["world/loop_forest_day1.ogg"],
 	"fundo_pradaria": ["world/loop_prairie_day.ogg"],
 }
@@ -54,8 +58,13 @@ const MANIFEST := {
 static var _loaded := {}  # caminho -> AudioStream
 
 
-static func footstep(biome: WorldGen.Biome) -> AudioStream:
+## Passo: o chão da trilha e da ponte soa diferente do mato de cada bioma.
+static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA) -> AudioStream:
 	var key := "passo_bosque" if biome == WorldGen.Biome.BOSQUE else "passo_pradaria"
+	if ground == WorldGen.Thing.TRILHA and _has_file("passo_trilha"):
+		key = "passo_trilha"
+	elif ground == WorldGen.Thing.PONTE and _has_file("passo_ponte"):
+		key = "passo_ponte"
 	return _pick(key, func(): return SoundBank.footstep(biome))
 
 
@@ -64,7 +73,7 @@ static func bump(thing := WorldGen.Thing.NADA) -> AudioStream:
 	var key := "colisao"
 	if thing == WorldGen.Thing.ARVORE:
 		key = "colisao_arvore"
-	elif thing == WorldGen.Thing.RIACHO:
+	elif thing == WorldGen.Thing.RIACHO or thing == WorldGen.Thing.LAGO:
 		key = "colisao_agua"
 	if not _has_file(key):
 		key = "colisao"
@@ -138,6 +147,8 @@ static func ui_close() -> AudioStream:
 ## Ambiente de fundo do bioma (não posicional), em loop.
 static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 	var key := "fundo_bosque" if biome == WorldGen.Biome.BOSQUE else "fundo_pradaria"
+	if biome == WorldGen.Biome.LAGOA and _has_file("fundo_lagoa"):
+		key = "fundo_lagoa"
 	var stream := _pick(key, func(): return null, false)
 	if stream != null:
 		_make_loop(stream)
@@ -150,6 +161,8 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
 	match thing:
 		WorldGen.Thing.RIACHO:
 			key = "amb_agua"
+		WorldGen.Thing.LAGO:
+			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
 		WorldGen.Thing.ARVORE:
 			key = "amb_arvore"
 		WorldGen.Thing.ARBUSTO:
@@ -175,7 +188,7 @@ static func music(level: int) -> AudioStream:
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.VILA]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.VILA]
 
 
 static func _has_file(key: String) -> bool:

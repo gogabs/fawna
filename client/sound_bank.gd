@@ -136,7 +136,7 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
 	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.VILA else 0]
 	if not _cache.has(key):
 		match thing:
-			WorldGen.Thing.RIACHO:
+			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARVORE:
 				_cache[key] = _tree_loop()

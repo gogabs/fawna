@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_world_state_moves()
 	_test_collision()
 	_test_compass()
+	_test_regions_and_trails()
 	_test_collect_craft_contribute()
 	_test_save_roundtrip()
 	if _failures == 0:
@@ -31,8 +32,8 @@ func _test_same_seed_same_world() -> void:
 	var b := WorldGen.new(42)
 	var c := WorldGen.new(43)
 	var differs := false
-	for y in WorldGen.SIZE:
-		for x in WorldGen.SIZE:
+	for y in range(-40, 40):
+		for x in range(-40, 40):
 			var cell := Vector2i(x, y)
 			_check(a.thing_at(cell) == b.thing_at(cell), "mesma semente deveria gerar a mesma coisa em %s" % cell)
 			_check(a.biome_at(cell) == b.biome_at(cell), "mesma semente deveria gerar o mesmo bioma em %s" % cell)
@@ -53,10 +54,10 @@ func _test_village_is_free() -> void:
 func _test_has_both_biomes() -> void:
 	var seen := {}
 	var world := WorldGen.new(7)
-	for y in WorldGen.SIZE:
-		for x in WorldGen.SIZE:
+	for y in range(-40, 40):
+		for x in range(-40, 40):
 			seen[world.biome_at(Vector2i(x, y))] = true
-	_check(seen.size() == 2, "o mapa deveria ter os dois biomas")
+	_check(seen.size() >= 2, "o mapa deveria ter mais de um bioma")
 
 
 func _test_narrator_direction() -> void:
@@ -85,14 +86,14 @@ func _test_world_state_moves() -> void:
 func _test_collision() -> void:
 	var world := WorldGen.new(42)
 	var tree := WorldGen.NO_CELL
-	for y in WorldGen.SIZE:
-		for x in WorldGen.SIZE:
+	for y in range(-40, 40):
+		for x in range(-40, 40):
 			if tree == WorldGen.NO_CELL and world.thing_at(Vector2i(x, y)) == WorldGen.Thing.ARVORE:
 				tree = Vector2i(x, y)
 	_check(tree != WorldGen.NO_CELL, "deveria haver uma árvore")
 	_check(not world.is_free(WorldGen.cell_center(tree)), "não dá para ficar dentro da árvore")
 	_check(world.blocker_at(WorldGen.cell_center(tree)) == tree, "o obstáculo é a árvore")
-	_check(not world.is_free(Vector2(0.1, 5.5)), "a borda do mapa bloqueia")
+	_check(not world.is_free(Vector2(WorldGen.WORLD_LIMIT + 1.1, 5.5)), "o limite do mundo bloqueia")
 	_check(world.is_free(WorldGen.village_point()), "a vila é livre")
 	_check(WorldGen.cell_of(Vector2(3.99, 4.0)) == Vector2i(3, 4), "casa de um ponto")
 
@@ -112,10 +113,48 @@ func _test_compass() -> void:
 	_check(Sounds.compass_kind(1) == "colateral" and Sounds.compass_kind(7) == "colateral", "colaterais abafados")
 
 
+func _test_regions_and_trails() -> void:
+	var world := WorldGen.new(42)
+	_check(world.region_biome(Vector2i.ZERO) == WorldGen.Biome.PRADARIA, "a vila fica numa pradaria")
+	# Regiões são grandes: casas vizinhas quase sempre têm o mesmo bioma.
+	var same := 0
+	var total := 0
+	for y in range(-60, 60, 3):
+		for x in range(-60, 60, 3):
+			total += 1
+			if world.biome_at(Vector2i(x, y)) == world.biome_at(Vector2i(x + 1, y)):
+				same += 1
+	_check(same > total * 0.9, "biomas deveriam vir em regiões grandes")
+	# Longe da vila também existe mundo (sem bordas), e é sempre o mesmo.
+	var far := Vector2i(1500, -2200)
+	_check(world.thing_at(far) == WorldGen.new(42).thing_at(far), "mundo distante também é fixo pela semente")
+	# A vila é ponto de encontro de trilhas: deve haver trilha logo ao lado.
+	var near_village := world.nearest_trail(WorldGen.village_point(), 6)
+	_check(near_village != WorldGen.NO_CELL, "deveria sair uma trilha da vila")
+	# Seguindo a reta até o ponto de encontro vizinho, quase tudo é trilha
+	# (ela serpenteia um pouco em volta da reta).
+	var a := world.region_landmark(Vector2i.ZERO)
+	var b := world.region_landmark(Vector2i.RIGHT)
+	var on_trail := 0
+	var samples := 40
+	for i in samples:
+		var p := a.lerp(b, (i + 0.5) / samples)
+		if world.nearest_trail(p, 3) != WorldGen.NO_CELL:
+			on_trail += 1
+	_check(on_trail >= samples * 0.9, "deveria haver trilha ligando a vila à região vizinha (%d/%d)" % [on_trail, samples])
+	# Ponte em vez de água no meio da trilha: trilhas nunca bloqueiam.
+	for y in range(-80, 80):
+		for x in range(-80, 80):
+			var cell := Vector2i(x, y)
+			if world.thing_at(cell) == WorldGen.Thing.PONTE or world.thing_at(cell) == WorldGen.Thing.TRILHA:
+				_check(world.is_passable(cell), "trilha e ponte são passáveis")
+				return
+
+
 func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
 	# Acha uma casa livre ao lado de "thing"; devolve [livre, coisa].
-	for y in range(1, WorldGen.SIZE - 1):
-		for x in range(1, WorldGen.SIZE - 1):
+	for y in range(-40, 40):
+		for x in range(-40, 40):
 			var cell := Vector2i(x, y)
 			if state.world.thing_at(cell) != thing:
 				continue
