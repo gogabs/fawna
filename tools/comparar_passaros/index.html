@@ -1,0 +1,197 @@
+<title>Vozes dos pássaros</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: uma coluna estreita, uma seção por espécie, cada opção uma linha com tocar + escolher. */
+:root {
+  --bg: #eef0ec;
+  --surface: #f8f9f6;
+  --fg: #1d2420;
+  --muted: #56615a;
+  --line: #c9cfc8;
+  --accent: #3f6b57;
+  --accent-ink: #ffffff;
+  --chosen: #dfe9e2;
+  --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --surface: #1a201d; --fg: #e3e8e4; --muted: #9aa69f; --line: #2f3833;
+    --accent: #7fb59a; --accent-ink: #0d1411; --chosen: #22302a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121614; --surface: #1a201d; --fg: #e3e8e4; --muted: #9aa69f; --line: #2f3833;
+  --accent: #7fb59a; --accent-ink: #0d1411; --chosen: #22302a; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+main { max-width: 44rem; margin: 0 auto; padding-block: 2rem 4rem; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 2.5rem; }
+h1, h2 { font-family: var(--display); font-weight: 600; text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: 2.4rem; }
+h2 { font-size: 1.7rem; }
+p { margin: 0; max-width: 65ch; }
+.intro { display: grid; gap: .75rem; }
+.muted { color: var(--muted); }
+section { display: grid; gap: 1rem; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: .5rem; min-width: 0; }
+legend { padding: 0; margin-bottom: .5rem; }
+.opt { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; padding: .75rem .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.opt:has(input:checked) { background: var(--chosen); border-color: var(--accent); }
+.code { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 2.2rem; }
+.info { flex: 1 1 14rem; min-width: 0; display: grid; }
+.info .src { font-size: .85rem; color: var(--muted); }
+.info a { color: inherit; }
+button, .pick { font: inherit; }
+.play { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: .45rem 1rem; cursor: pointer; font-weight: 600; }
+.play[aria-pressed="true"] { outline: 2px solid var(--fg); outline-offset: 2px; }
+.pick { display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.pick input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.summary { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding-block: .9rem calc(.9rem + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.summary-inner { max-width: 44rem; margin: 0 auto; display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
+#escolhas { flex: 1 1 14rem; min-width: 0; font-weight: 500; }
+.copy { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 999px; padding: .45rem 1rem; cursor: pointer; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header class="intro">
+    <h1>Vozes dos pássaros</h1>
+    <p>Ouça as opções de cada espécie e escolha uma em cada grupo. A rolinha já está decidida (arrulho de pomba). Todas as gravações são do Freesound, com licença CC0, recortadas e com o ruído de fundo reduzido. Os botões "Tocar" funcionam com Enter ou Espaço; tocar outro som para o anterior.</p>
+    <p class="muted">No jogo, cada pássaro ainda soa a vários metros de distância e com HRTF, então aqui você ouve o som de perto e mais alto do que no mundo.</p>
+  </header>
+
+  <section aria-labelledby="h-sabia">
+    <h2 id="h-sabia">Sabiá-da-névoa, o canto solitário do bosque</h2>
+    <fieldset id="sabia"><legend class="sr">Escolha o canto do sabiá</legend></fieldset>
+  </section>
+
+  <section aria-labelledby="h-carrica">
+    <h2 id="h-carrica">Carriça-do-cardo, os chamados do bando no arbusto</h2>
+    <fieldset id="carrica"><legend class="sr">Escolha o chamado da carriça</legend></fieldset>
+  </section>
+
+  <section aria-labelledby="h-voo">
+    <h2 id="h-voo">Voo, o bater de asas</h2>
+    <p class="muted">O mesmo som serve de base para as três espécies; no jogo, a carriça toca mais agudo e a rolinha mais grave.</p>
+    <fieldset id="voo"><legend class="sr">Escolha o som de voo</legend></fieldset>
+  </section>
+</main>
+
+<div class="summary">
+  <div class="summary-inner">
+    <p id="escolhas" aria-live="polite">Nada escolhido ainda.</p>
+    <button class="copy" id="copiar" type="button">Copiar escolhas</button>
+  </div>
+</div>
+<p class="sr" id="aviso" aria-live="polite"></p>
+
+<script>
+const FS = id => "https://freesound.org/s/" + id + "/";
+const OPTIONS = {
+  sabia: [
+    ["S1", "Tordo-dos-bosques (wood thrush), flauta etérea", "kvgarlic", 188812, "o que está no jogo agora"],
+    ["S2", "Tordo-eremita (hermit thrush), longe e melancólico", "Freesound", 702167],
+    ["S3", "Tordo-eremita, outra gravação, mais limpa", "Freesound", 824788],
+    ["S4", "Melro (blackbird), canto grave e solto", "Freesound", 811988],
+    ["S5", "Rouxinol, frase curta e rica", "Freesound", 854987],
+    ["S6", "Tordo-músico (song thrush), frases repetidas", "Freesound", 785669],
+    ["S7", "Gerado por código (assobio puro com segunda voz)", null, null],
+  ],
+  carrica: [
+    ["C1", "Corruíra europeia, alarme seco", "newtad1", 836392, "o que está no jogo agora"],
+    ["C2", "Chapim-de-cabeça-preta (chickadee), chamado curto", "Freesound", 703254],
+    ["C3", "Bando de pintassilgos-verdes (siskin) conversando", "Freesound", 787519],
+    ["C4", "Chapim-de-cabeça-preta, chamado comum", "Freesound", 568809],
+    ["C5", "Gerado por código (tsips finos)", null, null],
+  ],
+  voo: [
+    ["V1", "Batida de asa curta e cheia", "Freesound", 330967, "sabiá e rolinha no jogo agora"],
+    ["V2", "Bater de asas rápido", "Raclure", 405552, "carriça no jogo agora"],
+    ["V3", "Passarinho voando, longo e limpo", "Freesound", 467294],
+    ["V4", "Asas vibrando (flutter)", "Freesound", 498180],
+    ["V5", "Asa de pombo, curta", "Freesound", 414671],
+    ["V6", "Asa leve", "Freesound", 561009],
+    ["V7", "Duas batidas secas", "Freesound", 240469],
+    ["V8", "Gerado por código, voo do sabiá", null, null],
+    ["V9", "Gerado por código, voo da carriça", null, null],
+  ],
+};
+const NAMES = { sabia: "sabiá", carrica: "carriça", voo: "voo" };
+const audio = new Audio();
+let playingBtn = null;
+const say = t => { document.getElementById("aviso").textContent = t; };
+
+function stopCurrent() {
+  audio.pause();
+  if (playingBtn) { playingBtn.setAttribute("aria-pressed", "false"); playingBtn.textContent = "Tocar " + playingBtn.dataset.code; }
+  playingBtn = null;
+}
+audio.addEventListener("ended", stopCurrent);
+
+for (const group of Object.keys(OPTIONS)) {
+  const box = document.getElementById(group);
+  for (const [code, label, author, id, note] of OPTIONS[group]) {
+    const row = document.createElement("div");
+    row.className = "opt";
+    const play = document.createElement("button");
+    play.type = "button"; play.className = "play"; play.dataset.code = code;
+    play.textContent = "Tocar " + code; play.setAttribute("aria-pressed", "false");
+    play.setAttribute("aria-label", "Tocar " + code + ", " + label);
+    play.addEventListener("click", () => {
+      const again = playingBtn === play;
+      stopCurrent();
+      if (again) return;
+      audio.src = "sons/" + code + ".wav";
+      audio.currentTime = 0;
+      audio.play().then(() => { playingBtn = play; play.setAttribute("aria-pressed", "true"); play.textContent = "Parar " + code; })
+        .catch(() => say("Não foi possível tocar " + code + "."));
+    });
+    const info = document.createElement("div");
+    info.className = "info";
+    const title = document.createElement("span");
+    title.textContent = code + ": " + label + (note ? " (" + note + ")" : "");
+    const src = document.createElement("span");
+    src.className = "src";
+    if (id) {
+      const a = document.createElement("a");
+      a.href = FS(id); a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "Freesound #" + id;
+      src.append(a, author && author !== "Freesound" ? ", por " + author + ", CC0" : ", CC0");
+    } else {
+      src.textContent = "Som do próprio projeto";
+    }
+    info.append(title, src);
+    const pick = document.createElement("label");
+    pick.className = "pick";
+    const radio = document.createElement("input");
+    radio.type = "radio"; radio.name = group; radio.value = code; radio.id = group + "-" + code;
+    radio.addEventListener("change", update);
+    pick.append(radio, document.createTextNode("Escolher " + code));
+    row.append(play, info, pick);
+    box.append(row);
+  }
+}
+
+function choices() {
+  return Object.keys(OPTIONS).map(g => {
+    const c = document.querySelector('input[name="' + g + '"]:checked');
+    return c ? NAMES[g] + " " + c.value : null;
+  }).filter(Boolean);
+}
+function update() {
+  const list = choices();
+  document.getElementById("escolhas").textContent = list.length ? "Escolhas: " + list.join(", ") + "." : "Nada escolhido ainda.";
+}
+document.getElementById("copiar").addEventListener("click", () => {
+  const text = document.getElementById("escolhas").textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => say("Escolhas copiadas.")).catch(() => say("Não deu para copiar. Escreva no chat: " + text));
+  } else {
+    say("Não deu para copiar. Escreva no chat: " + text);
+  }
+});
+</script>
