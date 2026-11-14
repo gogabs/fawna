@@ -18,12 +18,12 @@ signal lost  # longe da rota e sem caminho de onde está: o cristal se apagou
 
 const ARRIVE_RADIUS := 1.6  # casas (2,4 m): chegou ao beacon
 const OFF_ROUTE_DISTANCE := 9.0  # casas longe da rota: traça de novo
-const BEAT_DISTANCE := 2.0  # casas: a batida soa a uns 3 m, na direção do beacon
+const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com a distância), na direção do beacon
 const BEAT_SLOW := 1.35  # segundos entre batidas quando o beacon está longe
 const BEAT_FAST := 0.8  # e quando está perto
 const BEAT_NEAR := 2.0  # casas
 const BEAT_FAR := 14.0
-const BEAT_DB := -4.0  # baixo, mas o grave abafado some fácil
+const BEAT_DB := 8.0  # alto: o grave abafado some fácil (Gabs pediu bem mais alto)
 const WOOSH_DB := -8.0
 const WOOSH_FROM := 0.6  # casas à frente da criatura, rumo ao próximo beacon
 const WOOSH_TO := 7.0

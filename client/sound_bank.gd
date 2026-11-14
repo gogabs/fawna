@@ -240,6 +240,13 @@ static func heartbeat() -> AudioStreamWAV:
 				var body := sin(phase) * exp(-t * 16.0)
 				var thump := skin * exp(-t * 55.0) * 0.9
 				samples[i] += (body + thump) * hit[1] * 0.55
+		# Normaliza: o pico vai a quase o máximo, o volume fica no jogo.
+		var peak := 0.0
+		for v in samples:
+			peak = maxf(peak, absf(v))
+		if peak > 0.0:
+			for i in count:
+				samples[i] *= 0.95 / peak
 		_cache["coracao"] = _to_wav(samples)
 	return _cache["coracao"]
 
