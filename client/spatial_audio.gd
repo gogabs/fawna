@@ -19,6 +19,7 @@ const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -12.0
+const MAX_SIMULATION_SOURCES := 128  # limite do Steam Audio (o máximo do addon)
 
 var using_hrtf := false
 var village_level := 0
@@ -275,6 +276,9 @@ func _setup_resonance() -> void:
 	config.set("scene_type", SCENE_CUSTOM_GODOT_PHYSICS)
 	config.set("realtime_rays", 0)
 	config.set("pathing_enabled", false)
+	# O padrão do addon é 32 fontes; bússola, vozes, pássaros, ambiente e o
+	# Caminheiro passam disso, e as fontes que ficam sem vaga saem mudas.
+	config.set("max_simulation_sources", MAX_SIMULATION_SOURCES)
 	var runtime: Node = ClassDB.instantiate("ResonanceRuntime")
 	runtime.name = "ResonanceRuntime"
 	runtime.set("runtime", config)

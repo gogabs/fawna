@@ -65,6 +65,7 @@ const MANIFEST := {
 	"mov_parada_amigo": ["foley/parada_amigo.ogg"],
 	"mov_farfalhar": ["foley/farfalhar_1.ogg", "foley/farfalhar_2.ogg", "foley/farfalhar_3.ogg", "foley/farfalhar_4.ogg", "foley/farfalhar_5.ogg", "foley/farfalhar_6.ogg", "foley/farfalhar_7.ogg"],
 	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg"],
+	"caminheiro_batida": ["caminheiro/batida.ogg"],
 }
 
 ## Início e parada do movimento: true troca os sintéticos pelos farfalhares
@@ -166,6 +167,17 @@ static func cloth_rustle() -> AudioStream:
 
 static func anklet() -> AudioStream:
 	return _pick("mov_tornozeleira", func(): return null)
+
+
+## Batida do Caminheiro (tambor abafado, como um coração, com passa-baixa e
+## reverb já no arquivo: tools/som_caminheiro.py) e o woosh de chegada a um
+## beacon. Sem os arquivos, sons gerados por código.
+static func heartbeat() -> AudioStream:
+	return _pick("caminheiro_batida", SoundBank.heartbeat)
+
+
+static func woosh() -> AudioStream:
+	return _pick("caminheiro_woosh", SoundBank.woosh)
 
 
 static func ui_move() -> AudioStream:

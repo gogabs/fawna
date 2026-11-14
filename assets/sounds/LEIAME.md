@@ -37,3 +37,10 @@ confirmada; sem ela, o jogo segue sem esses sons. Nomes esperados (ver
 `parada_sintetica.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`,
 `farfalhar_1..7.ogg` e `tornozeleira_concha.ogg`. A tornozeleira é um trecho de
 "SeaShell_01", de agoniasboy no Freesound (CC0).
+
+## Caminheiro (caminheiro/)
+
+`caminheiro/batida.ogg` é a batida do Caminheiro: um coração ouvido de dentro,
+duas pancadas graves de tambor abafado, com passa-baixa forte e um reverb
+curto e escuro já aplicados no arquivo. Gerado por `tools/som_caminheiro.py`
+(som do próprio projeto).
