@@ -45,7 +45,9 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 ## Lista o que está por perto, do mais próximo ao mais distante, em relação
 ## a para onde a criatura olha. De cada tipo de coisa, só a mais próxima; e,
 ## se não estiver numa trilha, onde fica a trilha mais próxima.
-static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array) -> String:
+## Recursos já colhidos (harvest) ficam de fora; um bambu já derrubado é
+## anunciado como tal.
+static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array, harvest: Harvest = null) -> String:
 	var found := []
 	var here := WorldGen.cell_of(pos)
 	var r := SURROUNDINGS_RADIUS
@@ -53,8 +55,15 @@ static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Ar
 		for dx in range(-r, r + 1):
 			var cell := here + Vector2i(dx, dy)
 			var thing := world.thing_at(cell)
-			if not WorldGen.GROUND.has(thing):
-				found.append({"name": WorldGen.THING_NAMES[thing], "offset": WorldGen.cell_center(cell) - pos})
+			if WorldGen.GROUND.has(thing):
+				continue
+			var thing_name: String = WorldGen.THING_NAMES[thing]
+			if harvest != null and Harvest.is_source(thing):
+				if not harvest.is_available(cell):
+					continue
+				if Harvest.needs_tool(thing) and harvest.hits_left(cell) == 0:
+					thing_name = "bambu derrubado"
+			found.append({"name": thing_name, "offset": WorldGen.cell_center(cell) - pos})
 	for other in others:
 		var offset: Vector2 = other["pos"] - pos
 		if offset.length() <= r:
