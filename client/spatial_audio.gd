@@ -285,6 +285,11 @@ func _setup_resonance() -> void:
 	config.set("scene_type", SCENE_CUSTOM_GODOT_PHYSICS)
 	config.set("realtime_rays", 0)
 	config.set("pathing_enabled", false)
+	# Mesmo sem reflexões, o Steam Audio reserva e processa a cauda de reverb
+	# de cada fonte com a duração daqui (padrão 2 s), na thread principal: com
+	# umas 60 fontes, isso dava quadros de 150 ms (7 por segundo), e os passos
+	# saíam lentos e aos trancos. Com 0,1 s o jogo volta a mais de 100 quadros.
+	config.set("realtime_simulation_duration", 0.1)
 	# O padrão do addon é 32 fontes; bússola, vozes, pássaros, ambiente e o
 	# Caminheiro passam disso, e as fontes que ficam sem vaga saem mudas.
 	config.set("max_simulation_sources", MAX_SIMULATION_SOURCES)

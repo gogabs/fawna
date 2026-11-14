@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GODOT_VERSION: "4.6.2"
+  GODOT_VERSION: "4.7.2"  # a mesma do PC do Gabs (servidor e testes)
   GODOT_RELEASE: "stable"
 
 jobs:

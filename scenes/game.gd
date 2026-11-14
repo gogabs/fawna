@@ -549,7 +549,7 @@ func _tick_my_steps(moved: bool, delta: float) -> void:
 		return
 	_walk_time += delta
 	if _step_clock >= STEP_INTERVAL:
-		_step_clock = fmod(_step_clock, STEP_INTERVAL)
+		_step_clock = _next_step_clock(_step_clock)
 		_step_count += 1
 		_play_my_step()
 
@@ -559,6 +559,15 @@ func _play_my_step() -> void:
 	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true, FOOTSTEP_DB)
 	for sound: Array in _step_foley(_step_count):
 		_play(sound[0], true, sound[1])
+
+
+## Relógio depois de tocar um passo. Num quadro normal, guarda a sobra para o
+## próximo passo cair no tempo certo. Depois de um engasgo (um quadro longo),
+## o fmod jogava fora os passos perdidos e o ritmo ficava lento e irregular;
+## agora o atraso vira no máximo meio intervalo, então o próximo passo vem um
+## pouco mais cedo e o ritmo se recupera sem rajada de passos.
+static func _next_step_clock(clock: float) -> float:
+	return minf(clock - STEP_INTERVAL, STEP_INTERVAL * 0.5)
 
 
 ## Foley que acompanha o passo número n desde que a criatura começou a andar
@@ -586,7 +595,7 @@ func _tick_other_steps(delta: float) -> void:
 			if steps["count"] > 0:
 				_play_other(players[id]["pos"], Sounds.move_stop(), START_STOP_DB)
 		elif was_walking and steps["clock"] >= STEP_INTERVAL:
-			steps["clock"] = fmod(steps["clock"], STEP_INTERVAL)
+			steps["clock"] = _next_step_clock(steps["clock"])
 			steps["count"] += 1
 			_play_other_step(players[id]["pos"], steps["count"])
 
