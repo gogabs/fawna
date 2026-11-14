@@ -18,7 +18,7 @@ const SCENE_CUSTOM_GODOT_PHYSICS := 3  # ResonanceRuntimeConfig.scene_type
 const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
-const AMBIENT_VOLUME_DB := -8.0
+const AMBIENT_VOLUME_DB := -12.0
 
 var using_hrtf := false
 var village_level := 0

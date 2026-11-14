@@ -34,7 +34,7 @@ const MANIFEST := {
 	"ui_fechar": ["world/menuclose.ogg"],
 	"amb_agua": ["world/loop_brook.ogg"],
 	"amb_arvore": ["world/loop_windintrees.ogg"],
-	"amb_arbusto": ["world/bees.ogg"],
+	"amb_arbusto": ["world/loop_windinbushes.ogg"],
 	"amb_vila_0": ["world/loop_windchimes1.ogg"],
 	"amb_vila_1": ["world/loop_windchimes2.ogg"],
 	"amb_vila_2": ["world/loop_windchimes3.ogg"],
@@ -43,16 +43,18 @@ const MANIFEST := {
 	"bussola_sul": ["bussola/sul.ogg"],
 	"bussola_lateral": ["bussola/lateral.ogg"],
 	"bussola_colateral": ["bussola/colateral.ogg"],
+	"musica_sombria": ["musica/sombria.ogg"],
 	"musica_vila_0": ["musica/vila_0.ogg"],
 	"musica_vila_1": ["musica/vila_1.ogg"],
 	"musica_vila_2": ["musica/vila_2.ogg"],
 	"musica_vila_3": ["musica/vila_3.ogg"],
 	"passo_trilha": ["world/dirtstep1.ogg", "world/dirtstep2.ogg", "world/dirtstep3.ogg", "world/dirtstep4.ogg", "world/dirtstep5.ogg"],
 	"passo_ponte": ["world/bridgestep1.ogg", "world/bridgestep2.ogg", "world/bridgestep3.ogg", "world/bridgestep4.ogg", "world/bridgestep5.ogg"],
-	"amb_lago": ["world/loop_pond1.ogg"],
-	"fundo_lagoa": ["world/loop_wetland_frogs_chorus.ogg"],
-	"fundo_bosque": ["world/loop_forest_day1.ogg"],
-	"fundo_pradaria": ["world/loop_prairie_day.ogg"],
+	"amb_lago": ["world/loop_wind_water.ogg"],
+	"fundo_lagoa": ["world/loop_lapping_waves.ogg"],
+	"fundo_bosque": ["world/loop_forest_windy.ogg"],
+	"fundo_pradaria": ["world/loop_windy_afternoon.ogg"],
+	"vento_aberto": ["world/loop_wind.ogg"],
 }
 
 static var _loaded := {}  # caminho -> AudioStream
@@ -144,6 +146,14 @@ static func ui_close() -> AudioStream:
 	return _pick("ui_fechar", func(): return null)
 
 
+## Vento de lugar aberto (trilhas e beira da lagoa), em loop, não posicional.
+static func open_wind() -> AudioStream:
+	var stream := _pick("vento_aberto", func(): return null, false)
+	if stream != null:
+		_make_loop(stream)
+	return stream
+
+
 ## Ambiente de fundo do bioma (não posicional), em loop.
 static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 	var key := "fundo_bosque" if biome == WorldGen.Biome.BOSQUE else "fundo_pradaria"
@@ -178,8 +188,13 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
 	return stream
 
 
-## Música de fundo (ocarina, tools/musica_vila.py), uma versão por nível da
-## horta. Sem os arquivos, usa os sininhos gerados por código.
+## Música dark fantasy de fundo (tools/musica_sombria.py).
+static func dark_music() -> AudioStream:
+	return _pick("musica_sombria", func(): return null, false)
+
+
+## Musiquinha de ocarina (tools/musica_vila.py), guardada: uma versão por
+## nível da horta. Sem os arquivos, usa os sininhos gerados por código.
 static func music(level: int) -> AudioStream:
 	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
 	if stream == null:

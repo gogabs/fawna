@@ -21,6 +21,13 @@ const BUMP_SPEECH_COOLDOWN := 1.5
 const COLLECT_REACH := 1.4  # casas, do centro da criatura ao centro da coisa
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
+const BED_VOLUME_DB := -22.0  # fundo do bioma
+## Vento: forte nas trilhas e na beira da lagoa (lugares abertos), fraco no
+## mato da pradaria e quase nada dentro do bosque.
+const WIND_OPEN_DB := -12.0
+const WIND_FIELD_DB := -24.0
+const WIND_SHELTER_DB := -36.0
+const WIND_LAKE_RADIUS := 4
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 
 @onready var view: GameView = $View
@@ -54,6 +61,8 @@ var _village_menu := false
 var _minigame: Minigame = null
 var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
+var _wind: AudioStreamPlayer  # vento dos lugares abertos
+var _wind_tween: Tween
 
 
 func _ready() -> void:
@@ -236,6 +245,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	Music.start()
 	_update_listener()
 	_update_biome_bed()
+	_update_wind()
 	var me: Dictionary = players[my_id]
 	var others := players.size() - 1
 	var company := "Você está só por enquanto." if others == 0 else \
@@ -458,6 +468,7 @@ func _set_pos(new_pos: Vector2) -> void:
 		_cell = cell
 		_announce_arrival(old_cell, cell)
 		_update_biome_bed()
+		_update_wind()
 
 
 ## Esbarrou: o som vem de onde está o obstáculo, e a fala diz o que é.
@@ -648,10 +659,44 @@ func _update_biome_bed() -> void:
 	add_child(_bed)
 	_bed.play(randf() * stream.get_length())
 	var tween := create_tween().set_parallel()
-	tween.tween_property(_bed, "volume_db", -16.0, 1.5)
+	tween.tween_property(_bed, "volume_db", BED_VOLUME_DB, 1.5)
 	if old != null:
 		tween.tween_property(old, "volume_db", -40.0, 1.5)
 		tween.chain().tween_callback(old.queue_free)
+
+
+## O vento sobe nas trilhas e perto da lagoa, e cai dentro do bosque.
+func _update_wind() -> void:
+	if not Net.has_local_player() or DisplayServer.get_name() == "headless":
+		return
+	if _wind == null:
+		var stream := Sounds.open_wind()
+		if stream == null:
+			return
+		_wind = AudioStreamPlayer.new()
+		_wind.stream = stream
+		_wind.volume_db = -60.0
+		add_child(_wind)
+		_wind.play(randf() * stream.get_length())
+	var cell := WorldGen.cell_of(_pos)
+	var target := WIND_FIELD_DB
+	if world.is_trail(cell) or _near_lake(cell):
+		target = WIND_OPEN_DB
+	elif world.biome_at(cell) == WorldGen.Biome.BOSQUE:
+		target = WIND_SHELTER_DB
+	if _wind_tween != null:
+		_wind_tween.kill()
+	_wind_tween = create_tween()
+	_wind_tween.tween_property(_wind, "volume_db", target, 2.5)
+
+
+func _near_lake(cell: Vector2i) -> bool:
+	var r := WIND_LAKE_RADIUS
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if world.thing_at(cell + Vector2i(dx, dy)) == WorldGen.Thing.LAGO:
+				return true
+	return false
 
 
 func _update_listener() -> void:
