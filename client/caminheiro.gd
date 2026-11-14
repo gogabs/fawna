@@ -6,7 +6,7 @@ extends Node
 ## A rota vem do Wayfinder, como uma fila de beacons (as curvas do caminho
 ## pelas trilhas, estradas e pontes). Enquanto está aceso:
 ##   - o beacon atual bate como um coração, um tambor bem abafado que vem da
-##     direção dele, mais rápido quando se está perto;
+##     direção dele, a 70 batidas por minuto;
 ##   - ao chegar num beacon, um woosh sai de perto da criatura e voa na
 ##     direção do próximo, e as batidas recomeçam de lá;
 ##   - no destino, o cristal se apaga.
@@ -19,11 +19,8 @@ signal lost  # longe da rota e sem caminho de onde está: o cristal se apagou
 const ARRIVE_RADIUS := 1.6  # casas (2,4 m): chegou ao beacon
 const OFF_ROUTE_DISTANCE := 9.0  # casas longe da rota: traça de novo
 const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com a distância), na direção do beacon
-const BEAT_SLOW := 1.35  # segundos entre batidas quando o beacon está longe
-const BEAT_FAST := 0.8  # e quando está perto
-const BEAT_NEAR := 2.0  # casas
-const BEAT_FAR := 14.0
-const BEAT_DB := 8.0  # alto: o grave abafado some fácil (Gabs pediu bem mais alto)
+const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
+const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
 const WOOSH_DB := -8.0
 const WOOSH_FROM := 0.6  # casas à frente da criatura, rumo ao próximo beacon
 const WOOSH_TO := 7.0
@@ -114,9 +111,7 @@ func update(pos: Vector2, delta: float) -> void:
 		return
 	_beat_timer -= delta
 	if _beat_timer <= 0.0:
-		var distance := pos.distance_to(beacon)
-		var k := clampf(inverse_lerp(BEAT_NEAR, BEAT_FAR, distance), 0.0, 1.0)
-		_beat_timer = lerpf(BEAT_FAST, BEAT_SLOW, k)
+		_beat_timer = BEAT_INTERVAL
 		_beat(pos, beacon)
 
 

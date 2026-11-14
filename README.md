@@ -81,7 +81,7 @@ manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
 trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
 o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
 curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
-vindo da direção a seguir, mais rápido quando está perto. Ao chegar num
+vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
 beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
 vila, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.

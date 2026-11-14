@@ -20,8 +20,8 @@ DIR = os.path.join(RAIZ, "assets", "sounds", "caminheiro")
 RATE = 44100
 
 CORTE_HZ = 110.0  # passa-baixa: só o grave
-REVERB_SEGUNDOS = 1.1  # cauda do reverb
-REVERB_MISTURA = 0.35  # quanto do reverb entra na mistura
+REVERB_SEGUNDOS = 0.6  # cauda curta, para caber entre as batidas
+REVERB_MISTURA = 0.18  # pouco reverb: no grave, reverb demais embola
 
 
 def pancada(n, inicio, volume, rng):
@@ -62,19 +62,20 @@ def passa_baixa(x, corte, ordens=2):
 
 
 def reverb(x, segundos, rng):
-    """Reverb por convolução com uma resposta sintética: ruído que decai,
-    escurecido (como uma sala de dentro do peito)."""
+    """Reverb por convolução com uma resposta sintética: ruído denso que
+    decai suave. Sem filtrar a resposta: ruído filtrado fica esparso no grave
+    e faz o som "granular", como distorcido."""
     n = int(RATE * segundos)
     t = np.arange(n) / RATE
     resposta = rng.uniform(-1, 1, n) * np.exp(-t * 6.9 / segundos)
-    resposta = passa_baixa(resposta, 400.0, 1)
-    resposta[: int(RATE * 0.012)] = 0.0  # pré-atraso
+    ataque = int(RATE * 0.02)
+    resposta[:ataque] *= np.linspace(0.0, 1.0, ataque)  # entra suave
     resposta /= np.sqrt(np.sum(resposta ** 2))
     tamanho = len(x) + n
     fft = 1 << (tamanho - 1).bit_length()
     molhado = np.fft.irfft(np.fft.rfft(x, fft) * np.fft.rfft(resposta, fft), fft)[:tamanho]
     seco = np.concatenate([x, np.zeros(n)])
-    return seco * (1 - REVERB_MISTURA) + molhado * REVERB_MISTURA * 3.0
+    return seco * (1 - REVERB_MISTURA) + molhado * REVERB_MISTURA
 
 
 def batida():
@@ -86,7 +87,7 @@ def batida():
     som = passa_baixa(som, CORTE_HZ * 1.6, 1)  # tira o que o reverb clareou
     fim = int(RATE * 0.02)
     som[-fim:] *= np.linspace(1.0, 0.0, fim)
-    return (som / np.max(np.abs(som)) * 0.95).astype(np.float32)
+    return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)  # folga contra distorção
 
 
 def main():
