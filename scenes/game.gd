@@ -11,12 +11,12 @@ extends Node
 ## Primeira pessoa: W/S andam para frente e para trás, A/D de lado, Q/E giram
 ## 45°. Posições são contínuas, em casas (1 casa = 1,5 m).
 
-const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
+const WALK_SPEED := 1.8  # casas por segundo (cerca de 2,7 m/s; antes 1,5)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
 ## Ritmo dos passos: quantos passos por segundo, andando para a frente.
-## Para deixar mais rápido ou mais lento, mude só este número (antes era 2,7).
+## Para deixar mais rápido ou mais lento, mude só este número (antes era 3,3).
 ## A velocidade de andar não muda: o passo fica mais curto ou mais longo.
-const STEPS_PER_SECOND := 3.3
+const STEPS_PER_SECOND := 3.6
 const STEP_LENGTH := WALK_SPEED / STEPS_PER_SECOND  # casas entre um passo e outro
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
