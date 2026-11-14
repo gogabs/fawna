@@ -57,13 +57,15 @@ const MANIFEST := {
 	"mov_farfalhar": ["foley/farfalhar_1.ogg", "foley/farfalhar_2.ogg", "foley/farfalhar_3.ogg", "foley/farfalhar_4.ogg", "foley/farfalhar_5.ogg", "foley/farfalhar_6.ogg", "foley/farfalhar_7.ogg"],
 	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg", "foley/tornozeleira_1.ogg", "foley/tornozeleira_2.ogg", "foley/tornozeleira_3.ogg", "foley/tornozeleira_4.ogg", "foley/tornozeleira_5.ogg", "foley/tornozeleira_6.ogg", "foley/tornozeleira_7.ogg", "foley/tornozeleira_8.ogg", "foley/tornozeleira_9.ogg", "foley/tornozeleira_10.ogg"],
 	"caminheiro_batida": ["caminheiro/batida.ogg"],
-	# Bolsa, equipamento e machado. Sem os arquivos, sons gerados por código.
-	"machado_golpe": ["ferramentas/machado_golpe_1.ogg", "ferramentas/machado_golpe_2.ogg", "ferramentas/machado_golpe_3.ogg"],
-	"machado_impacto": ["ferramentas/machado_impacto_1.ogg", "ferramentas/machado_impacto_2.ogg", "ferramentas/machado_impacto_3.ogg"],
-	"machado_quebra": ["ferramentas/machado_quebra.ogg"],
-	"empunhar": ["ferramentas/empunhar.ogg"],
-	"guardar": ["ferramentas/guardar.ogg"],
-	"bolsa_abrir": ["ferramentas/bolsa_abrir.ogg"],
+	# Bolsa, equipamento e machado: um arquivo só ou variações _1 a _4 (sorteadas
+	# sem repetir a última). Sem os arquivos, sons gerados por código.
+	"machado_golpe": ["ferramentas/machado_golpe.ogg", "ferramentas/machado_golpe_1.ogg", "ferramentas/machado_golpe_2.ogg", "ferramentas/machado_golpe_3.ogg", "ferramentas/machado_golpe_4.ogg"],
+	"machado_impacto": ["ferramentas/machado_impacto.ogg", "ferramentas/machado_impacto_1.ogg", "ferramentas/machado_impacto_2.ogg", "ferramentas/machado_impacto_3.ogg", "ferramentas/machado_impacto_4.ogg"],
+	"machado_quebra": ["ferramentas/machado_quebra.ogg", "ferramentas/machado_quebra_1.ogg", "ferramentas/machado_quebra_2.ogg", "ferramentas/machado_quebra_3.ogg", "ferramentas/machado_quebra_4.ogg"],
+	"empunhar": ["ferramentas/empunhar.ogg", "ferramentas/empunhar_1.ogg", "ferramentas/empunhar_2.ogg", "ferramentas/empunhar_3.ogg", "ferramentas/empunhar_4.ogg"],
+	"guardar": ["ferramentas/guardar.ogg", "ferramentas/guardar_1.ogg", "ferramentas/guardar_2.ogg", "ferramentas/guardar_3.ogg", "ferramentas/guardar_4.ogg"],
+	"bolsa_abrir": ["ferramentas/bolsa_abrir.ogg", "ferramentas/bolsa_abrir_1.ogg", "ferramentas/bolsa_abrir_2.ogg", "ferramentas/bolsa_abrir_3.ogg", "ferramentas/bolsa_abrir_4.ogg"],
+	"bolsa_fechar": ["ferramentas/bolsa_fechar.ogg", "ferramentas/bolsa_fechar_1.ogg", "ferramentas/bolsa_fechar_2.ogg", "ferramentas/bolsa_fechar_3.ogg", "ferramentas/bolsa_fechar_4.ogg"],
 }
 
 ## Início e parada do movimento: true troca os sintéticos pelos farfalhares
@@ -176,28 +178,49 @@ static func woosh() -> AudioStream:
 ## Machado: o golpe no ar, a lâmina batendo (no bambu, por exemplo) e o
 ## último golpe, quando a coisa cede.
 static func axe_swing() -> AudioStream:
-	return _pick("machado_golpe", SoundBank.axe_swing)
+	return _pick_variant("machado_golpe", SoundBank.axe_swing)
 
 
 static func axe_hit() -> AudioStream:
-	return _pick("machado_impacto", SoundBank.axe_hit)
+	return _pick_variant("machado_impacto", SoundBank.axe_hit)
 
 
 static func axe_break() -> AudioStream:
-	return _pick("machado_quebra", SoundBank.axe_break)
+	return _pick_variant("machado_quebra", SoundBank.axe_break)
 
 
 ## Tirar um item da bolsa para as mãos, e guardar de volta.
 static func wield() -> AudioStream:
-	return _pick("empunhar", SoundBank.wield)
+	return _pick_variant("empunhar", SoundBank.wield)
 
 
 static func stow() -> AudioStream:
-	return _pick("guardar", SoundBank.stow)
+	return _pick_variant("guardar", SoundBank.stow)
 
 
 static func bag_open() -> AudioStream:
-	return _pick("bolsa_abrir", func(): return _pick("ui_abrir", SoundBank.stow))
+	return _pick_variant("bolsa_abrir", func(): return _pick("ui_abrir", SoundBank.stow))
+
+
+static func bag_close() -> AudioStream:
+	return _pick_variant("bolsa_fechar", func(): return _pick("ui_fechar", func(): return null))
+
+
+## Sorteia entre os arquivos que existem, sem repetir o último; sem nenhum,
+## usa o fallback.
+static func _pick_variant(key: String, fallback: Callable) -> AudioStream:
+	var files := []
+	for file in MANIFEST.get(key, []):
+		if ResourceLoader.exists(DIR + file):
+			files.append(file)
+	if files.size() > 1:
+		files.erase(_last_pick.get(key, ""))
+	if files.is_empty():
+		return fallback.call()
+	var file: String = files[randi() % files.size()]
+	_last_pick[key] = file
+	var stream := _load(DIR + file)
+	return stream if stream != null else fallback.call()
 
 
 static func ui_move() -> AudioStream:
