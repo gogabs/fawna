@@ -33,6 +33,7 @@ const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
 @onready var audio: SpatialAudio = $SpatialAudio
+@onready var birds: Node = $Birds
 
 var state: WorldState  # só no servidor
 var _dirty := false
@@ -89,6 +90,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	_save_world()
 	Sounds.clear()
+	BirdSongs.clear()
 
 
 func _process(delta: float) -> void:
@@ -241,6 +243,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	audio.setup(world)
 	audio.set_heading(_heading, false)
 	audio.set_village_level(int(garden.get("stage", 0)))
+	birds.start_client(audio)
 	Music.set_level(int(garden.get("stage", 0)))
 	Music.start()
 	_update_listener()
@@ -365,6 +368,7 @@ func _load_or_create_world() -> void:
 		print("[servidor] mundo novo criado")
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
+	birds.start_server(state.world)
 	print("[servidor] mundo único no ar, porta %d, semente %d" % [Net.port, state.world.world_seed])
 	_dirty = true
 	_save_world()
@@ -389,6 +393,7 @@ func _on_peer_disconnected(id: int) -> void:
 		return
 	print("[servidor] %s (peer %d) saiu" % [state.players[id]["name"], id])
 	state.remove_player(id)
+	birds.forget_peer(id)
 	player_left.rpc(id)
 
 
@@ -743,6 +748,8 @@ func _run_auto_commands() -> void:
 				Speech.say(Narrator.where_am_i(world, _pos, _heading))
 			"QUEM":
 				_say_who()
+			"PASSAROS":
+				print("[teste] pássaros por perto: %d" % birds.bird_count())
 			"ESPERAR":
 				await get_tree().create_timer(1.0).timeout
 			"ESPACO":
