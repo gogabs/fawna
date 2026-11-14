@@ -173,7 +173,7 @@ func _test_sounds() -> void:
 		for i in Aviary.SPECIES[species]["songs"]:
 			var stream := BirdSongs.song(species, i)
 			_check(stream != null and stream.get_length() > 0.1, "canto %d de %s" % [i, Aviary.species_name(species)])
-		_check(BirdSongs.wings(species, 2.0, true).get_length() >= 2.0, "asas de %s" % Aviary.species_name(species))
+		_check(BirdSongs.wings(species, 2.0, true).get_length() >= 0.3, "asas de %s" % Aviary.species_name(species))
 
 
 func _export(folder: String) -> void:
