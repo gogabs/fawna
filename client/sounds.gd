@@ -130,6 +130,16 @@ static func compass_kind(heading: int) -> String:
 	return "colateral"
 
 
+## Batida do Caminheiro (tambor abafado, como um coração) e o woosh de
+## chegada a um beacon. Arquivos opcionais; sem eles, sons gerados por código.
+static func heartbeat() -> AudioStream:
+	return _pick("caminheiro_batida", SoundBank.heartbeat)
+
+
+static func woosh() -> AudioStream:
+	return _pick("caminheiro_woosh", SoundBank.woosh)
+
+
 static func ui_move() -> AudioStream:
 	return _pick("ui_mover", func(): return null)
 

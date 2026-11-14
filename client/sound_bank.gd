@@ -218,6 +218,55 @@ static func _village_loop(level: int) -> AudioStreamWAV:
 	return _to_wav(samples, true)
 
 
+## Batida do Caminheiro: tambor bem abafado, em duas pancadas, como um
+## coração ("tum-tum"). Tem um grave que cai de tom e um pouco de pele
+## abafada (médios), sem o que o HRTF não consegue dizer de onde vem.
+static func heartbeat() -> AudioStreamWAV:
+	if not _cache.has("coracao"):
+		var count := int(0.62 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2718
+		for hit in [[0.0, 1.0], [0.24, 0.72]]:
+			var start := int(hit[0] * RATE)
+			var phase := 0.0
+			var skin := 0.0
+			for i in range(start, count):
+				var t := float(i - start) / RATE
+				var freq := 58.0 + 70.0 * exp(-t * 28.0)
+				phase += TAU * freq / RATE
+				skin = lerpf(rng.randf_range(-1.0, 1.0), skin, 0.82)
+				var body := sin(phase) * exp(-t * 16.0)
+				var thump := skin * exp(-t * 55.0) * 0.9
+				samples[i] += (body + thump) * hit[1] * 0.55
+		_cache["coracao"] = _to_wav(samples)
+	return _cache["coracao"]
+
+
+## Woosh do Caminheiro: um sopro que cresce e some, abrindo e fechando o
+## brilho no meio. Quem toca move a fonte rumo ao próximo beacon.
+static func woosh() -> AudioStreamWAV:
+	if not _cache.has("woosh"):
+		var count := int(0.75 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 31415
+		var low := 0.0
+		var band := 0.0
+		for i in count:
+			var k := float(i) / count
+			var envelope := pow(sin(PI * pow(k, 0.7)), 2.0)
+			# Mais aberto (menos suavizado) no meio do sopro.
+			var smooth := lerpf(0.97, 0.8, envelope)
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, smooth)
+			band = lerpf(low, band, 0.6)
+			samples[i] = (low - band * 0.5) * envelope * 1.4
+		_cache["woosh"] = _to_wav(samples)
+	return _cache["woosh"]
+
+
 static func _filtered_noise(count: int, smooth: float, volume: float, rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var samples := PackedFloat32Array()
 	samples.resize(count)

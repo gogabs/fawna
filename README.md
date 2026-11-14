@@ -41,9 +41,10 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 
 | Ação | Tecla |
 | --- | --- |
-| Andar para frente / para trás | W / S, ou seta para cima / para baixo |
+| Andar para frente / para trás | W / S |
 | Passo para o lado | A / D |
-| Girar 45° para a esquerda / direita | Q / E, ou seta para a esquerda / direita |
+| Girar 45° para a esquerda / direita | Q / E |
+| Menu flutuante (Caminheiro) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
 | Para onde estou olhando | F |
 | Coletar / menu da vila | Espaço |
 | Inventário | I |
@@ -66,15 +67,31 @@ girassóis ou lagoa das vitórias-régias. O que há dentro delas é gerado aos
 pedaços, conforme alguém chega perto. Trilhas de terra ligam o ponto de
 encontro de cada região aos das vizinhas, com pontes onde cruzam a água; a
 vila é o ponto de encontro da primeira região. As trilhas são a base para o
-guia e para os caminhos dos NPCs. As falas dizem onde as coisas
+Caminheiro e para os caminhos dos NPCs. As falas dizem onde as coisas
 estão em relação a você: "árvore, à frente e à direita, 3 metros".
+
+## Menu das setas e o Caminheiro
+
+As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
+← e → passam pelas opções, ↑ confirma e ↓ volta. Por enquanto a única opção é
+o **Caminheiro**, e o único destino é a vila.
+
+O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
+manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
+trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
+o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
+curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
+vindo da direção a seguir, mais rápido quando está perto. Ao chegar num
+beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
+vila, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
+novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
 
 ## Como se joga (por enquanto)
 
 1. Ande até árvores, arbustos ou água e aperte **Espaço** para coletar madeira, sementes ou água. Os recursos se regeneram.
 2. Na vila (centro do mundo), aperte **Espaço** para abrir o menu:
    - **1, carpintaria:** 2 madeiras viram 1 tábua. Aperte Espaço junto com as batidas do serrote (acerte 5 de 8).
-   - **2, jardinagem:** 1 semente e 1 balde de água viram 1 muda. Ouça as 4 mudas com A/D ou ←/→ e regue a que soa murcha (acerte 2 de 3).
+   - **2, jardinagem:** 1 semente e 1 balde de água viram 1 muda. Ouça as 4 mudas com A/D, Q/E ou ←/→ e regue a que soa murcha (acerte 2 de 3).
    - **3:** entregar para a horta comunitária. **4:** ouvir como ela está.
 3. A horta cresce em 3 estágios (canteiro, horta, horta com irrigação solar), com a ajuda de todos. A cada estágio a vila soa mais viva.
 
@@ -147,6 +164,7 @@ Minigames (precisa rodar como cena):
 
 ```sh
 godot --headless --path . res://tests/test_minigames.tscn
+godot --headless --path . res://tests/test_caminheiro.tscn
 ```
 
 Teste de rede com um servidor e dois clientes, todos sem tela:
