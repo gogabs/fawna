@@ -22,12 +22,6 @@ const MANIFEST := {
 	"coleta_sementes": ["world/wallfoliage.ogg", "world/wallfoliage2.ogg", "world/wallfoliage3.ogg"],
 	"coleta_agua": ["world/water1.ogg", "world/water2.ogg", "world/water3.ogg"],
 	"chegada": ["world/notify.ogg"],
-	"obra_concluida": ["world/achievement.ogg", "world/achievement2.ogg"],
-	"metronomo": ["world/uiblip1.ogg"],
-	"serrote": ["cc0/serrote.ogg"],
-	"serrote_alt": ["world/wallwood4.ogg", "world/wallwood5.ogg", "world/wallwood6.ogg"],
-	"acerto": ["world/uiclick1.ogg"],
-	"regar": ["world/waterjet.ogg", "world/waterjet2.ogg"],
 	"ui_mover": ["world/menuclick.ogg"],
 	"ui_confirmar": ["world/menuenter.ogg"],
 	"ui_abrir": ["world/menuopen.ogg"],
@@ -35,10 +29,7 @@ const MANIFEST := {
 	"amb_agua": ["world/loop_brook.ogg"],
 	"amb_arvore": ["world/loop_windintrees.ogg"],
 	"amb_arbusto": ["world/loop_windinbushes.ogg"],
-	"amb_vila_0": ["world/loop_windchimes1.ogg"],
-	"amb_vila_1": ["world/loop_windchimes2.ogg"],
-	"amb_vila_2": ["world/loop_windchimes3.ogg"],
-	"amb_vila_3": ["world/loop_SpringBirds.ogg"],
+	"amb_origem": ["world/loop_windchimes1.ogg"],
 	"bussola_norte": ["bussola/norte.ogg"],
 	"bussola_sul": ["bussola/sul.ogg"],
 	"bussola_lateral": ["bussola/lateral.ogg"],
@@ -104,27 +95,6 @@ static func chime() -> AudioStream:
 static func pickup(item := "") -> AudioStream:
 	var key := "coleta_" + item
 	return _pick(key if _has_file(key) else "coleta", SoundBank.pickup)
-
-
-static func fanfare() -> AudioStream:
-	return _pick("obra_concluida", SoundBank.fanfare)
-
-
-static func tick() -> AudioStream:
-	return _pick("metronomo", SoundBank.tick)
-
-
-## Batida do serrote. Sem o arquivo CC0, usa batidas de madeira do pacote.
-static func saw() -> AudioStream:
-	return _pick("serrote" if _has_file("serrote") else "serrote_alt", SoundBank.saw)
-
-
-static func tok() -> AudioStream:
-	return _pick("acerto", SoundBank.tok)
-
-
-static func water_splash() -> AudioStream:
-	return _pick("regar", SoundBank.water_splash)
 
 
 ## Clique da bússola ao girar (tools/sons_bussola.py): agudo no norte, grave
@@ -231,8 +201,8 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 	return stream
 
 
-## Som contínuo de cada coisa do mundo. A vila muda com o nível da horta.
-static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
+## Som contínuo de cada coisa do mundo.
+static func ambient(thing: WorldGen.Thing) -> AudioStream:
 	var key := ""
 	match thing:
 		WorldGen.Thing.RIACHO:
@@ -243,13 +213,13 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStream:
 			key = "amb_arvore"
 		WorldGen.Thing.ARBUSTO:
 			key = "amb_arbusto"
-		WorldGen.Thing.VILA:
-			key = "amb_vila_%d" % level
+		WorldGen.Thing.ORIGEM:
+			key = "amb_origem"
 	if key.is_empty():
 		return null
 	var stream := _pick(key, func(): return null, false)
 	if stream == null:
-		return SoundBank.ambient(thing, level)
+		return SoundBank.ambient(thing)
 	_make_loop(stream)
 	return stream
 
@@ -260,16 +230,16 @@ static func dark_music() -> AudioStream:
 
 
 ## Musiquinha de ocarina (tools/musica_vila.py), guardada: uma versão por
-## nível da horta. Sem os arquivos, usa os sininhos gerados por código.
+## nível. Sem os arquivos, usa os sininhos gerados por código.
 static func music(level: int) -> AudioStream:
 	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
 	if stream == null:
-		stream = SoundBank.ambient(WorldGen.Thing.VILA, level)
+		stream = SoundBank.ambient(WorldGen.Thing.ORIGEM, level)
 	return stream
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.VILA]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ORIGEM]
 
 
 static func _has_file(key: String) -> bool:

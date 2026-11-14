@@ -19,7 +19,7 @@ const THING_COLORS := {
 	WorldGen.Thing.TRILHA: Color("a07a4f"),
 	WorldGen.Thing.PONTE: Color("7a5230"),
 	WorldGen.Thing.ARBUSTO: Color("d98ad9"),
-	WorldGen.Thing.VILA: Color("f6c453"),
+	WorldGen.Thing.ORIGEM: Color("f6c453"),
 }
 
 var _world: WorldGen
@@ -38,7 +38,7 @@ func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
 
 ## O mundo não tem bordas: a tela mostra só o entorno da criatura local.
 func _origin() -> Vector2:
-	var me: Vector2 = _players[_my_id]["pos"] if _players.has(_my_id) else WorldGen.village_point()
+	var me: Vector2 = _players[_my_id]["pos"] if _players.has(_my_id) else WorldGen.origin_point()
 	return me - Vector2(VIEW_CELLS) * 0.5
 
 
