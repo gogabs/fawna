@@ -20,6 +20,8 @@ var harvest: Harvest
 var players := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
 var inventories := {}
+## nome da criatura -> item empunhado ("" = mãos livres). Ver Bag.
+var equipment := {}
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
@@ -39,6 +41,9 @@ func add_player(id: int, player_name: String) -> Vector2:
 	players[id] = {"name": clean_name, "pos": pos}
 	if not inventories.has(clean_name):
 		inventories[clean_name] = {}
+	if not equipment.has(clean_name):
+		equipment[clean_name] = ""
+	Bag.give_starter(inventories[clean_name], equipment[clean_name])
 	return pos
 
 
@@ -53,6 +58,45 @@ func inventory_of(id: int) -> Dictionary:
 	if not players.has(id):
 		return {}
 	return inventories[players[id]["name"]]
+
+
+## O que o jogador tem nas mãos ("" = mãos livres).
+func wielding(id: int) -> String:
+	if not players.has(id):
+		return ""
+	return equipment.get(players[id]["name"], "")
+
+
+## Tira um item da bolsa e o põe nas mãos. Se já havia outro nas mãos, ele
+## volta para a bolsa. Devolve { ok, reason, item, stowed }.
+func equip(id: int, item: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Bag.can_wield(item):
+		return {"ok": false, "reason": "nao_empunha", "item": item}
+	var player_name: String = players[id]["name"]
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var stowed: String = equipment.get(player_name, "")
+	if not stowed.is_empty():
+		inv[stowed] = int(inv.get(stowed, 0)) + 1
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	equipment[player_name] = item
+	return {"ok": true, "item": item, "stowed": stowed}
+
+
+## Guarda na bolsa o que estiver nas mãos. Devolve { ok, reason, item }.
+func stow(id: int) -> Dictionary:
+	var item := wielding(id)
+	if item.is_empty():
+		return {"ok": false, "reason": "maos_livres"}
+	var inv := inventory_of(id)
+	inv[item] = int(inv.get(item, 0)) + 1
+	equipment[players[id]["name"]] = ""
+	return {"ok": true, "item": item}
 
 
 ## Aceita a nova posição de um jogador se ela é possível: perto o bastante
@@ -129,6 +173,7 @@ func to_save() -> Dictionary:
 		"version": 1,
 		"seed": world.world_seed,
 		"inventories": inventories,
+		"equipment": equipment,
 		"harvest": harvest.to_save(),
 	}
 
@@ -140,9 +185,11 @@ static func from_save(data: Dictionary) -> WorldState:
 		var saved: Dictionary = data["inventories"][player_name]
 		for item in saved:
 			# Itens que não existem mais no jogo ficam para trás.
-			if Economy.ITEM_NAMES.has(item):
+			if Economy.ITEM_NAMES.has(item) or Bag.NAMES.has(item):
 				inv[item] = int(saved[item])
 		state.inventories[player_name] = inv
+	for player_name in data.get("equipment", {}):
+		state.equipment[player_name] = str(data["equipment"][player_name])
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)

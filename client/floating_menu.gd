@@ -10,10 +10,13 @@ extends RefCounted
 ## Cada opção é um dicionário com "label" e uma destas chaves:
 ##   "open": Callable que devolve as opções do submenu (Array de opções)
 ##   "run":  Callable executado ao confirmar; depois o menu volta ao começo
+##   "info": texto falado ao confirmar, sem sair do lugar (itens sem ação)
+## Opcionais: "empty" (o que dizer se o submenu vier vazio) e "open_sound"
+## (som ao entrar no submenu, no lugar de "abrir").
 ## press() devolve o texto a falar; quem usa o menu (o jogo) fala e toca os
 ## sons de interface.
 
-signal sound(kind: String)  # "mover", "abrir", "confirmar", "fechar"
+signal sound(kind: String)  # "mover", "abrir", "confirmar", "fechar" ou um "open_sound"
 
 var _root: Callable  # devolve as opções do primeiro nível
 var _levels: Array = []  # [{ "title", "items", "index" }], o último é o atual
@@ -67,12 +70,14 @@ func _confirm() -> String:
 	if level["items"].is_empty():
 		return ""
 	var item: Dictionary = level["items"][level["index"]]
+	if item.has("info"):
+		return item["info"]
 	if item.has("open"):
 		var items: Array = item["open"].call()
 		_levels.append({"title": item["label"], "items": items, "index": 0})
-		sound.emit("abrir")
+		sound.emit(item.get("open_sound", "abrir"))
 		if items.is_empty():
-			return "%s: nada aqui por enquanto." % item["label"]
+			return "%s: %s." % [item["label"], item.get("empty", "nada aqui por enquanto")]
 		return "%s. %s" % [item["label"], _describe(_levels[-1])]
 	sound.emit("confirmar")
 	reset()

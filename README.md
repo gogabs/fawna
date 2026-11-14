@@ -44,10 +44,11 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Andar para frente / para trás | W / S |
 | Passo para o lado | A / D |
 | Girar 45° para a esquerda / direita | Q / E |
-| Menu flutuante (Caminheiro) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
+| Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
 | Para onde estou olhando | F |
 | Coletar | Espaço |
-| Inventário | I |
+| O que há na bolsa e nas mãos | I |
+| Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
 | Ouvir os arredores | Tab |
 | Onde estou | C |
@@ -73,8 +74,22 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 ## Menu das setas e o Caminheiro
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
-← e → passam pelas opções, ↑ confirma e ↓ volta. Por enquanto a única opção é
-o **Caminheiro**, e o único destino é a Origem.
+← e → passam pelas opções, ↑ confirma e ↓ volta. As opções são o
+**Caminheiro** (o único destino, por enquanto, é a Origem), a **Bolsa** e o
+**Equipamento**.
+
+### Bolsa e Equipamento
+
+A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Itens sem
+ação só repetem o nome. Alguns itens têm ação: o **machado** (toda criatura
+chega ao mundo com um) tem **Empunhar**, que o tira da bolsa e o põe nas mãos.
+O **Equipamento** mostra o que está nas mãos ("mãos livres" se nada), com o
+botão **Guardar**, que devolve o item à bolsa. Com o machado empunhado, **J**
+golpeia.
+
+Quem decide é o servidor: o cliente pede para empunhar ou guardar, e o
+servidor confere, muda a bolsa e as mãos e responde. A bolsa e o que está nas
+mãos ficam salvos no mundo, pelo nome da criatura, e sobrevivem a reconexões.
 
 O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
 manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
