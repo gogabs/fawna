@@ -24,6 +24,19 @@ const STEP_RESTART := 0.6 * STEP_INTERVAL
 ## Outra criatura conta como andando se a posição dela mudou há menos que
 ## isto (a posição chega a cada 0,1 s, às vezes com atraso).
 const OTHER_WALK_GRACE := 0.25
+## Foley de movimento (roupa de algodão e tornozeleira de conchas, que toda
+## criatura usa). Tudo segue o mesmo relógio dos passos: a tornozeleira fica
+## num tornozelo só, então soa a cada dois passos; cada farfalhar dura cerca
+## de um segundo, então entra a cada três passos e um emenda no outro.
+const ANKLET_EVERY := 2
+const RUSTLE_EVERY := 3
+const RUSTLE_FIRST := 2  # o som de início cobre os primeiros passos
+const MIN_WALK_FOR_STOP := 0.2  # toques curtos na tecla não fazem som de parada
+## Volumes do foley em relação aos passos (0 dB). Bem baixos, de propósito.
+const TURN_RUSTLE_DB := -4.0
+const START_STOP_DB := -4.0
+const RUSTLE_DB := -7.0
+const ANKLET_DB := -5.0
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -60,13 +73,15 @@ var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
 var _step_clock := STEP_INTERVAL  # segundos desde o último passo
 var _walking := false
+var _walk_time := 0.0  # segundos andando sem parar
+var _step_count := 0  # passos desde que começou a andar (para o foley)
 var _send_timer := 0.0
 var _last_sent := Vector2.INF
 var _turn_cooldown := 0.0
 var _bump_sound_cooldown := 0.0
 var _bump_speech_cooldown := 0.0
 var _last_bump_thing := -1
-var _others_step := {}  # id -> {"clock": s desde o último passo, "idle": s sem se mexer}
+var _others_step := {}  # id -> {"clock": s desde o último passo, "idle": s sem se mexer, "count": passos desde que começou}
 var _auto_target: Variant = null  # testes: anda sozinho até este ponto
 var _last_trail_notice := -100000
 var _village_menu := false
@@ -123,7 +138,7 @@ func _process(delta: float) -> void:
 	if _minigame == null and not _village_menu:
 		_walk(_wanted_motion() * delta)
 	_step_clock += delta
-	_tick_my_steps(_pos != before)
+	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
 	_send_timer += delta
 	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
@@ -364,10 +379,12 @@ func player_moved(id: int, pos: Vector2) -> void:
 	view.queue_redraw()
 	if old_pos.distance_to(pos) < 0.01:
 		return
-	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF})
+	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF, "count": 0})
 	if steps["idle"] >= OTHER_WALK_GRACE and steps["clock"] >= STEP_RESTART:
 		steps["clock"] = 0.0  # começou a andar: primeiro passo na hora
-		_play_other_step(pos)
+		steps["count"] = 0
+		_play_other(pos, Sounds.move_start(), START_STOP_DB)
+		_play_other_step(pos, 0)
 	steps["idle"] = 0.0
 	_others_step[id] = steps
 
@@ -492,25 +509,46 @@ func _walk(motion: Vector2) -> void:
 
 
 ## Passos da própria criatura: seguem o relógio enquanto ela anda, num ritmo
-## fixo, como uma animação. Parou, os passos param.
-func _tick_my_steps(moved: bool) -> void:
+## fixo, como uma animação. Parou, os passos param. O foley de movimento
+## (início, farfalhar, conchas e parada) vai junto, no mesmo relógio.
+func _tick_my_steps(moved: bool, delta: float) -> void:
 	if not moved:
+		if _walking and _walk_time >= MIN_WALK_FOR_STOP:
+			_play(Sounds.move_stop(), true, START_STOP_DB)
 		_walking = false
 		return
 	if not _walking:
 		_walking = true
+		_walk_time = 0.0
 		if _step_clock >= STEP_RESTART:
 			_step_clock = 0.0
+			_step_count = 0
+			_play(Sounds.move_start(), true, START_STOP_DB)
 			_play_my_step()
 		return
+	_walk_time += delta
 	if _step_clock >= STEP_INTERVAL:
 		_step_clock = fmod(_step_clock, STEP_INTERVAL)
+		_step_count += 1
 		_play_my_step()
 
 
 func _play_my_step() -> void:
 	var cell := WorldGen.cell_of(_pos)
 	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true)
+	for sound: Array in _step_foley(_step_count):
+		_play(sound[0], true, sound[1])
+
+
+## Foley que acompanha o passo número n desde que a criatura começou a andar
+## (n = 0 é o primeiro). Vale para ela e para as outras: [[som, volume], ...].
+func _step_foley(n: int) -> Array:
+	var sounds := []
+	if n % ANKLET_EVERY == 0:
+		sounds.append([Sounds.anklet(), ANKLET_DB])
+	if n >= RUSTLE_FIRST and (n - RUSTLE_FIRST) % RUSTLE_EVERY == 0:
+		sounds.append([Sounds.cloth_rustle(), RUSTLE_DB])
+	return sounds
 
 
 ## Passos das outras criaturas: no mesmo ritmo, enquanto a posição delas muda.
@@ -518,10 +556,18 @@ func _tick_other_steps(delta: float) -> void:
 	for id: int in _others_step:
 		var steps: Dictionary = _others_step[id]
 		steps["clock"] += delta
+		var was_walking: bool = steps["idle"] < OTHER_WALK_GRACE
 		steps["idle"] += delta
-		if steps["idle"] < OTHER_WALK_GRACE and steps["clock"] >= STEP_INTERVAL and players.has(id):
+		if not players.has(id):
+			continue
+		if was_walking and steps["idle"] >= OTHER_WALK_GRACE:
+			# Parou (a posição não muda há um tempinho): som de parada.
+			if steps["count"] > 0:
+				_play_other(players[id]["pos"], Sounds.move_stop(), START_STOP_DB)
+		elif was_walking and steps["clock"] >= STEP_INTERVAL:
 			steps["clock"] = fmod(steps["clock"], STEP_INTERVAL)
-			_play_other_step(players[id]["pos"])
+			steps["count"] += 1
+			_play_other_step(players[id]["pos"], steps["count"])
 
 
 func _set_pos(new_pos: Vector2) -> void:
@@ -558,6 +604,7 @@ func _turn(step: int) -> void:
 	_turn_cooldown = TURN_REPEAT
 	_heading = posmod(_heading + step, Compass.STEPS)
 	audio.play_compass(_heading)
+	_play(Sounds.turn_rustle(), true, TURN_RUSTLE_DB)
 	audio.set_heading(_heading)
 	view.heading = _heading
 	view.queue_redraw()
@@ -702,7 +749,7 @@ const SFX_VOICES := 8
 
 ## Toca um som da própria criatura. vary dá a passos uma leve variação de
 ## altura e volume, para dois passos iguais seguidos não soarem idênticos.
-func _play(stream: AudioStream, vary := false) -> void:
+func _play(stream: AudioStream, vary := false, volume_db := 0.0) -> void:
 	if stream == null:
 		return
 	if _sfx_voices.is_empty():
@@ -722,16 +769,24 @@ func _play(stream: AudioStream, vary := false) -> void:
 		_sfx_voices.append(voice)
 	voice.stream = stream
 	voice.pitch_scale = randf_range(0.94, 1.06) if vary else 1.0
-	voice.volume_db = randf_range(-1.5, 0.0) if vary else 0.0
+	voice.volume_db = volume_db + (randf_range(-1.5, 0.0) if vary else 0.0)
 	voice.play()
 
 
-## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
-func _play_other_step(pos: Vector2) -> void:
+## Passos de outras criaturas soam na posição delas (com HRTF, se instalado),
+## com o mesmo foley de roupa e conchas da própria criatura.
+func _play_other_step(pos: Vector2, n: int) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), 0.0, true, true)
+	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	for sound: Array in _step_foley(n):
+		_play_other(pos, sound[0], sound[1])
+
+
+func _play_other(pos: Vector2, stream: AudioStream, volume_db := 0.0) -> void:
+	if stream != null and pos.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(pos, stream, volume_db, true, true)
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
