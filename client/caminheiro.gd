@@ -111,7 +111,9 @@ func update(pos: Vector2, delta: float) -> void:
 		return
 	_beat_timer -= delta
 	if _beat_timer <= 0.0:
-		_beat_timer = BEAT_INTERVAL
+		# Soma em vez de reiniciar: a sobra do quadro não se perde, então um
+		# quadro longo não atrasa as batidas seguintes (70 bpm certinhos).
+		_beat_timer = maxf(_beat_timer + BEAT_INTERVAL, BEAT_INTERVAL * 0.5)
 		_beat(pos, beacon)
 
 
