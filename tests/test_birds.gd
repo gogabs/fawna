@@ -62,6 +62,11 @@ func _test_spawn_near_player() -> void:
 		var thing := world.thing_at(bird["cell"])
 		_check(Aviary.SPECIES[bird["species"]]["perches"].has(thing), "pássaro deveria nascer num poleiro (está em %s)" % cell)
 	_check(has_sabia, "o bosque deveria ter sabiás")
+	for bird in aviary.birds.values():
+		var voices := {}
+		for song in bird["songs"]:
+			voices[int(song) / Aviary.VOICE_STRIDE] = true
+		_check(voices.size() == 1, "cada pássaro deveria cantar com uma voz só")
 
 
 func _test_same_seed_same_birds() -> void:

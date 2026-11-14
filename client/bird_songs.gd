@@ -7,9 +7,11 @@ extends RefCounted
 ## (pássaros cantam com duas "gargantas" ao mesmo tempo), e um pouco de eco
 ## de mata. Cada som é gerado na primeira vez e guardado.
 ##
-## Para trocar por gravações, ponha arquivos em assets/sounds/passaros/ com
-## o nome <espécie>_<n>.ogg (ex.: sabia_0.ogg) ou <espécie>_asas.ogg; se
-## existirem, são usados no lugar dos gerados.
+## Gravações em assets/sounds/passaros/ entram no lugar dos sons gerados:
+## <espécie>_<voz>_<frase>.wav|ogg para os cantos (ex.: sabia_1_0.wav; uma
+## voz com uma frase só serve para todas as frases dela), <espécie>_alarme
+## para o susto e asas_<n> para o voo (sorteado a cada voo). Uma voz sem
+## arquivos usa os cantos gerados.
 
 const RATE := 32000
 const DIR := "res://assets/sounds/passaros/"
@@ -22,12 +24,16 @@ static func clear() -> void:
 	_cache.clear()
 
 
-## Um dos cantos da espécie.
-static func song(species: int, index: int) -> AudioStream:
-	var key := "%s_%d" % [FILE_NAMES[species], index]
+## Um dos cantos da espécie: "song" é voz * Aviary.VOICE_STRIDE + frase.
+static func song(species: int, song_id: int) -> AudioStream:
+	var voice := song_id / Aviary.VOICE_STRIDE
+	var index := song_id % Aviary.VOICE_STRIDE
+	var key := "%s_%d_%d" % [FILE_NAMES[species], voice, index]
 	if _cache.has(key):
 		return _cache[key]
 	var stream: AudioStream = _file(key)
+	if stream == null:
+		stream = _file("%s_%d_0" % [FILE_NAMES[species], voice])
 	if stream == null:
 		var buf := PackedFloat32Array()
 		match species:
@@ -73,10 +79,9 @@ static func wings(species: int, seconds: float, startled := false) -> AudioStrea
 	var key := "%s_asas_%.2f_%s" % [FILE_NAMES[species], seconds, startled]
 	if _cache.has(key):
 		return _cache[key]
-	var file: AudioStream = _file("%s_asas" % FILE_NAMES[species])
-	if file != null:
-		_cache[key] = file
-		return file
+	var files := _wing_files()
+	if not files.is_empty():
+		return files[randi() % files.size()]
 	var rate: float = {Aviary.Species.SABIA: 13.0, Aviary.Species.CARRICA: 21.0, Aviary.Species.ROLINHA: 9.0}[species]
 	var body: float = {Aviary.Species.SABIA: 0.75, Aviary.Species.CARRICA: 0.55, Aviary.Species.ROLINHA: 0.85}[species]
 	var buf := _buffer(seconds + 0.3)
@@ -263,6 +268,19 @@ static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 	wav.stereo = false
 	wav.data = data
 	return wav
+
+
+## Gravações de voo (asas_0, asas_1...), as mesmas para todas as espécies:
+## o tom muda com o tamanho do pássaro.
+static func _wing_files() -> Array:
+	if not _cache.has("asas_arquivos"):
+		var found := []
+		for i in 8:
+			var stream := _file("asas_%d" % i)
+			if stream != null:
+				found.append(stream)
+		_cache["asas_arquivos"] = found
+	return _cache["asas_arquivos"]
 
 
 static func _file(name: String) -> AudioStream:

@@ -14,6 +14,8 @@ const ARC_HEIGHT := 1.6  # metros: o voo sobe um pouco no meio do caminho
 ## bem baixinhos; cantos discretos, abaixo da fala.
 const SONG_DB := {Aviary.Species.SABIA: -9.0, Aviary.Species.CARRICA: -17.0, Aviary.Species.ROLINHA: -11.0}
 const WINGS_DB := -15.0
+## Asas gravadas: mais agudas no passarinho, mais graves na rolinha.
+const WINGS_PITCH := {Aviary.Species.SABIA: 1.0, Aviary.Species.CARRICA: 1.3, Aviary.Species.ROLINHA: 0.85}
 const ALARM_DB := -12.0
 
 var aviary: Aviary  # só no servidor
@@ -123,7 +125,7 @@ func bird_flew(id: int, from: Vector3, to: Vector3, delay: float, duration: floa
 		await get_tree().create_timer(delay).timeout
 		if not _birds.has(id):
 			return
-	_play(id, BirdSongs.wings(bird["species"], duration, startled), WINGS_DB, randf_range(0.95, 1.05))
+	_play(id, BirdSongs.wings(bird["species"], duration, startled), WINGS_DB, WINGS_PITCH[bird["species"]] * randf_range(0.95, 1.05))
 	# Quem sai na frente do bando dá o grito de susto.
 	if startled and delay <= 0.0:
 		var alarm := BirdSongs.alarm(bird["species"])

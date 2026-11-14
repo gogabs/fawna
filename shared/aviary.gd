@@ -29,7 +29,8 @@ const SPECIES := {
 		"height": [3.5, 5.5],
 		"flee": 2.0,  # chega a essa distância e ele foge
 		"hop": [5.0, 13.0],  # distância de um voo normal
-		"songs": 4,
+		"songs": 3,  # frases de cada voz
+		"voices": 3,  # vozes diferentes: cada pássaro nasce com uma
 	},
 	Species.CARRICA: {
 		"name": "carriça-do-cardo",
@@ -42,6 +43,7 @@ const SPECIES := {
 		"flee": 2.6,
 		"hop": [4.0, 11.0],
 		"songs": 4,
+		"voices": 3,
 	},
 	Species.ROLINHA: {
 		"name": "rolinha-do-junco",
@@ -54,6 +56,7 @@ const SPECIES := {
 		"flee": 2.2,
 		"hop": [5.0, 12.0],
 		"songs": 3,
+		"voices": 1,
 	},
 }
 
@@ -76,6 +79,9 @@ const SPREAD := 2.5  # casas: os membros pousam perto do alvo do bando
 const PER_PERCH := 3  # quantos membros de um bando cabem num arbusto
 
 var world: WorldGen
+
+## Um canto é identificado por voz * VOICE_STRIDE + frase.
+const VOICE_STRIDE := 100
 
 ## id -> pássaro: { id, group, species, pitch, songs, pos, height, cell,
 ## flying, from, to, from_h, to_h, start_ms, end_ms, next_song_ms,
@@ -195,8 +201,8 @@ func _spawn_group(species: int, chunk: Vector2i, home: Vector2i, rng: RandomNumb
 		var spot: Array = spots[i % spots.size()]
 		var bird := {
 			"id": _next_id, "group": group["id"], "species": species,
-			# Cada indivíduo tem a voz um pouco mais grave ou aguda, e os
-			# seus cantos preferidos.
+			# Cada indivíduo nasce com uma das vozes da espécie, um pouco
+			# mais grave ou aguda, e com as suas frases preferidas.
 			"pitch": rng.randf_range(0.92, 1.08),
 			"songs": _favorite_songs(species, rng),
 			"pos": spot[0], "height": spot[1], "cell": spot[2],
@@ -371,6 +377,7 @@ func _perches_in_chunk(origin: Vector2i, species: int) -> Array:
 
 
 func _favorite_songs(species: int, rng: RandomNumberGenerator) -> Array:
+	var voice := rng.randi_range(0, int(SPECIES[species]["voices"]) - 1)
 	var total: int = SPECIES[species]["songs"]
 	var songs := []
 	for i in total:
@@ -381,7 +388,7 @@ func _favorite_songs(species: int, rng: RandomNumberGenerator) -> Array:
 		var tmp = songs[i]
 		songs[i] = songs[j]
 		songs[j] = tmp
-	return songs.slice(0, maxi(2, total - 1))
+	return songs.slice(0, maxi(2, total - 1)).map(func(n): return voice * VOICE_STRIDE + n)
 
 
 # --- Quem está perto -----------------------------------------------------------
