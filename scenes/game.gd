@@ -56,6 +56,7 @@ const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
 const WIND_LAKE_RADIUS := 4
 const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
+const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
@@ -814,6 +815,8 @@ func _swing() -> void:
 	# servidor); senão, é só o machado cortando o ar.
 	var target := _strike_target()
 	if target != WorldGen.NO_CELL:
+		# A lâmina batendo, logo depois do golpe no ar (o colmo soa pelo servidor).
+		get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 		request_strike.rpc_id(1, target)
 	else:
 		request_swing.rpc_id(1)
@@ -968,7 +971,8 @@ func _setup_caminheiro() -> void:
 func _menu_root() -> Array:
 	return [
 		{"label": "Caminheiro", "open": _caminheiro_items},
-		{"label": "Bolsa", "open": _bag_items, "empty": "vazia", "open_sound": "bolsa"},
+		{"label": "Bolsa", "open": _bag_items, "empty": "vazia",
+			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 	]
 
@@ -1053,6 +1057,10 @@ func _on_menu_sound(kind: String) -> void:
 			_play(Sounds.ui_open())
 		"bolsa":
 			_play(Sounds.bag_open())
+		"bolsa_mexer":
+			_play(Sounds.bag_rummage())
+		"bolsa_fechar":
+			_play(Sounds.bag_close())
 		"confirmar":
 			_play(Sounds.ui_confirm())
 		"fechar":

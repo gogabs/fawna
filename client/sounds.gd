@@ -35,10 +35,10 @@ const MANIFEST := {
 	"bambu_golpe": ["recursos/bambu_golpe_1.ogg", "recursos/bambu_golpe_2.ogg", "recursos/bambu_golpe_3.ogg", "recursos/bambu_golpe_4.ogg"],
 	"bambu_queda": ["recursos/bambu_queda.ogg"],
 	"chegada": ["world/notify.ogg"],
-	"ui_mover": ["world/menuclick.ogg"],
+	"ui_mover": ["menu/menu_navegar.ogg", "world/menuclick.ogg"],
 	"ui_confirmar": ["world/menuenter.ogg"],
-	"ui_abrir": ["world/menuopen.ogg"],
-	"ui_fechar": ["world/menuclose.ogg"],
+	"ui_abrir": ["menu/menu_abrir.ogg", "world/menuopen.ogg"],
+	"ui_fechar": ["menu/menu_fechar.ogg", "world/menuclose.ogg"],
 	"amb_agua": ["world/loop_brook.ogg"],
 	"amb_arvore": ["world/loop_windintrees.ogg"],
 	"amb_arbusto": ["world/loop_windinbushes.ogg"],
@@ -78,6 +78,7 @@ const MANIFEST := {
 	"empunhar": ["ferramentas/empunhar.ogg", "ferramentas/empunhar_1.ogg", "ferramentas/empunhar_2.ogg", "ferramentas/empunhar_3.ogg", "ferramentas/empunhar_4.ogg"],
 	"guardar": ["ferramentas/guardar.ogg", "ferramentas/guardar_1.ogg", "ferramentas/guardar_2.ogg", "ferramentas/guardar_3.ogg", "ferramentas/guardar_4.ogg"],
 	"bolsa_abrir": ["ferramentas/bolsa_abrir.ogg", "ferramentas/bolsa_abrir_1.ogg", "ferramentas/bolsa_abrir_2.ogg", "ferramentas/bolsa_abrir_3.ogg", "ferramentas/bolsa_abrir_4.ogg"],
+	"bolsa_mexer": ["ferramentas/bolsa_mexer.ogg", "ferramentas/bolsa_mexer_1.ogg", "ferramentas/bolsa_mexer_2.ogg", "ferramentas/bolsa_mexer_3.ogg", "ferramentas/bolsa_mexer_4.ogg"],
 	"bolsa_fechar": ["ferramentas/bolsa_fechar.ogg", "ferramentas/bolsa_fechar_1.ogg", "ferramentas/bolsa_fechar_2.ogg", "ferramentas/bolsa_fechar_3.ogg", "ferramentas/bolsa_fechar_4.ogg"],
 }
 
@@ -260,11 +261,26 @@ static func stow() -> AudioStream:
 
 
 static func bag_open() -> AudioStream:
-	return _pick_variant("bolsa_abrir", func(): return _pick("ui_abrir", SoundBank.stow))
+	return _pick_variant("bolsa_abrir", func(): return _pick_first("ui_abrir", SoundBank.stow))
 
 
 static func bag_close() -> AudioStream:
-	return _pick_variant("bolsa_fechar", func(): return _pick("ui_fechar", func(): return null))
+	return _pick_variant("bolsa_fechar", func(): return _pick_first("ui_fechar"))
+
+
+## Mexer nos itens da bolsa (passar de um para outro).
+static func bag_rummage() -> AudioStream:
+	return _pick_variant("bolsa_mexer", ui_move)
+
+
+## O primeiro arquivo da lista que existir (os sons escolhidos vêm antes dos
+## do pacote world, que ficam de reserva).
+static func _pick_first(key: String, fallback := Callable()) -> AudioStream:
+	for file in MANIFEST.get(key, []):
+		var stream := _load(DIR + file)
+		if stream != null:
+			return stream
+	return fallback.call() if fallback.is_valid() else null
 
 
 ## Sorteia entre os arquivos que existem, sem repetir o último; sem nenhum,
@@ -285,7 +301,7 @@ static func _pick_variant(key: String, fallback: Callable) -> AudioStream:
 
 
 static func ui_move() -> AudioStream:
-	return _pick("ui_mover", func(): return null)
+	return _pick_first("ui_mover")
 
 
 static func ui_confirm() -> AudioStream:
@@ -293,11 +309,11 @@ static func ui_confirm() -> AudioStream:
 
 
 static func ui_open() -> AudioStream:
-	return _pick("ui_abrir", func(): return null)
+	return _pick_first("ui_abrir")
 
 
 static func ui_close() -> AudioStream:
-	return _pick("ui_fechar", func(): return null)
+	return _pick_first("ui_fechar")
 
 
 ## Vento de lugar aberto (trilhas e beira da lagoa), em loop, não posicional.
