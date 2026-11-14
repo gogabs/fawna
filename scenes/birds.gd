@@ -159,7 +159,7 @@ func bird_count() -> int:
 ## Toca um som do pássaro numa fonte livre (ou na mais antiga, se todas
 ## estiverem ocupadas), que passa a acompanhar o pássaro enquanto toca.
 func _play(id: int, stream: AudioStream, volume_db: float, pitch: float) -> void:
-	if stream == null or _voices.is_empty():
+	if stream == null or _voices.is_empty() or OS.get_environment("FAWNA_SEM_PASSAROS") == "1":
 		return
 	var voice: Dictionary = _free_voice()
 	var player: AudioStreamPlayer3D = voice["player"]

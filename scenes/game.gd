@@ -150,6 +150,7 @@ func _process(delta: float) -> void:
 		_walk(_wanted_motion() * delta)
 	_step_clock += delta
 	_tick_my_steps(_pos != before, delta)
+	_debug_tick(delta, _pos.distance_to(before))
 	_tick_other_steps(delta)
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta)
@@ -554,7 +555,33 @@ func _tick_my_steps(moved: bool, delta: float) -> void:
 		_play_my_step()
 
 
+# DEBUG (só na branch de teste): mede quadros, passos e distância.
+var _dbg_t := 0.0
+var _dbg_frames := 0
+var _dbg_steps := 0
+var _dbg_dist := 0.0
+var _dbg_max_delta := 0.0
+
+
+func _debug_tick(delta: float, dist: float) -> void:
+	_dbg_t += delta
+	_dbg_frames += 1
+	_dbg_dist += dist
+	_dbg_max_delta = maxf(_dbg_max_delta, delta)
+	if _dbg_t >= 2.0:
+		if _dbg_dist > 0.01:
+			print("[debug] %.1fs: quadros/s=%.0f maior_quadro=%.0fms passos/s=%.2f casas/s=%.2f latencia_audio=%.0fms vozes_sfx_tocando=%d" % [
+				_dbg_t, _dbg_frames / _dbg_t, _dbg_max_delta * 1000.0, _dbg_steps / _dbg_t, _dbg_dist / _dbg_t,
+				AudioServer.get_output_latency() * 1000.0, _sfx_voices.filter(func(v): return v.playing).size()])
+		_dbg_t = 0.0
+		_dbg_frames = 0
+		_dbg_steps = 0
+		_dbg_dist = 0.0
+		_dbg_max_delta = 0.0
+
+
 func _play_my_step() -> void:
+	_dbg_steps += 1
 	var cell := WorldGen.cell_of(_pos)
 	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true, FOOTSTEP_DB)
 	for sound: Array in _step_foley(_step_count):
