@@ -35,8 +35,10 @@ Os outros jogadores soam igual, posicionados em 3D. A pasta `foley/` está no
 confirmada; sem ela, o jogo segue sem esses sons. Nomes esperados (ver
 `MANIFEST` em `client/sounds.gd`): `giro_1..3.ogg`, `inicio_sintetico.ogg`,
 `parada_sintetica.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`,
-`farfalhar_1..7.ogg` e `tornozeleira_concha.ogg`. A tornozeleira é um trecho de
-"SeaShell_01", de agoniasboy no Freesound (CC0).
+`farfalhar_1..7.ogg`, `tornozeleira_concha.ogg` e `tornozeleira_1..10.ogg`. A
+tornozeleira é um trecho de "SeaShell_01", de agoniasboy no Freesound (CC0);
+as variações 1 a 10 são sacudidas novas montadas com os cliques recortados
+dessa mesma gravação, sorteadas sem repetir a anterior.
 
 ## Caminheiro (caminheiro/)
 

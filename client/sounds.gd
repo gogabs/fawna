@@ -64,7 +64,7 @@ const MANIFEST := {
 	"mov_inicio_amigo": ["foley/inicio_amigo.ogg"],
 	"mov_parada_amigo": ["foley/parada_amigo.ogg"],
 	"mov_farfalhar": ["foley/farfalhar_1.ogg", "foley/farfalhar_2.ogg", "foley/farfalhar_3.ogg", "foley/farfalhar_4.ogg", "foley/farfalhar_5.ogg", "foley/farfalhar_6.ogg", "foley/farfalhar_7.ogg"],
-	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg"],
+	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg", "foley/tornozeleira_1.ogg", "foley/tornozeleira_2.ogg", "foley/tornozeleira_3.ogg", "foley/tornozeleira_4.ogg", "foley/tornozeleira_5.ogg", "foley/tornozeleira_6.ogg", "foley/tornozeleira_7.ogg", "foley/tornozeleira_8.ogg", "foley/tornozeleira_9.ogg", "foley/tornozeleira_10.ogg"],
 	"caminheiro_batida": ["caminheiro/batida.ogg"],
 }
 
@@ -162,11 +162,27 @@ static func move_stop() -> AudioStream:
 
 
 static func cloth_rustle() -> AudioStream:
-	return _pick("mov_farfalhar", func(): return null)
+	return _pick_fresh("mov_farfalhar")
 
 
 static func anklet() -> AudioStream:
-	return _pick("mov_tornozeleira", func(): return null)
+	return _pick_fresh("mov_tornozeleira")
+
+
+static var _last_pick := {}  # nome lógico -> último arquivo sorteado
+
+
+## Sorteia sem repetir o último arquivo, e só entre os que existem.
+static func _pick_fresh(key: String) -> AudioStream:
+	var files := []
+	for file in MANIFEST.get(key, []):
+		if ResourceLoader.exists(DIR + file) and (file != _last_pick.get(key, "")):
+			files.append(file)
+	if files.is_empty():
+		return _pick(key, func(): return null)
+	var file: String = files[randi() % files.size()]
+	_last_pick[key] = file
+	return _load(DIR + file)
 
 
 ## Batida do Caminheiro (tambor abafado, como um coração, com passa-baixa e

@@ -36,7 +36,7 @@ const MIN_WALK_FOR_STOP := 0.2  # toques curtos na tecla não fazem som de parad
 ## Volumes do foley em relação aos passos (0 dB). Bem baixos, de propósito.
 const TURN_RUSTLE_DB := -4.0
 const START_STOP_DB := -4.0
-const RUSTLE_DB := -7.0
+const RUSTLE_DB := -16.0
 const ANKLET_DB := -5.0
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
