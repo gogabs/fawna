@@ -243,6 +243,10 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 		player.unit_size = METERS_PER_CELL * 2.0
 		player.max_distance = METERS_PER_CELL * (AMBIENT_RADIUS + 2)
 		player.panning_strength = 1.5
+	# O Godot, por padrão, abafa os sons 3D com a distância (passa-baixa em
+	# 5 kHz, até -24 dB). Com os pássaros longe, isso tirava todo o brilho das
+	# asas e dos cantos. A distância já fica só no volume.
+	player.attenuation_filter_db = 0.0
 	player.stream = stream
 	player.volume_db = volume_db
 	return player
