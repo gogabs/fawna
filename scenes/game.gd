@@ -13,7 +13,11 @@ extends Node
 
 const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
-const STEP_LENGTH := 0.55  # casas entre um passo e outro (cerca de 80 cm)
+## Ritmo dos passos: quantos passos por segundo, andando para a frente.
+## Para deixar mais rápido ou mais lento, mude só este número (antes era 2,7).
+## A velocidade de andar não muda: o passo fica mais curto ou mais longo.
+const STEPS_PER_SECOND := 3.3
+const STEP_LENGTH := WALK_SPEED / STEPS_PER_SECOND  # casas entre um passo e outro
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -342,7 +346,7 @@ func player_moved(id: int, pos: Vector2) -> void:
 	view.queue_redraw()
 	var walked: float = _others_step.get(id, 0.0) + old_pos.distance_to(pos)
 	if walked >= STEP_LENGTH:
-		walked = 0.0
+		walked = fmod(walked, STEP_LENGTH)  # guarda a sobra: ritmo regular
 		_play_other_step(pos)
 	_others_step[id] = walked
 
@@ -472,7 +476,7 @@ func _set_pos(new_pos: Vector2) -> void:
 	view.queue_redraw()
 	_step_distance += walked
 	if _step_distance >= STEP_LENGTH:
-		_step_distance = 0.0
+		_step_distance = fmod(_step_distance, STEP_LENGTH)  # guarda a sobra: ritmo regular
 		var step_cell := WorldGen.cell_of(new_pos)
 		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)))
 	var cell := WorldGen.cell_of(new_pos)
