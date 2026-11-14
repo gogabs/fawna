@@ -328,7 +328,7 @@ static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 static func _wing_files() -> Array:
 	if not _cache.has("asas_arquivos"):
 		var found := []
-		for i in 8:
+		for i in 32:
 			var stream := _file("asas_%d" % i)
 			if stream != null:
 				found.append(stream)
