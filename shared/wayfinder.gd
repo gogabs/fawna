@@ -13,7 +13,7 @@ extends RefCounted
 ##      (WorldGen.region_landmark e trail_neighbors), o caminho mais curto.
 ##   3. Cada trecho entre pontos de encontro é traçado casa a casa (A*) por
 ##      cima das trilhas. Sair da trilha custa caro, mas é permitido, para
-##      atravessar trechos sem trilha (como a clareira em volta da vila).
+##      atravessar trechos sem trilha (como a clareira em volta da Origem).
 ##   4. O caminho casa a casa é simplificado: sobram só as curvas, e trechos
 ##      retos muito longos ganham beacons no meio.
 ##
@@ -145,7 +145,7 @@ func nearest_trail_path(from: Vector2) -> Array[Vector2i]:
 	heap.push(start, 0.0)
 	while not heap.is_empty():
 		var cell: Vector2i = heap.pop()
-		if world.is_trail(cell) and world.thing_at(cell) != WorldGen.Thing.VILA:
+		if world.is_trail(cell) and world.thing_at(cell) != WorldGen.Thing.ORIGEM:
 			return _rebuild(came, cell)
 		for step in _neighbors(cell):
 			var next: Vector2i = step[0]

@@ -22,7 +22,6 @@ const AMBIENT_VOLUME_DB := -12.0
 const MAX_SIMULATION_SOURCES := 128  # limite do Steam Audio (o máximo do addon)
 
 var using_hrtf := false
-var village_level := 0
 
 var _world: WorldGen
 var _camera: Camera3D
@@ -124,19 +123,6 @@ func play_compass(heading: int) -> void:
 	player.play()
 
 
-## A vila soa diferente conforme a horta cresce.
-func set_village_level(level: int) -> void:
-	if level == village_level:
-		return
-	village_level = level
-	var village := WorldGen.center()
-	if _ambient.has(village):
-		_ambient[village].queue_free()
-		_ambient.erase(village)
-	if _camera != null and _world != null and _listener_cell != WorldGen.NO_CELL:
-		_refresh_ambient(_listener_cell)
-
-
 ## Toca um som curto numa casa do mundo (ex.: passo de outra criatura).
 func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 	play_at_point(WorldGen.cell_center(cell), stream, volume_db)
@@ -202,7 +188,7 @@ func _refresh_ambient(center: Vector2i) -> void:
 	for cell: Vector2i in wanted:
 		if _ambient.has(cell):
 			continue
-		var stream := Sounds.ambient(_world.thing_at(cell), village_level)
+		var stream := Sounds.ambient(_world.thing_at(cell))
 		if stream == null:
 			continue
 		var player := _new_player(stream, AMBIENT_VOLUME_DB)

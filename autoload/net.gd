@@ -26,7 +26,6 @@ var save_path := "user://mundo.json"
 var new_world := false
 
 ## Comandos automáticos para testes (ex.: --auto=N,N,L,ARREDORES,SAIR).
-## Com eles, os minigames terminam sozinhos com sucesso.
 var auto_commands: PackedStringArray = []
 
 

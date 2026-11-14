@@ -97,7 +97,7 @@ func _back() -> String:
 	return _describe(level)
 
 
-## "Vila", ou "Vila, 1 de 2" quando há mais de uma opção.
+## "Origem", ou "Origem, 1 de 2" quando há mais de uma opção.
 static func _describe(level: Dictionary) -> String:
 	var items: Array = level["items"]
 	if items.is_empty():

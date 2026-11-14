@@ -71,7 +71,6 @@ var world: WorldGen
 var my_id := 0
 var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}
-var garden := {}
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
@@ -88,8 +87,6 @@ var _last_bump_thing := -1
 var _others_step := {}  # id -> {"clock": s desde o último passo, "idle": s sem se mexer, "count": passos desde que começou}
 var _auto_target: Variant = null  # testes: anda sozinho até este ponto
 var _last_trail_notice := -100000
-var _village_menu := false
-var _minigame: Minigame = null
 var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
@@ -141,8 +138,7 @@ func _process(delta: float) -> void:
 	_bump_sound_cooldown = maxf(_bump_sound_cooldown - delta, 0.0)
 	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
 	var before := _pos
-	if _minigame == null and not _village_menu:
-		_walk(_wanted_motion() * delta)
+	_walk(_wanted_motion() * delta)
 	_step_clock += delta
 	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
@@ -156,28 +152,23 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world == null or _minigame != null or not event.is_pressed():
+	if world == null or not event.is_pressed():
 		return
-	# Setas: menu flutuante, sempre ativo (até com o menu da vila aberto).
+	# Setas: menu flutuante, sempre ativo.
 	for action: String in MENU_ACTIONS:
 		if event.is_action(action):
 			if not event.is_echo() and _menu != null:
 				Speech.say(_menu.press(MENU_ACTIONS[action]))
 			get_viewport().set_input_as_handled()
 			return
-	if not _village_menu:
-		# Girar aceita a tecla segurada (repetição), com um intervalo.
-		for action: String in ["girar_esquerda", "girar_direita"]:
-			if event.is_action(action):
-				if _turn_cooldown <= 0.0 or not event.is_echo():
-					_turn(-1 if action == "girar_esquerda" else 1)
-				get_viewport().set_input_as_handled()
-				return
+	# Girar aceita a tecla segurada (repetição), com um intervalo.
+	for action: String in ["girar_esquerda", "girar_direita"]:
+		if event.is_action(action):
+			if _turn_cooldown <= 0.0 or not event.is_echo():
+				_turn(-1 if action == "girar_esquerda" else 1)
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_echo():
-		return
-	if _village_menu:
-		_village_menu_input(event)
-		get_viewport().set_input_as_handled()
 		return
 	if event.is_action("interagir"):
 		_interact()
@@ -212,7 +203,7 @@ func request_join(player_name: String) -> void:
 	var pos := state.add_player(id, player_name)
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
-	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id), state.garden)
+	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	for other_id in state.players:
 		if other_id != id:
 			player_joined.rpc_id(other_id, id, accepted_name, pos)
@@ -246,47 +237,14 @@ func request_collect(cell: Vector2i) -> void:
 		action_failed.rpc_id(id, result["reason"], result.get("item", ""))
 
 
-@rpc("any_peer", "call_local", "reliable")
-func request_craft(recipe_name: String, success: bool) -> void:
-	if not multiplayer.is_server():
-		return
-	var id := _sender_id()
-	var result := state.craft(id, recipe_name, success)
-	if result["ok"]:
-		_dirty = true
-		inventory_changed.rpc_id(id, state.inventory_of(id), "fez", result["item"])
-	elif state.players.has(id) and result["reason"] == "faltam":
-		action_failed.rpc_id(id, "faltam", recipe_name)
-
-
-@rpc("any_peer", "call_local", "reliable")
-func request_contribute() -> void:
-	if not multiplayer.is_server():
-		return
-	var id := _sender_id()
-	if not state.near_village(id):
-		return
-	var result := state.contribute(id)
-	if result["given"].is_empty():
-		action_failed.rpc_id(id, "nada_para_horta", "")
-		return
-	_dirty = true
-	var who: String = state.players[id]["name"]
-	print("[servidor] %s entregou %s para a horta" % [who, Economy.items_text(result["given"])])
-	inventory_changed.rpc_id(id, state.inventory_of(id), "", "")
-	garden_changed.rpc(state.garden, id, who, result["given"], result["completed_stage"])
-	_save_world()
-
-
 # --- Rede: avisos do servidor (executados nos clientes) ----------------------
 
 @rpc("authority", "call_local", "reliable")
-func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, garden_state: Dictionary) -> void:
+func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) -> void:
 	my_id = multiplayer.get_unique_id()
 	world = WorldGen.new(world_seed)
 	players = snapshot
 	inventory = my_inventory
-	garden = garden_state
 	_pos = players[my_id]["pos"]
 	_heading = 0
 	_cell = WorldGen.cell_of(_pos)
@@ -294,10 +252,8 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	view.heading = _heading
 	audio.setup(world)
 	audio.set_heading(_heading, false)
-	audio.set_village_level(int(garden.get("stage", 0)))
 	birds.start_client(audio)
 	_setup_caminheiro()
-	Music.set_level(int(garden.get("stage", 0)))
 	Music.start()
 	_update_listener()
 	_update_biome_bed()
@@ -306,8 +262,8 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	var others := players.size() - 1
 	var company := "Você está só por enquanto." if others == 0 else \
 		"Há mais %d criatura%s no mundo." % [others, "" if others == 1 else "s"]
-	Speech.say("Boas-vindas ao Fawna, %s. %s %s %s Aperte H para ouvir os comandos." % [
-		me["name"], Narrator.where_am_i(world, _pos, _heading), company, Narrator.garden_status(garden)])
+	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte H para ouvir os comandos." % [
+		me["name"], Narrator.where_am_i(world, _pos, _heading), company])
 	_run_auto_commands()
 
 
@@ -333,34 +289,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Não há nada para coletar aqui. Chegue bem perto de uma árvore, de um arbusto ou da água.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
-		"faltam":
-			Speech.say("Faltam recursos para %s." % detail)
-		"nada_para_horta":
-			var missing := Economy.stage_missing(int(garden.get("stage", 0)), garden.get("delivered", {}))
-			Speech.say("Você não tem o que a horta precisa agora: %s." % Economy.items_text(missing))
 		_:
 			pass  # "devagar", "longe": ignora em silêncio
-
-
-@rpc("authority", "call_local", "reliable")
-func garden_changed(garden_state: Dictionary, contributor_id: int, contributor_name: String, given: Dictionary, completed_stage: int) -> void:
-	if world == null:
-		return
-	garden = garden_state
-	var who := "Você" if contributor_id == my_id else contributor_name
-	var text := "%s entregou %s para a %s." % [who, Economy.items_text(given), Economy.GARDEN_NAME]
-	if completed_stage >= 0:
-		_play(Sounds.fanfare())
-		audio.set_village_level(int(garden["stage"]))
-		Music.set_level(int(garden["stage"]))
-		var stage_name: String = Economy.GARDEN_STAGES[completed_stage]["name"]
-		var helpers: Array = garden.get("contributors", [])
-		text += " A %s cresceu: agora é %s! Obrigado a %s." % [Economy.GARDEN_NAME, stage_name, ", ".join(PackedStringArray(helpers))]
-		if int(garden["stage"]) < Economy.GARDEN_STAGES.size():
-			text += " " + Narrator.garden_status(garden)
-	else:
-		text += " " + Narrator.garden_status(garden)
-	Speech.say(text, contributor_id == my_id)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -644,12 +574,9 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 		Speech.say(WorldGen.THING_NAMES[thing], false)
 
 
-## Espaço: na vila abre o menu; fora dela, coleta o que estiver ao alcance,
-## dando preferência ao que está à frente.
+## Espaço: coleta o que estiver ao alcance, dando preferência ao que está à
+## frente.
 func _interact() -> void:
-	if _pos.distance_to(WorldGen.village_point()) <= WorldState.VILLAGE_REACH * 0.8:
-		_open_village_menu()
-		return
 	var target := _collect_target()
 	if target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
@@ -678,61 +605,6 @@ func _collect_target() -> Vector2i:
 	return best
 
 
-func _open_village_menu() -> void:
-	_village_menu = true
-	_play(Sounds.ui_open())
-	Speech.say("Vila. 1: carpintaria, 2 madeiras viram 1 tábua. 2: jardinagem, 1 semente e 1 balde de água viram 1 muda. 3: entregar para a horta. 4: como está a horta. Esc para sair.")
-
-
-func _village_menu_input(event: InputEvent) -> void:
-	if event.is_action("ui_cancel"):
-		_village_menu = false
-		_play(Sounds.ui_close())
-		Speech.say("Saiu do menu da vila.")
-		return
-	if not event is InputEventKey:
-		return
-	match (event as InputEventKey).physical_keycode:
-		KEY_1, KEY_KP_1:
-			_start_craft("carpintaria")
-		KEY_2, KEY_KP_2:
-			_start_craft("jardinagem")
-		KEY_3, KEY_KP_3:
-			_village_menu = false
-			request_contribute.rpc_id(1)
-		KEY_4, KEY_KP_4:
-			Speech.say(Narrator.garden_status(garden))
-		_:
-			if event.is_action("inventario"):
-				_say_inventory()
-
-
-func _start_craft(recipe_name: String) -> void:
-	var inputs: Dictionary = Economy.RECIPES[recipe_name]["inputs"]
-	var missing := {}
-	for item in inputs:
-		var lacking: int = inputs[item] - int(inventory.get(item, 0))
-		if lacking > 0:
-			missing[item] = lacking
-	if not missing.is_empty():
-		Speech.say("Para %s faltam %s." % [recipe_name, Economy.items_text(missing)])
-		return
-	_village_menu = false
-	var game: Minigame = CarpentryMinigame.new() if recipe_name == "carpintaria" else GardeningMinigame.new()
-	_minigame = game
-	add_child(game)
-	game.finished.connect(_on_minigame_finished.bind(recipe_name))
-	if not Net.auto_commands.is_empty():
-		game._finish(true)  # testes automáticos pulam o minigame
-		return
-	game.start()
-
-
-func _on_minigame_finished(success: bool, recipe_name: String) -> void:
-	_minigame = null
-	request_craft.rpc_id(1, recipe_name, success)
-
-
 func _say_inventory() -> void:
 	if Economy.items_text(inventory) == "nada":
 		Speech.say("Você ainda não tem nada. Aperte Espaço perto de árvores, arbustos ou água para coletar.")
@@ -741,7 +613,7 @@ func _say_inventory() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -890,9 +762,9 @@ func _menu_root() -> Array:
 	return [{"label": "Caminheiro", "open": _caminheiro_items}]
 
 
-## Destinos do Caminheiro. Por enquanto, só a vila.
+## Destinos do Caminheiro. Por enquanto, só a Origem.
 func _caminheiro_items() -> Array:
-	var items := [{"label": "Vila", "run": _track.bind(WorldGen.village_point(), "vila")}]
+	var items := [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "Origem")}]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
 	return items
@@ -975,12 +847,6 @@ func _run_auto_commands() -> void:
 				_interact()
 			"INV":
 				_say_inventory()
-			"CARPINTARIA":
-				_start_craft("carpintaria")
-			"JARDINAGEM":
-				_start_craft("jardinagem")
-			"HORTA":
-				request_contribute.rpc_id(1)
 			"MENU_CIMA", "MENU_BAIXO", "MENU_ESQUERDA", "MENU_DIREITA":
 				Speech.say(_menu.press(command.trim_prefix("MENU_").to_lower()))
 			"SEGUIR":  # segue o Caminheiro até ele se apagar (ou desistir)
@@ -988,9 +854,8 @@ func _run_auto_commands() -> void:
 				while _caminheiro.active and Time.get_ticks_msec() < deadline:
 					await _auto_walk(_caminheiro.current_beacon(), 20.0)
 					await get_tree().process_frame
-			"VILA":
-				_village_menu = false
-				await _auto_walk(WorldGen.village_point())
+			"ORIGEM":
+				await _auto_walk(WorldGen.origin_point())
 			"SAIR":
 				Net.stop()
 				get_tree().quit()
