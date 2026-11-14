@@ -25,3 +25,15 @@ frases de shakuhachi, em ré menor. Gerada por `tools/musica_sombria.py`
 (MIDI em `assets/music/sombria.mid`, soundfont FluidR3_GM, licença MIT).
 Composição do próprio projeto. A musiquinha de ocarina (`musica/vila_*.ogg`)
 continua guardada; `USE_OCARINA` em `autoload/music.gd` a traz de volta.
+
+## Foley de movimento (foley/)
+
+Sons da roupa de algodão e da tornozeleira de conchas da criatura: giro,
+início e parada do movimento, farfalhar contínuo e conchas a cada dois passos.
+Os outros jogadores soam igual, posicionados em 3D. A pasta `foley/` está no
+`.gitignore` e não vai para o GitHub até a licença de todos os sons ser
+confirmada; sem ela, o jogo segue sem esses sons. Nomes esperados (ver
+`MANIFEST` em `client/sounds.gd`): `giro_1..3.ogg`, `inicio_sintetico.ogg`,
+`parada_sintetica.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`,
+`farfalhar_1..7.ogg` e `tornozeleira_concha.ogg`. A tornozeleira é um trecho de
+"SeaShell_01", de agoniasboy no Freesound (CC0).

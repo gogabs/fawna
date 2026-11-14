@@ -14,3 +14,7 @@ build/
 addons/prismatoid/
 addons/nexus_resonance/
 __pycache__/
+
+# Foley de movimento (roupa e conchas): fica só nos PCs até a licença dos
+# sons ser confirmada. Os nomes esperados estão em client/sounds.gd.
+assets/sounds/foley/

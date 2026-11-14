@@ -55,7 +55,21 @@ const MANIFEST := {
 	"fundo_bosque": ["world/loop_forest_windy.ogg"],
 	"fundo_pradaria": ["world/loop_windy_afternoon.ogg"],
 	"vento_aberto": ["world/loop_wind.ogg"],
+	# Foley de movimento da criatura (roupa de algodão e tornozeleira de
+	# conchas). Ficam em foley/, fora do repositório até a licença ser
+	# confirmada; sem eles o jogo segue sem esses sons.
+	"mov_giro": ["foley/giro_1.ogg", "foley/giro_2.ogg", "foley/giro_3.ogg"],
+	"mov_inicio": ["foley/inicio_sintetico.ogg"],
+	"mov_parada": ["foley/parada_sintetica.ogg"],
+	"mov_inicio_amigo": ["foley/inicio_amigo.ogg"],
+	"mov_parada_amigo": ["foley/parada_amigo.ogg"],
+	"mov_farfalhar": ["foley/farfalhar_1.ogg", "foley/farfalhar_2.ogg", "foley/farfalhar_3.ogg", "foley/farfalhar_4.ogg", "foley/farfalhar_5.ogg", "foley/farfalhar_6.ogg", "foley/farfalhar_7.ogg"],
+	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg"],
 }
+
+## Início e parada do movimento: true troca os sintéticos pelos farfalhares
+## gravados (as alternativas da seleção).
+const FRIEND_START_STOP := false
 
 static var _loaded := {}  # caminho -> AudioStream
 
@@ -128,6 +142,30 @@ static func compass_kind(heading: int) -> String:
 		2, 6:
 			return "lateral"
 	return "colateral"
+
+
+## Foley de movimento: o pano da roupa ao girar, ao começar e ao parar de
+## andar, o farfalhar contínuo enquanto anda e as conchas da tornozeleira.
+static func turn_rustle() -> AudioStream:
+	return _pick("mov_giro", func(): return null)
+
+
+static func move_start() -> AudioStream:
+	var key := "mov_inicio_amigo" if FRIEND_START_STOP and _has_file("mov_inicio_amigo") else "mov_inicio"
+	return _pick(key, func(): return null)
+
+
+static func move_stop() -> AudioStream:
+	var key := "mov_parada_amigo" if FRIEND_START_STOP and _has_file("mov_parada_amigo") else "mov_parada"
+	return _pick(key, func(): return null)
+
+
+static func cloth_rustle() -> AudioStream:
+	return _pick("mov_farfalhar", func(): return null)
+
+
+static func anklet() -> AudioStream:
+	return _pick("mov_tornozeleira", func(): return null)
 
 
 static func ui_move() -> AudioStream:
