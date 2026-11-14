@@ -55,6 +55,7 @@ const MANIFEST := {
 	"fundo_bosque": ["world/loop_forest_windy.ogg"],
 	"fundo_pradaria": ["world/loop_windy_afternoon.ogg"],
 	"vento_aberto": ["world/loop_wind.ogg"],
+	"caminheiro_batida": ["caminheiro/batida.ogg"],
 }
 
 static var _loaded := {}  # caminho -> AudioStream
@@ -128,6 +129,17 @@ static func compass_kind(heading: int) -> String:
 		2, 6:
 			return "lateral"
 	return "colateral"
+
+
+## Batida do Caminheiro (tambor abafado, como um coração, com passa-baixa e
+## reverb já no arquivo: tools/som_caminheiro.py) e o woosh de chegada a um
+## beacon. Sem os arquivos, sons gerados por código.
+static func heartbeat() -> AudioStream:
+	return _pick("caminheiro_batida", SoundBank.heartbeat)
+
+
+static func woosh() -> AudioStream:
+	return _pick("caminheiro_woosh", SoundBank.woosh)
 
 
 static func ui_move() -> AudioStream:

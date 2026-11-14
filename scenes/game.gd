@@ -9,7 +9,8 @@ extends Node
 ##   servidor confere e avisa todos (player_moved), ou corrige (move_corrected)
 ##
 ## Primeira pessoa: W/S andam para frente e para trás, A/D de lado, Q/E giram
-## 45°. Posições são contínuas, em casas (1 casa = 1,5 m).
+## 45°. Posições são contínuas, em casas (1 casa = 1,5 m). As setas não movem:
+## operam o menu flutuante (FloatingMenu), onde fica o Caminheiro.
 
 const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
@@ -39,6 +40,9 @@ const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
 const WIND_LAKE_RADIUS := 4
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
+const MENU_ACTIONS := {
+	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
+}
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
@@ -75,6 +79,8 @@ var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
+var _caminheiro: Caminheiro
+var _menu: FloatingMenu
 ## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
 ## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
 ## fim do passo anterior não é cortado e os dois se sobrepõem naturalmente.
@@ -125,6 +131,8 @@ func _process(delta: float) -> void:
 	_step_clock += delta
 	_tick_my_steps(_pos != before)
 	_tick_other_steps(delta)
+	if _caminheiro != null:
+		_caminheiro.update(_pos, delta)
 	_send_timer += delta
 	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
 		_send_timer = 0.0
@@ -135,6 +143,13 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if world == null or _minigame != null or not event.is_pressed():
 		return
+	# Setas: menu flutuante, sempre ativo (até com o menu da vila aberto).
+	for action: String in MENU_ACTIONS:
+		if event.is_action(action):
+			if not event.is_echo() and _menu != null:
+				Speech.say(_menu.press(MENU_ACTIONS[action]))
+			get_viewport().set_input_as_handled()
+			return
 	if not _village_menu:
 		# Girar aceita a tecla segurada (repetição), com um intervalo.
 		for action: String in ["girar_esquerda", "girar_direita"]:
@@ -266,6 +281,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	audio.set_heading(_heading, false)
 	audio.set_village_level(int(garden.get("stage", 0)))
 	birds.start_client(audio)
+	_setup_caminheiro()
 	Music.set_level(int(garden.get("stage", 0)))
 	Music.start()
 	_update_listener()
@@ -678,7 +694,7 @@ func _say_inventory() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S, ou seta para cima e para baixo: andar para frente e para trás. A e D: passo para o lado. Q e E, ou seta para os lados: girar. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -800,6 +816,68 @@ func _sender_id() -> int:
 
 
 
+# --- Caminheiro e menu das setas ---------------------------------------------
+
+func _setup_caminheiro() -> void:
+	_caminheiro = Caminheiro.new()
+	_caminheiro.name = "Caminheiro"
+	add_child(_caminheiro)
+	_caminheiro.setup(world, audio)
+	_caminheiro.arrived.connect(_on_caminheiro_arrived)
+	_caminheiro.lost.connect(func(): Speech.say("O cristal do Caminheiro se apagou: não achou caminho daqui."))
+	_caminheiro.beacon_reached.connect(func(_p): view.queue_redraw())
+	view.caminheiro = _caminheiro
+	_menu = FloatingMenu.new(_menu_root)
+	_menu.sound.connect(_on_menu_sound)
+
+
+func _menu_root() -> Array:
+	return [{"label": "Caminheiro", "open": _caminheiro_items}]
+
+
+## Destinos do Caminheiro. Por enquanto, só a vila.
+func _caminheiro_items() -> Array:
+	var items := [{"label": "Vila", "run": _track.bind(WorldGen.village_point(), "vila")}]
+	if _caminheiro.active:
+		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
+	return items
+
+
+func _track(destination: Vector2, place_name: String) -> String:
+	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
+		_caminheiro.stop()
+		return "Você já está na %s." % place_name
+	if not _caminheiro.start(_pos, destination, place_name):
+		return "O cristal do Caminheiro não achou caminho até a %s." % place_name
+	view.queue_redraw()
+	var meters := Compass.meters(_caminheiro.estimated_length())
+	return "O cristal do Caminheiro brilha azul, rumo à %s, a uns %s pelas trilhas. Siga as batidas do coração." % [place_name, meters]
+
+
+func _stop_tracking() -> String:
+	_caminheiro.stop()
+	view.queue_redraw()
+	return "O cristal do Caminheiro se apagou."
+
+
+func _on_caminheiro_arrived(place_name: String) -> void:
+	_play(Sounds.chime())
+	view.queue_redraw()
+	Speech.say("Você chegou à %s. O cristal do Caminheiro se apaga." % place_name)
+
+
+func _on_menu_sound(kind: String) -> void:
+	match kind:
+		"mover":
+			_play(Sounds.ui_move())
+		"abrir":
+			_play(Sounds.ui_open())
+		"confirmar":
+			_play(Sounds.ui_confirm())
+		"fechar":
+			_play(Sounds.ui_close())
+
+
 # --- Testes automáticos ------------------------------------------------------
 
 ## Só para testes: anda sozinho até um ponto (ou desiste depois de um tempo).
@@ -848,6 +926,13 @@ func _run_auto_commands() -> void:
 				_start_craft("jardinagem")
 			"HORTA":
 				request_contribute.rpc_id(1)
+			"MENU_CIMA", "MENU_BAIXO", "MENU_ESQUERDA", "MENU_DIREITA":
+				Speech.say(_menu.press(command.trim_prefix("MENU_").to_lower()))
+			"SEGUIR":  # segue o Caminheiro até ele se apagar (ou desistir)
+				var deadline := Time.get_ticks_msec() + 120000
+				while _caminheiro.active and Time.get_ticks_msec() < deadline:
+					await _auto_walk(_caminheiro.current_beacon(), 20.0)
+					await get_tree().process_frame
 			"VILA":
 				_village_menu = false
 				await _auto_walk(WorldGen.village_point())
