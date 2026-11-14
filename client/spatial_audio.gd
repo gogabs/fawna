@@ -31,6 +31,11 @@ var _listener_cell := WorldGen.NO_CELL
 var _listener_pos := Vector2.ZERO
 var _turn_tween: Tween
 var _compass_players: Array[AudioStreamPlayer3D] = []  # um por hora do relógio
+## Vozes para sons curtos (passos dos outros, esbarrões...). Ficam criadas e
+## são reaproveitadas: o Steam Audio demora a registrar uma fonte nova, e um
+## som curto numa fonte recém-criada acabava antes disso, saindo mudo.
+var _voices: Array[AudioStreamPlayer3D] = []
+var _next_voice := 0
 
 
 func _ready() -> void:
@@ -45,6 +50,7 @@ func _ready() -> void:
 	listener.make_current()
 	_setup_resonance()
 	_setup_compass()
+	_setup_voices()
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
@@ -131,15 +137,45 @@ func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 	play_at_point(WorldGen.cell_center(cell), stream, volume_db)
 
 
+const VOICE_COUNT := 16
+
+
+func _setup_voices() -> void:
+	for i in VOICE_COUNT:
+		var voice := _new_player(null, 0.0)
+		voice.name = "Voz_%d" % i
+		add_child(voice)
+		_voices.append(voice)
+
+
 ## Toca um som curto num ponto do mundo (ex.: esbarrão, passos de alguém).
 func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0, hrtf := true) -> void:
 	if _camera == null or stream == null:
+		return
+	if hrtf and using_hrtf and not _voices.is_empty():
+		_play_on_voice(point, stream, volume_db)
 		return
 	var player := _new_player(stream, volume_db, hrtf)
 	player.position = point_to_3d(point)
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.play()
+
+
+## Usa a próxima voz livre (ou a mais antiga, se todas estiverem tocando).
+func _play_on_voice(point: Vector2, stream: AudioStream, volume_db: float) -> void:
+	var voice := _voices[_next_voice]
+	for i in _voices.size():
+		var candidate := _voices[(_next_voice + i) % _voices.size()]
+		if not candidate.playing:
+			voice = candidate
+			break
+	_next_voice = (_voices.find(voice) + 1) % _voices.size()
+	voice.stop()
+	voice.stream = stream
+	voice.volume_db = volume_db + HRTF_GAIN_DB
+	voice.position = point_to_3d(point)
+	voice.play()
 
 
 func _refresh_ambient(center: Vector2i) -> void:
