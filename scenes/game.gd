@@ -33,11 +33,13 @@ const ANKLET_EVERY := 2
 const RUSTLE_EVERY := 3
 const RUSTLE_FIRST := 2  # o som de início cobre os primeiros passos
 const MIN_WALK_FOR_STOP := 0.2  # toques curtos na tecla não fazem som de parada
-## Volumes do foley em relação aos passos (0 dB). Bem baixos, de propósito.
+## Volumes do foley em relação aos passos (0 dB). Baixos, mas sem sumir
+## debaixo dos passos: na 0.3.0 as conchas ficavam 13 dB e o farfalhar 16 dB
+## abaixo deles, e não se ouvia nenhum dos dois.
 const TURN_RUSTLE_DB := -4.0
 const START_STOP_DB := -4.0
-const RUSTLE_DB := -16.0
-const ANKLET_DB := -5.0
+const RUSTLE_DB := -12.0
+const ANKLET_DB := 0.0
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
