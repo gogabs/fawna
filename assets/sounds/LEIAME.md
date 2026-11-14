@@ -50,3 +50,21 @@ do Gabs (2026-11-14).
 duas pancadas graves de tambor abafado, com passa-baixa forte e um reverb
 curto e escuro já aplicados no arquivo. Gerado por `tools/som_caminheiro.py`
 (som do próprio projeto).
+
+## Pássaros (passaros/)
+
+Cantos, chamados e asas dos pássaros (`client/bird_songs.gd`). Os nomes seguem
+`<espécie>_<voz>_<frase>`, `asas_<n>` e `carrica_alarme`. Sem os arquivos, o
+jogo gera os sons por código. Publicados com autorização do Gabs (2026-11-14).
+
+- Gravados por um amigo do Gabs, cedidos ao projeto sem exigência de
+  atribuição, recortados em 48 kHz: `asas_2..11`, `carrica_3..5`, `sabia_3..4`,
+  `corvo_*`, `coruja_*`, `gaviao_*`, `periquito_*`.
+- Recortes de gravações CC0 do Freesound:
+  - `sabia_0_*`: [811988](https://freesound.org/s/811988/) (melro)
+  - `sabia_1_*`: [854987](https://freesound.org/s/854987/) (rouxinol)
+  - `sabia_2_*`: [785669](https://freesound.org/s/785669/) (tordo-músico)
+  - `carrica_0_*` e `carrica_alarme`: [836392](https://freesound.org/s/836392/) (corruíra, de newtad1)
+  - `carrica_1_*`: [703254](https://freesound.org/s/703254/) (chapim)
+  - `rolinha_0_*`: [735366](https://freesound.org/s/735366/) (pomba)
+  - `asas_0`: [330967](https://freesound.org/s/330967/); `asas_1`: [561009](https://freesound.org/s/561009/)
