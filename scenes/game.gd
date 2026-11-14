@@ -14,7 +14,17 @@ extends Node
 
 const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
-const STEP_LENGTH := 0.55  # casas entre um passo e outro (cerca de 80 cm)
+## Ritmo dos passos: quantos passos por segundo enquanto a criatura anda.
+## Os passos seguem o relógio, como uma animação, e não a distância andada.
+## Para deixar mais rápido ou mais lento, mude só este número (antes era 2,7).
+const STEPS_PER_SECOND := 3.3
+const STEP_INTERVAL := 1.0 / STEPS_PER_SECOND
+## Ao começar a andar, o primeiro passo sai na hora, a menos que o último
+## tenha sido há bem pouco (toques rápidos na tecla não viram rajada).
+const STEP_RESTART := 0.6 * STEP_INTERVAL
+## Outra criatura conta como andando se a posição dela mudou há menos que
+## isto (a posição chega a cada 0,1 s, às vezes com atraso).
+const OTHER_WALK_GRACE := 0.25
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -52,14 +62,15 @@ var garden := {}
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
-var _step_distance := 0.0
+var _step_clock := STEP_INTERVAL  # segundos desde o último passo
+var _walking := false
 var _send_timer := 0.0
 var _last_sent := Vector2.INF
 var _turn_cooldown := 0.0
 var _bump_sound_cooldown := 0.0
 var _bump_speech_cooldown := 0.0
 var _last_bump_thing := -1
-var _others_step := {}  # id -> distância andada desde o último passo ouvido
+var _others_step := {}  # id -> {"clock": s desde o último passo, "idle": s sem se mexer}
 var _auto_target: Variant = null  # testes: anda sozinho até este ponto
 var _last_trail_notice := -100000
 var _village_menu := false
@@ -70,6 +81,10 @@ var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
 var _caminheiro: Caminheiro
 var _menu: FloatingMenu
+## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
+## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
+## fim do passo anterior não é cortado e os dois se sobrepõem naturalmente.
+var _sfx_voices: Array[AudioStreamPlayer] = []
 
 
 func _ready() -> void:
@@ -110,8 +125,12 @@ func _process(delta: float) -> void:
 	_turn_cooldown = maxf(_turn_cooldown - delta, 0.0)
 	_bump_sound_cooldown = maxf(_bump_sound_cooldown - delta, 0.0)
 	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
+	var before := _pos
 	if _minigame == null and not _village_menu:
 		_walk(_wanted_motion() * delta)
+	_step_clock += delta
+	_tick_my_steps(_pos != before)
+	_tick_other_steps(delta)
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta)
 	_send_timer += delta
@@ -359,11 +378,14 @@ func player_moved(id: int, pos: Vector2) -> void:
 	var old_pos: Vector2 = players[id]["pos"]
 	players[id]["pos"] = pos
 	view.queue_redraw()
-	var walked: float = _others_step.get(id, 0.0) + old_pos.distance_to(pos)
-	if walked >= STEP_LENGTH:
-		walked = 0.0
+	if old_pos.distance_to(pos) < 0.01:
+		return
+	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF})
+	if steps["idle"] >= OTHER_WALK_GRACE and steps["clock"] >= STEP_RESTART:
+		steps["clock"] = 0.0  # começou a andar: primeiro passo na hora
 		_play_other_step(pos)
-	_others_step[id] = walked
+	steps["idle"] = 0.0
+	_others_step[id] = steps
 
 
 ## Outra criatura coletou algo: o som sai de onde ela está.
@@ -485,17 +507,44 @@ func _walk(motion: Vector2) -> void:
 		_bump(target)
 
 
+## Passos da própria criatura: seguem o relógio enquanto ela anda, num ritmo
+## fixo, como uma animação. Parou, os passos param.
+func _tick_my_steps(moved: bool) -> void:
+	if not moved:
+		_walking = false
+		return
+	if not _walking:
+		_walking = true
+		if _step_clock >= STEP_RESTART:
+			_step_clock = 0.0
+			_play_my_step()
+		return
+	if _step_clock >= STEP_INTERVAL:
+		_step_clock = fmod(_step_clock, STEP_INTERVAL)
+		_play_my_step()
+
+
+func _play_my_step() -> void:
+	var cell := WorldGen.cell_of(_pos)
+	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true)
+
+
+## Passos das outras criaturas: no mesmo ritmo, enquanto a posição delas muda.
+func _tick_other_steps(delta: float) -> void:
+	for id: int in _others_step:
+		var steps: Dictionary = _others_step[id]
+		steps["clock"] += delta
+		steps["idle"] += delta
+		if steps["idle"] < OTHER_WALK_GRACE and steps["clock"] >= STEP_INTERVAL and players.has(id):
+			steps["clock"] = fmod(steps["clock"], STEP_INTERVAL)
+			_play_other_step(players[id]["pos"])
+
+
 func _set_pos(new_pos: Vector2) -> void:
-	var walked := _pos.distance_to(new_pos)
 	_pos = new_pos
 	players[my_id]["pos"] = new_pos
 	audio.move_listener(new_pos)
 	view.queue_redraw()
-	_step_distance += walked
-	if _step_distance >= STEP_LENGTH:
-		_step_distance = 0.0
-		var step_cell := WorldGen.cell_of(new_pos)
-		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)))
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
 		var old_cell := _cell
@@ -664,9 +713,33 @@ func _say_who() -> void:
 	Speech.say("No mundo: %s." % ", ".join(names))
 
 
-func _play(stream: AudioStream) -> void:
-	sfx.stream = stream
-	sfx.play()
+const SFX_VOICES := 8
+
+
+## Toca um som da própria criatura. vary dá a passos uma leve variação de
+## altura e volume, para dois passos iguais seguidos não soarem idênticos.
+func _play(stream: AudioStream, vary := false) -> void:
+	if stream == null:
+		return
+	if _sfx_voices.is_empty():
+		_sfx_voices.append(sfx)
+		for i in SFX_VOICES - 1:
+			var voice := AudioStreamPlayer.new()
+			voice.name = "Sfx_%d" % (i + 1)
+			add_child(voice)
+			_sfx_voices.append(voice)
+	var voice: AudioStreamPlayer = null
+	for candidate in _sfx_voices:
+		if not candidate.playing:
+			voice = candidate
+			break
+	if voice == null:  # todas tocando: reaproveita a que começou primeiro
+		voice = _sfx_voices.pop_front()
+		_sfx_voices.append(voice)
+	voice.stream = stream
+	voice.pitch_scale = randf_range(0.94, 1.06) if vary else 1.0
+	voice.volume_db = randf_range(-1.5, 0.0) if vary else 0.0
+	voice.play()
 
 
 ## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
@@ -674,7 +747,7 @@ func _play_other_step(pos: Vector2) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), 0.0, true, true)
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
