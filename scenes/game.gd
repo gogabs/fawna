@@ -9,11 +9,35 @@ extends Node
 ##   servidor confere e avisa todos (player_moved), ou corrige (move_corrected)
 ##
 ## Primeira pessoa: W/S andam para frente e para trás, A/D de lado, Q/E giram
-## 45°. Posições são contínuas, em casas (1 casa = 1,5 m).
+## 45°. Posições são contínuas, em casas (1 casa = 1,5 m). As setas não movem:
+## operam o menu flutuante (FloatingMenu), onde fica o Caminheiro.
 
-const WALK_SPEED := 1.5  # casas por segundo (cerca de 2,2 m/s)
+const WALK_SPEED := 1.8  # casas por segundo (cerca de 2,7 m/s; antes 1,5)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
-const STEP_LENGTH := 0.55  # casas entre um passo e outro (cerca de 80 cm)
+## Ritmo dos passos: quantos passos por segundo enquanto a criatura anda.
+## Os passos seguem o relógio, como uma animação, e não a distância andada.
+## Para deixar mais rápido ou mais lento, mude só este número (3,3 é o ritmo escolhido pelo Gabs).
+const STEPS_PER_SECOND := 3.3
+const STEP_INTERVAL := 1.0 / STEPS_PER_SECOND
+## Ao começar a andar, o primeiro passo sai na hora, a menos que o último
+## tenha sido há bem pouco (toques rápidos na tecla não viram rajada).
+const STEP_RESTART := 0.6 * STEP_INTERVAL
+## Outra criatura conta como andando se a posição dela mudou há menos que
+## isto (a posição chega a cada 0,1 s, às vezes com atraso).
+const OTHER_WALK_GRACE := 0.25
+## Foley de movimento (roupa de algodão e tornozeleira de conchas, que toda
+## criatura usa). Tudo segue o mesmo relógio dos passos: a tornozeleira fica
+## num tornozelo só, então soa a cada dois passos; cada farfalhar dura cerca
+## de um segundo, então entra a cada três passos e um emenda no outro.
+const ANKLET_EVERY := 2
+const RUSTLE_EVERY := 3
+const RUSTLE_FIRST := 2  # o som de início cobre os primeiros passos
+const MIN_WALK_FOR_STOP := 0.2  # toques curtos na tecla não fazem som de parada
+## Volumes do foley em relação aos passos (0 dB). Bem baixos, de propósito.
+const TURN_RUSTLE_DB := -4.0
+const START_STOP_DB := -4.0
+const RUSTLE_DB := -16.0
+const ANKLET_DB := -5.0
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -29,6 +53,9 @@ const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
 const WIND_LAKE_RADIUS := 4
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
+const MENU_ACTIONS := {
+	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
+}
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
@@ -48,14 +75,17 @@ var garden := {}
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
-var _step_distance := 0.0
+var _step_clock := STEP_INTERVAL  # segundos desde o último passo
+var _walking := false
+var _walk_time := 0.0  # segundos andando sem parar
+var _step_count := 0  # passos desde que começou a andar (para o foley)
 var _send_timer := 0.0
 var _last_sent := Vector2.INF
 var _turn_cooldown := 0.0
 var _bump_sound_cooldown := 0.0
 var _bump_speech_cooldown := 0.0
 var _last_bump_thing := -1
-var _others_step := {}  # id -> distância andada desde o último passo ouvido
+var _others_step := {}  # id -> {"clock": s desde o último passo, "idle": s sem se mexer, "count": passos desde que começou}
 var _auto_target: Variant = null  # testes: anda sozinho até este ponto
 var _last_trail_notice := -100000
 var _village_menu := false
@@ -64,6 +94,12 @@ var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
+var _caminheiro: Caminheiro
+var _menu: FloatingMenu
+## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
+## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
+## fim do passo anterior não é cortado e os dois se sobrepõem naturalmente.
+var _sfx_voices: Array[AudioStreamPlayer] = []
 
 
 func _ready() -> void:
@@ -104,8 +140,14 @@ func _process(delta: float) -> void:
 	_turn_cooldown = maxf(_turn_cooldown - delta, 0.0)
 	_bump_sound_cooldown = maxf(_bump_sound_cooldown - delta, 0.0)
 	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
+	var before := _pos
 	if _minigame == null and not _village_menu:
 		_walk(_wanted_motion() * delta)
+	_step_clock += delta
+	_tick_my_steps(_pos != before, delta)
+	_tick_other_steps(delta)
+	if _caminheiro != null:
+		_caminheiro.update(_pos, delta)
 	_send_timer += delta
 	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
 		_send_timer = 0.0
@@ -116,6 +158,13 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if world == null or _minigame != null or not event.is_pressed():
 		return
+	# Setas: menu flutuante, sempre ativo (até com o menu da vila aberto).
+	for action: String in MENU_ACTIONS:
+		if event.is_action(action):
+			if not event.is_echo() and _menu != null:
+				Speech.say(_menu.press(MENU_ACTIONS[action]))
+			get_viewport().set_input_as_handled()
+			return
 	if not _village_menu:
 		# Girar aceita a tecla segurada (repetição), com um intervalo.
 		for action: String in ["girar_esquerda", "girar_direita"]:
@@ -247,6 +296,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary, ga
 	audio.set_heading(_heading, false)
 	audio.set_village_level(int(garden.get("stage", 0)))
 	birds.start_client(audio)
+	_setup_caminheiro()
 	Music.set_level(int(garden.get("stage", 0)))
 	Music.start()
 	_update_listener()
@@ -343,11 +393,16 @@ func player_moved(id: int, pos: Vector2) -> void:
 	var old_pos: Vector2 = players[id]["pos"]
 	players[id]["pos"] = pos
 	view.queue_redraw()
-	var walked: float = _others_step.get(id, 0.0) + old_pos.distance_to(pos)
-	if walked >= STEP_LENGTH:
-		walked = 0.0
-		_play_other_step(pos)
-	_others_step[id] = walked
+	if old_pos.distance_to(pos) < 0.01:
+		return
+	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF, "count": 0})
+	if steps["idle"] >= OTHER_WALK_GRACE and steps["clock"] >= STEP_RESTART:
+		steps["clock"] = 0.0  # começou a andar: primeiro passo na hora
+		steps["count"] = 0
+		_play_other(pos, Sounds.move_start(), START_STOP_DB)
+		_play_other_step(pos, 0)
+	steps["idle"] = 0.0
+	_others_step[id] = steps
 
 
 ## Outra criatura coletou algo: o som sai de onde ela está.
@@ -469,17 +524,73 @@ func _walk(motion: Vector2) -> void:
 		_bump(target)
 
 
+## Passos da própria criatura: seguem o relógio enquanto ela anda, num ritmo
+## fixo, como uma animação. Parou, os passos param. O foley de movimento
+## (início, farfalhar, conchas e parada) vai junto, no mesmo relógio.
+func _tick_my_steps(moved: bool, delta: float) -> void:
+	if not moved:
+		if _walking and _walk_time >= MIN_WALK_FOR_STOP:
+			_play(Sounds.move_stop(), true, START_STOP_DB)
+		_walking = false
+		return
+	if not _walking:
+		_walking = true
+		_walk_time = 0.0
+		if _step_clock >= STEP_RESTART:
+			_step_clock = 0.0
+			_step_count = 0
+			_play(Sounds.move_start(), true, START_STOP_DB)
+			_play_my_step()
+		return
+	_walk_time += delta
+	if _step_clock >= STEP_INTERVAL:
+		_step_clock = fmod(_step_clock, STEP_INTERVAL)
+		_step_count += 1
+		_play_my_step()
+
+
+func _play_my_step() -> void:
+	var cell := WorldGen.cell_of(_pos)
+	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true)
+	for sound: Array in _step_foley(_step_count):
+		_play(sound[0], true, sound[1])
+
+
+## Foley que acompanha o passo número n desde que a criatura começou a andar
+## (n = 0 é o primeiro). Vale para ela e para as outras: [[som, volume], ...].
+func _step_foley(n: int) -> Array:
+	var sounds := []
+	if n % ANKLET_EVERY == 0:
+		sounds.append([Sounds.anklet(), ANKLET_DB])
+	if n >= RUSTLE_FIRST and (n - RUSTLE_FIRST) % RUSTLE_EVERY == 0:
+		sounds.append([Sounds.cloth_rustle(), RUSTLE_DB])
+	return sounds
+
+
+## Passos das outras criaturas: no mesmo ritmo, enquanto a posição delas muda.
+func _tick_other_steps(delta: float) -> void:
+	for id: int in _others_step:
+		var steps: Dictionary = _others_step[id]
+		steps["clock"] += delta
+		var was_walking: bool = steps["idle"] < OTHER_WALK_GRACE
+		steps["idle"] += delta
+		if not players.has(id):
+			continue
+		if was_walking and steps["idle"] >= OTHER_WALK_GRACE:
+			# Parou (a posição não muda há um tempinho): som de parada.
+			if steps["count"] > 0:
+				_play_other(players[id]["pos"], Sounds.move_stop(), START_STOP_DB)
+		elif was_walking and steps["clock"] >= STEP_INTERVAL:
+			steps["clock"] = fmod(steps["clock"], STEP_INTERVAL)
+			steps["count"] += 1
+			_play_other_step(players[id]["pos"], steps["count"])
+
+
 func _set_pos(new_pos: Vector2) -> void:
-	var walked := _pos.distance_to(new_pos)
 	_pos = new_pos
 	players[my_id]["pos"] = new_pos
 	audio.move_listener(new_pos)
 	view.queue_redraw()
-	_step_distance += walked
-	if _step_distance >= STEP_LENGTH:
-		_step_distance = 0.0
-		var step_cell := WorldGen.cell_of(new_pos)
-		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)))
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
 		var old_cell := _cell
@@ -509,6 +620,7 @@ func _turn(step: int) -> void:
 	_turn_cooldown = TURN_REPEAT
 	_heading = posmod(_heading + step, Compass.STEPS)
 	audio.play_compass(_heading)
+	_play(Sounds.turn_rustle(), true, TURN_RUSTLE_DB)
 	audio.set_heading(_heading)
 	view.heading = _heading
 	view.queue_redraw()
@@ -629,7 +741,7 @@ func _say_inventory() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S, ou seta para cima e para baixo: andar para frente e para trás. A e D: passo para o lado. Q e E, ou seta para os lados: girar. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar, ou abrir o menu quando estiver na vila. I: inventário. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a vila às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -648,17 +760,49 @@ func _say_who() -> void:
 	Speech.say("No mundo: %s." % ", ".join(names))
 
 
-func _play(stream: AudioStream) -> void:
-	sfx.stream = stream
-	sfx.play()
+const SFX_VOICES := 8
 
 
-## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
-func _play_other_step(pos: Vector2) -> void:
+## Toca um som da própria criatura. vary dá a passos uma leve variação de
+## altura e volume, para dois passos iguais seguidos não soarem idênticos.
+func _play(stream: AudioStream, vary := false, volume_db := 0.0) -> void:
+	if stream == null:
+		return
+	if _sfx_voices.is_empty():
+		_sfx_voices.append(sfx)
+		for i in SFX_VOICES - 1:
+			var voice := AudioStreamPlayer.new()
+			voice.name = "Sfx_%d" % (i + 1)
+			add_child(voice)
+			_sfx_voices.append(voice)
+	var voice: AudioStreamPlayer = null
+	for candidate in _sfx_voices:
+		if not candidate.playing:
+			voice = candidate
+			break
+	if voice == null:  # todas tocando: reaproveita a que começou primeiro
+		voice = _sfx_voices.pop_front()
+		_sfx_voices.append(voice)
+	voice.stream = stream
+	voice.pitch_scale = randf_range(0.94, 1.06) if vary else 1.0
+	voice.volume_db = volume_db + (randf_range(-1.5, 0.0) if vary else 0.0)
+	voice.play()
+
+
+## Passos de outras criaturas soam na posição delas (com HRTF, se instalado),
+## com o mesmo foley de roupa e conchas da própria criatura.
+func _play_other_step(pos: Vector2, n: int) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	for sound: Array in _step_foley(n):
+		_play_other(pos, sound[0], sound[1])
+
+
+func _play_other(pos: Vector2, stream: AudioStream, volume_db := 0.0) -> void:
+	if stream != null and pos.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(pos, stream, volume_db, true, true)
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
@@ -727,6 +871,68 @@ func _sender_id() -> int:
 
 
 
+# --- Caminheiro e menu das setas ---------------------------------------------
+
+func _setup_caminheiro() -> void:
+	_caminheiro = Caminheiro.new()
+	_caminheiro.name = "Caminheiro"
+	add_child(_caminheiro)
+	_caminheiro.setup(world, audio)
+	_caminheiro.arrived.connect(_on_caminheiro_arrived)
+	_caminheiro.lost.connect(func(): Speech.say("O cristal do Caminheiro se apagou: não achou caminho daqui."))
+	_caminheiro.beacon_reached.connect(func(_p): view.queue_redraw())
+	view.caminheiro = _caminheiro
+	_menu = FloatingMenu.new(_menu_root)
+	_menu.sound.connect(_on_menu_sound)
+
+
+func _menu_root() -> Array:
+	return [{"label": "Caminheiro", "open": _caminheiro_items}]
+
+
+## Destinos do Caminheiro. Por enquanto, só a vila.
+func _caminheiro_items() -> Array:
+	var items := [{"label": "Vila", "run": _track.bind(WorldGen.village_point(), "vila")}]
+	if _caminheiro.active:
+		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
+	return items
+
+
+func _track(destination: Vector2, place_name: String) -> String:
+	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
+		_caminheiro.stop()
+		return "Você já está na %s." % place_name
+	if not _caminheiro.start(_pos, destination, place_name):
+		return "O cristal do Caminheiro não achou caminho até a %s." % place_name
+	view.queue_redraw()
+	var meters := Compass.meters(_caminheiro.estimated_length())
+	return "O cristal do Caminheiro brilha azul, rumo à %s, a uns %s pelas trilhas. Siga as batidas do coração." % [place_name, meters]
+
+
+func _stop_tracking() -> String:
+	_caminheiro.stop()
+	view.queue_redraw()
+	return "O cristal do Caminheiro se apagou."
+
+
+func _on_caminheiro_arrived(place_name: String) -> void:
+	_play(Sounds.chime())
+	view.queue_redraw()
+	Speech.say("Você chegou à %s. O cristal do Caminheiro se apaga." % place_name)
+
+
+func _on_menu_sound(kind: String) -> void:
+	match kind:
+		"mover":
+			_play(Sounds.ui_move())
+		"abrir":
+			_play(Sounds.ui_open())
+		"confirmar":
+			_play(Sounds.ui_confirm())
+		"fechar":
+			_play(Sounds.ui_close())
+
+
 # --- Testes automáticos ------------------------------------------------------
 
 ## Só para testes: anda sozinho até um ponto (ou desiste depois de um tempo).
@@ -775,6 +981,13 @@ func _run_auto_commands() -> void:
 				_start_craft("jardinagem")
 			"HORTA":
 				request_contribute.rpc_id(1)
+			"MENU_CIMA", "MENU_BAIXO", "MENU_ESQUERDA", "MENU_DIREITA":
+				Speech.say(_menu.press(command.trim_prefix("MENU_").to_lower()))
+			"SEGUIR":  # segue o Caminheiro até ele se apagar (ou desistir)
+				var deadline := Time.get_ticks_msec() + 120000
+				while _caminheiro.active and Time.get_ticks_msec() < deadline:
+					await _auto_walk(_caminheiro.current_beacon(), 20.0)
+					await get_tree().process_frame
 			"VILA":
 				_village_menu = false
 				await _auto_walk(WorldGen.village_point())

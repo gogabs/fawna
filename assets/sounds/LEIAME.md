@@ -25,3 +25,28 @@ frases de shakuhachi, em ré menor. Gerada por `tools/musica_sombria.py`
 (MIDI em `assets/music/sombria.mid`, soundfont FluidR3_GM, licença MIT).
 Composição do próprio projeto. A musiquinha de ocarina (`musica/vila_*.ogg`)
 continua guardada; `USE_OCARINA` em `autoload/music.gd` a traz de volta.
+
+## Foley de movimento (foley/)
+
+Sons da roupa de algodão e da tornozeleira de conchas da criatura: giro,
+início e parada do movimento, farfalhar contínuo e conchas a cada dois passos.
+Os outros jogadores soam igual, posicionados em 3D. Publicados com autorização
+do Gabs (2026-11-14).
+
+- `farfalhar_1..7.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`: farfalhares de
+  roupa gravados por um amigo do Gabs, cedidos ao projeto sem exigência de
+  atribuição.
+- `giro_1..3.ogg`, `inicio_sintetico.ogg`, `parada_sintetica.ogg`: gerados por
+  código para o projeto.
+- `tornozeleira_concha.ogg`: trecho (1,4 a 2,3 s, passa-baixa 6,5 kHz) de
+  ["SeaShell_01", de agoniasboy no Freesound](https://freesound.org/s/152772/),
+  CC0. Obrigado, agoniasboy.
+- `tornozeleira_1..10.ogg`: sacudidas novas montadas com os cliques recortados
+  dessa mesma gravação, com altura e ritmo sorteados.
+
+## Caminheiro (caminheiro/)
+
+`caminheiro/batida.ogg` é a batida do Caminheiro: um coração ouvido de dentro,
+duas pancadas graves de tambor abafado, com passa-baixa forte e um reverb
+curto e escuro já aplicados no arquivo. Gerado por `tools/som_caminheiro.py`
+(som do próprio projeto).
