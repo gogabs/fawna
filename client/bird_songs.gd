@@ -270,8 +270,8 @@ static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 	return wav
 
 
-## Gravações de voo (asas_0, asas_1...), as mesmas para todas as espécies:
-## o tom muda com o tamanho do pássaro.
+## Gravações de voo (asas_0, asas_1...), as mesmas para todas as espécies,
+## sempre no tom original (pedido do Gabs).
 static func _wing_files() -> Array:
 	if not _cache.has("asas_arquivos"):
 		var found := []
