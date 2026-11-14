@@ -245,6 +245,190 @@ static func _mix(a: AudioStreamWAV, b: AudioStreamWAV) -> AudioStreamWAV:
 	return _to_wav(samples)
 
 
+## Recolheu um recurso: cada um com seu toque (só se faltarem os arquivos).
+## A argila é um "chape" úmido; o resto usa o toque genérico.
+static func pickup_of(item: String) -> AudioStreamWAV:
+	if item != "argila":
+		return pickup()
+	if not _cache.has("coleta_argila"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 404
+		var count := int(0.28 * RATE)
+		var samples := _filtered_noise(count, 0.92, 0.0, rng)
+		var low := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.9)
+			var squelch := sin(TAU * (140.0 + 260.0 * t) * t) * exp(-t * 14.0)
+			samples[i] = (low * 1.6 * exp(-t * 18.0) + squelch * 0.5) * 0.6
+		_cache["coleta_argila"] = _to_wav(samples)
+	return _cache["coleta_argila"]
+
+
+## Som contínuo de cada recurso coletável, gerado por código enquanto não
+## houver gravação. Todos bem esparsos e discretos.
+static func resource_loop(thing: WorldGen.Thing) -> AudioStreamWAV:
+	var key := "recurso_%d" % thing
+	if not _cache.has(key):
+		match thing:
+			WorldGen.Thing.BAMBU:
+				_cache[key] = _bamboo_loop()
+			WorldGen.Thing.GRAVETOS:
+				_cache[key] = _twigs_loop()
+			WorldGen.Thing.ARGILA:
+				_cache[key] = _clay_loop()
+			WorldGen.Thing.ARBUSTO_FRUTAS:
+				_cache[key] = _flies_loop()
+			_:
+				return null
+	return _cache[key]
+
+
+## Colmo oco batendo: dois ou três modos ressonantes que somem rápido.
+static func _hollow_knock(samples: PackedFloat32Array, start: int, base: float, volume: float) -> void:
+	var modes := [[1.0, 1.0, 38.0], [2.76, 0.45, 60.0], [5.4, 0.2, 90.0]]
+	var count := mini(int(0.25 * RATE), samples.size() - start)
+	for i in count:
+		var t := float(i) / RATE
+		var v := 0.0
+		for m in modes:
+			v += sin(TAU * base * m[0] * t) * m[1] * exp(-t * m[2])
+		samples[start + i] += v * volume
+
+
+## Bambu: colmos batendo uns nos outros ao vento, um rangido grave e longo e
+## um fundo de folhas finas.
+static func _bamboo_loop() -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 808
+	var count := RATE * 6
+	var samples := _filtered_noise(count, 0.97, 0.05, rng)
+	for k in 5:
+		var start := rng.randi_range(0, count - RATE / 2)
+		var base := rng.randf_range(330.0, 620.0)
+		_hollow_knock(samples, start, base, 0.22)
+		if rng.randf() < 0.5:  # às vezes um segundo colmo responde logo depois
+			_hollow_knock(samples, start + rng.randi_range(1500, 3500), base * rng.randf_range(0.8, 1.25), 0.14)
+	# Rangido: um tom grave que oscila, com aspereza.
+	var creak_start := rng.randi_range(RATE, count - RATE * 2)
+	var creak_len := int(1.1 * RATE)
+	var phase := 0.0
+	for i in creak_len:
+		var k := float(i) / creak_len
+		phase += TAU * (95.0 + 25.0 * sin(TAU * 1.3 * k)) / RATE
+		var grit := 1.0 if fmod(phase, TAU) < 0.6 else 0.0
+		samples[creak_start + i] += (grit - 0.2) * sin(PI * k) * 0.05
+	return _to_wav(samples, true)
+
+
+## Gravetos: estalidos secos, raros, às vezes em pares.
+static func _twigs_loop() -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 909
+	var count := RATE * 5
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	for k in 7:
+		var start := rng.randi_range(0, count - 2000)
+		for crack in rng.randi_range(1, 3):
+			var at := start + crack * rng.randi_range(400, 1400)
+			var length := rng.randi_range(120, 380)
+			var last := 0.0
+			for i in mini(length, count - at):
+				last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.15)
+				samples[at + i] += last * pow(1.0 - float(i) / length, 3.0) * 0.35
+	return _to_wav(samples, true)
+
+
+## Argila: barro molhado, com bolhas lentas e gotas que caem no raso.
+static func _clay_loop() -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1010
+	var count := RATE * 5
+	var samples := _filtered_noise(count, 0.985, 0.04, rng)
+	for k in 4:  # bolhas que estouram: um "blop" que sobe de tom
+		var start := rng.randi_range(0, count - 4000)
+		var freq := rng.randf_range(110.0, 190.0)
+		for i in 3600:
+			var t := float(i) / RATE
+			samples[start + i] += sin(TAU * freq * (1.0 + t * 9.0) * t) * exp(-t * 22.0) * 0.3
+	for k in 5:  # gotas
+		var start := rng.randi_range(0, count - 2000)
+		var freq := rng.randf_range(900.0, 1500.0)
+		for i in 1600:
+			var t := float(i) / RATE
+			samples[start + i] += sin(TAU * freq * (1.0 + t * 5.0) * t) * exp(-t * 60.0) * 0.12
+	return _to_wav(samples, true)
+
+
+## Frutas: moscas rondando o arbusto, num zumbido baixo que vai e volta.
+static func _flies_loop() -> AudioStreamWAV:
+	var count := RATE * 4
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	for fly in [[180.0, 0.7, 0.0], [232.0, 1.1, 1.7], [205.0, 0.45, 3.1]]:
+		var phase := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var freq: float = fly[0] * (1.0 + 0.06 * sin(TAU * 5.0 * t + fly[2]))
+			phase += TAU * freq / RATE
+			# Cada mosca chega e se afasta, num ciclo que fecha o loop.
+			var near := pow(0.5 + 0.5 * sin(TAU * t / 4.0 * (1.0 if fly[1] > 0.6 else 2.0) + fly[2]), 2.0)
+			var buzz := sin(phase) + 0.6 * sin(phase * 2.0) + 0.3 * sin(phase * 3.0)
+			samples[i] += buzz * near * 0.035
+	return _to_wav(samples, true)
+
+
+## Golpe de machado no bambu: um "toc" oco, com o estalo da lâmina.
+static func bamboo_knock() -> AudioStreamWAV:
+	if not _cache.has("bambu_golpe"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1111
+		var count := int(0.3 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		_hollow_knock(samples, 0, 420.0, 0.7)
+		var last := 0.0
+		for i in 300:
+			last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.1)
+			samples[i] += last * (1.0 - i / 300.0) * 0.6
+		_cache["bambu_golpe"] = _to_wav(samples)
+	return _cache["bambu_golpe"]
+
+
+## A touceira caindo: estalos que se aceleram, um rasgo e os colmos batendo
+## no chão.
+static func bamboo_fall() -> AudioStreamWAV:
+	if not _cache.has("bambu_queda"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1212
+		var count := int(1.8 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var at := 0.0
+		var gap := 0.18
+		while at < 0.7:  # estalos cada vez mais juntos
+			var start := int(at * RATE)
+			var last := 0.0
+			for i in 260:
+				last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.2)
+				samples[start + i] += last * pow(1.0 - i / 260.0, 2.0) * 0.5
+			at += gap
+			gap *= 0.75
+		var rip_start := int(0.7 * RATE)  # rasgo das fibras e folhas
+		var rip_len := int(0.5 * RATE)
+		var low := 0.0
+		for i in rip_len:
+			var k := float(i) / rip_len
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.6)
+			samples[rip_start + i] += low * sin(PI * k) * 0.45
+		for k in 4:  # colmos no chão
+			var start := int((1.15 + k * 0.09 + rng.randf_range(0.0, 0.05)) * RATE)
+			_hollow_knock(samples, start, rng.randf_range(260.0, 480.0), 0.5 - k * 0.08)
+		_cache["bambu_queda"] = _to_wav(samples)
+	return _cache["bambu_queda"]
+
+
 static func _filtered_noise(count: int, smooth: float, volume: float, rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var samples := PackedFloat32Array()
 	samples.resize(count)

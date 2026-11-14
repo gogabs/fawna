@@ -19,11 +19,20 @@ const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -12.0
+## Recursos coletáveis (bambu, gravetos, argila, frutas): cada um tem um som
+## baixinho e próprio, para ser achado de ouvido. Ficam num grupo à parte do
+## ambiente (árvores e água não abafam) e as fontes são fixas e reaproveitadas.
+const RESOURCE_SOURCES := 6
+const RESOURCE_RADIUS := 9  # casas (uns 13 m)
+const RESOURCE_VOLUME_DB := -14.0
 const MAX_SIMULATION_SOURCES := 128  # limite do Steam Audio (o máximo do addon)
 
 var using_hrtf := false
 
 var _world: WorldGen
+var _harvest: Harvest
+var _resource_players: Array[AudioStreamPlayer3D] = []
+var _resource_cells := {}  # Vector2i -> AudioStreamPlayer3D tocando ali
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 ## Passa-baixa da distância: quanto mais longe, mais perto desse corte.
@@ -55,11 +64,16 @@ func _ready() -> void:
 	_setup_resonance()
 	_setup_compass()
 	_setup_voices()
+	for i in RESOURCE_SOURCES:
+		var player := make_far_voice(RESOURCE_RADIUS + 1)
+		player.name = "Recurso_%d" % i
+		_resource_players.append(player)
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
-func setup(world: WorldGen) -> void:
+func setup(world: WorldGen, harvest: Harvest = null) -> void:
 	_world = world
+	_harvest = harvest
 
 
 static func point_to_3d(point: Vector2) -> Vector3:
@@ -81,6 +95,7 @@ func move_listener(pos: Vector2) -> void:
 	if cell != _listener_cell and _world != null:
 		_listener_cell = cell
 		_refresh_ambient(cell)
+		refresh_resources()
 
 
 ## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
@@ -213,6 +228,51 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 				found.append(cell)
 	found.sort_custom(func(a, b): return (a - center).length_squared() < (b - center).length_squared())
 	return found.slice(0, MAX_AMBIENT_SOURCES)
+
+
+## Põe os sons dos recursos mais próximos (que ainda não foram colhidos) nas
+## fontes fixas. Chamado ao trocar de casa e quando algo é colhido ou rebrota.
+func refresh_resources() -> void:
+	if _camera == null or _world == null or _listener_cell == WorldGen.NO_CELL:
+		return
+	var wanted := _nearest_resources(_listener_cell)
+	var free: Array[AudioStreamPlayer3D] = _resource_players.duplicate()
+	for cell in _resource_cells.keys():
+		var player: AudioStreamPlayer3D = _resource_cells[cell]
+		if wanted.has(cell):
+			free.erase(player)
+		else:
+			player.stop()
+			_resource_cells.erase(cell)
+	for cell: Vector2i in wanted:
+		if _resource_cells.has(cell) or free.is_empty():
+			continue
+		var stream := Sounds.resource_loop(_world.thing_at(cell))
+		if stream == null:
+			continue
+		var player: AudioStreamPlayer3D = free.pop_back()
+		player.stream = stream
+		player.volume_db = RESOURCE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
+		player.position = cell_to_3d(cell)
+		player.play(randf() * stream.get_length())
+		_resource_cells[cell] = player
+
+
+func _nearest_resources(center: Vector2i) -> Array:
+	var found := []
+	var r := RESOURCE_RADIUS
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if dx * dx + dy * dy > r * r:
+				continue
+			var cell := center + Vector2i(dx, dy)
+			if not Harvest.is_source(_world.thing_at(cell)):
+				continue
+			if _harvest != null and not _harvest.is_available(cell):
+				continue
+			found.append(cell)
+	found.sort_custom(func(a, b): return (a - center).length_squared() < (b - center).length_squared())
+	return found.slice(0, RESOURCE_SOURCES)
 
 
 ## Uma fonte que alcança longe (até "reach" casas), para os pássaros. Fica

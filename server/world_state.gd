@@ -4,15 +4,18 @@ extends RefCounted
 ## Os clientes enviam intenções (andar, coletar) e o servidor decide.
 
 const COLLECT_COOLDOWN_MS := 700
+const STRIKE_COOLDOWN_MS := 350  # golpes de machado mais rápidos que isso não contam
 ## Movimento contínuo: o cliente anda sozinho e manda a posição; o servidor
 ## confere a velocidade e as colisões. Valores em casas.
 const MAX_SPEED := 2.2  # casas por segundo (a criatura anda a 1,5)
 const MOVE_SLACK := 0.4  # folga para atrasos da rede
-const REACH := 1.6  # até onde dá para coletar (do centro da criatura ao centro da casa)
+const REACH := 1.6  # até onde dá para coletar ou golpear (do centro da criatura ao centro da casa)
 const ORIGIN_REACH := 1.2
 const MAX_STACK := 99
 
 var world: WorldGen
+## Recursos coletáveis: golpes dados, o que foi colhido e quando volta.
+var harvest: Harvest
 ## id do peer -> { "name": String, "pos": Vector2 }
 var players := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
@@ -22,10 +25,12 @@ var equipment := {}
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
+var _last_strike := {}  # id -> Time.get_ticks_msec()
 
 
 func _init(world_seed: int) -> void:
 	world = WorldGen.new(world_seed)
+	harvest = Harvest.new(world)
 
 
 func add_player(id: int, player_name: String) -> Vector2:
@@ -46,6 +51,7 @@ func remove_player(id: int) -> void:
 	players.erase(id)
 	_last_collect.erase(id)
 	_last_move.erase(id)
+	_last_strike.erase(id)
 
 
 func inventory_of(id: int) -> Dictionary:
@@ -111,8 +117,11 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	return {"ok": true, "pos": pos}
 
 
-## Coleta o recurso numa casa vizinha (ou na própria). Recursos não se esgotam:
-## a natureza do Fawna se regenera. Devolve { ok, item, reason }.
+## Recolhe o recurso de uma casa ao alcance (gravetos, argila, frutas, ou um
+## bambu já derrubado). A fonte some e rebrota com o tempo (Harvest).
+## Devolve { ok, item, amount, reason, hits_left }. reason: "longe", "nada",
+## "devagar", "colhido" (já recolhido, ainda não voltou), "golpear" (bambu de
+## pé: falta cortar com o machado) ou "cheio".
 func collect(id: int, cell: Vector2i) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
@@ -120,18 +129,38 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	if pos.distance_to(WorldGen.cell_center(cell)) > REACH:
 		return {"ok": false, "reason": "longe"}
 	var thing := world.thing_at(cell)
-	if not Economy.COLLECT.has(thing):
+	if not Harvest.is_source(thing):
 		return {"ok": false, "reason": "nada"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_collect.get(id, -COLLECT_COOLDOWN_MS)) < COLLECT_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_collect[id] = now
-	var item: String = Economy.COLLECT[thing]
+	var item := Harvest.item_of(thing)
 	var inv := inventory_of(id)
 	if int(inv.get(item, 0)) >= MAX_STACK:
 		return {"ok": false, "reason": "cheio", "item": item}
-	inv[item] = int(inv.get(item, 0)) + 1
-	return {"ok": true, "item": item}
+	var result := harvest.take(cell)
+	if not result["ok"]:
+		return result
+	inv[item] = mini(MAX_STACK, int(inv.get(item, 0)) + int(result["amount"]))
+	return result
+
+
+## Um golpe de machado numa touceira de bambu ao alcance. Não confere a
+## ferramenta: quem chama (request_strike) confere se o machado está
+## empunhado. Devolve { ok, reason, hits_left, felled }; felled diz que este
+## golpe derrubou o bambu, que agora pode ser recolhido.
+func strike(id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	return harvest.strike(cell)
 
 
 ## Retrato dos jogadores para quem acabou de entrar.
@@ -145,6 +174,7 @@ func to_save() -> Dictionary:
 		"seed": world.world_seed,
 		"inventories": inventories,
 		"equipment": equipment,
+		"harvest": harvest.to_save(),
 	}
 
 
@@ -160,6 +190,9 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.inventories[player_name] = inv
 	for player_name in data.get("equipment", {}):
 		state.equipment[player_name] = str(data["equipment"][player_name])
+	var harvested = data.get("harvest", [])
+	if typeof(harvested) == TYPE_ARRAY:
+		state.harvest.load_save(harvested)
 	return state
 
 

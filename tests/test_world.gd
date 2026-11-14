@@ -195,24 +195,24 @@ func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
 func _test_collect() -> void:
 	var state := WorldState.new(42)
 	state.add_player(1, "Lua")
-	var spot := _find_next_to(state, WorldGen.Thing.ARVORE)
-	_check(not spot.is_empty(), "deveria haver uma árvore acessível")
+	var spot := _find_next_to(state, WorldGen.Thing.GRAVETOS)
+	_check(not spot.is_empty(), "deveria haver gravetos acessíveis")
 	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
 	var far: Vector2i = spot[1] + Vector2i(5, 5)
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")
-	_check(state.collect(1, spot[1])["ok"], "deveria coletar madeira ao lado da árvore")
+	_check(state.collect(1, spot[1])["ok"], "deveria coletar os gravetos ao lado")
 	_check(not state.collect(1, spot[1])["ok"], "deveria haver uma pausa entre coletas")
-	_check(state.inventories["Lua"]["madeira"] == 1, "1 madeira no inventário")
+	_check(state.inventories["Lua"]["lenha"] == 2, "2 lenhas na bolsa")
 
 func _test_save_roundtrip() -> void:
 	var state := WorldState.new(99)
 	state.add_player(1, "Lua")
-	state.inventories["Lua"] = {"madeira": 3}
-	state.inventories["Tico"] = {"tabuas": 2, "sementes": 1}
+	state.inventories["Lua"] = {"bambu": 3}
+	state.inventories["Tico"] = {"madeira": 2, "argila": 1}
 	var path := "user://teste_mundo.json"
 	_check(WorldSave.save_state(state, path), "deveria salvar")
 	var loaded := WorldSave.load_state(path)
 	_check(loaded != null and loaded.world.world_seed == 99, "semente salva")
-	_check(loaded.inventories["Lua"]["madeira"] == 3, "inventário salvo")
-	_check(loaded.inventories["Tico"] == {"sementes": 1}, "itens que não existem mais ficam para trás")
+	_check(loaded.inventories["Lua"]["bambu"] == 3, "inventário salvo")
+	_check(loaded.inventories["Tico"] == {"argila": 1}, "itens que não existem mais (madeira) ficam para trás")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

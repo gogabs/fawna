@@ -18,9 +18,22 @@ const MANIFEST := {
 	"colisao": ["world/wallbrush.ogg", "world/wallbrush2.ogg"],
 	"colisao_arvore": ["world/walltree.ogg"],
 	"colisao_agua": ["world/wallwater.ogg"],
-	"coleta_madeira": ["world/wallwood.ogg", "world/wallwood2.ogg", "world/wallwood3.ogg"],
-	"coleta_sementes": ["world/wallfoliage.ogg", "world/wallfoliage2.ogg", "world/wallfoliage3.ogg"],
-	"coleta_agua": ["world/water1.ogg", "world/water2.ogg", "world/water3.ogg"],
+	# Recursos coletáveis. Os de recursos/ são os escolhidos para cada um;
+	# enquanto não existirem, valem os do pacote world/ ou os gerados por
+	# código (SoundBank), na ordem em que aparecem em cada função.
+	"rec_coleta_bambu": ["recursos/coleta_bambu_1.ogg", "recursos/coleta_bambu_2.ogg", "recursos/coleta_bambu_3.ogg", "recursos/coleta_bambu_4.ogg"],
+	"rec_coleta_lenha": ["recursos/coleta_lenha_1.ogg", "recursos/coleta_lenha_2.ogg", "recursos/coleta_lenha_3.ogg", "recursos/coleta_lenha_4.ogg"],
+	"rec_coleta_argila": ["recursos/coleta_argila_1.ogg", "recursos/coleta_argila_2.ogg", "recursos/coleta_argila_3.ogg", "recursos/coleta_argila_4.ogg"],
+	"rec_coleta_frutas": ["recursos/coleta_frutas_1.ogg", "recursos/coleta_frutas_2.ogg", "recursos/coleta_frutas_3.ogg", "recursos/coleta_frutas_4.ogg"],
+	"coleta_bambu": ["world/wallwood.ogg", "world/wallwood2.ogg", "world/wallwood3.ogg"],
+	"coleta_lenha": ["world/wallwood4.ogg", "world/wallwood5.ogg", "world/wallwood6.ogg"],
+	"coleta_frutas": ["world/wallfoliage.ogg", "world/wallfoliage2.ogg", "world/wallfoliage3.ogg"],
+	"amb_bambu": ["recursos/amb_bambu.ogg"],
+	"amb_gravetos": ["recursos/amb_gravetos.ogg"],
+	"amb_argila": ["recursos/amb_argila.ogg"],
+	"amb_frutas": ["recursos/amb_frutas.ogg"],
+	"bambu_golpe": ["recursos/bambu_golpe_1.ogg", "recursos/bambu_golpe_2.ogg", "recursos/bambu_golpe_3.ogg", "recursos/bambu_golpe_4.ogg"],
+	"bambu_queda": ["recursos/bambu_queda.ogg"],
 	"chegada": ["world/notify.ogg"],
 	"ui_mover": ["world/menuclick.ogg"],
 	"ui_confirmar": ["world/menuenter.ogg"],
@@ -102,8 +115,56 @@ static func chime() -> AudioStream:
 
 
 static func pickup(item := "") -> AudioStream:
-	var key := "coleta_" + item
-	return _pick(key if _has_file(key) else "coleta", SoundBank.pickup)
+	return _pick_existing(["rec_coleta_" + item, "coleta_" + item], func(): return SoundBank.pickup_of(item))
+
+
+## Som baixinho e contínuo de cada recurso coletável, para achá-lo de ouvido:
+## o bambu range e bate os colmos, os gravetos estalam secos, a argila
+## borbulha e goteja, e as frutas (raras) têm moscas rondando.
+static func resource_loop(thing: WorldGen.Thing) -> AudioStream:
+	var key: String = {
+		WorldGen.Thing.BAMBU: "amb_bambu",
+		WorldGen.Thing.GRAVETOS: "amb_gravetos",
+		WorldGen.Thing.ARGILA: "amb_argila",
+		WorldGen.Thing.ARBUSTO_FRUTAS: "amb_frutas",
+	}.get(thing, "")
+	if key.is_empty():
+		return null
+	var stream := _pick_existing([key], func(): return SoundBank.resource_loop(thing))
+	if stream != null:
+		_make_loop(stream)
+	return stream
+
+
+## O colmo oco do bambu levando um golpe de machado (o som do machado
+## cortando o ar fica com quem empunha).
+static func bamboo_knock() -> AudioStream:
+	return _pick_existing(["bambu_golpe"], SoundBank.bamboo_knock)
+
+
+## A touceira estalando e caindo, no último golpe.
+static func bamboo_fall() -> AudioStream:
+	return _pick_existing(["bambu_queda"], SoundBank.bamboo_fall)
+
+
+## Sorteia um arquivo existente da primeira chave que tiver algum, sem repetir
+## o último; sem nenhum, usa o fallback.
+static func _pick_existing(keys: Array, fallback: Callable) -> AudioStream:
+	for key: String in keys:
+		var files := []
+		for file in MANIFEST.get(key, []):
+			if ResourceLoader.exists(DIR + file):
+				files.append(file)
+		if files.is_empty():
+			continue
+		if files.size() > 1:
+			files.erase(_last_pick.get(key, ""))
+		var file: String = files[randi() % files.size()]
+		_last_pick[key] = file
+		var stream := _load(DIR + file)
+		if stream != null:
+			return stream
+	return fallback.call()
 
 
 ## Clique da bússola ao girar (tools/sons_bussola.py): agudo no norte, grave
