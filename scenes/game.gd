@@ -643,9 +643,15 @@ func _say_who() -> void:
 	Speech.say("No mundo: %s." % ", ".join(names))
 
 
+## Cada som ganha um player descartável: um passo novo não corta o anterior.
 func _play(stream: AudioStream) -> void:
-	sfx.stream = stream
-	sfx.play()
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	player.bus = sfx.bus
+	player.volume_db = sfx.volume_db
+	player.finished.connect(player.queue_free)
+	add_child(player)
+	player.play()
 
 
 ## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
