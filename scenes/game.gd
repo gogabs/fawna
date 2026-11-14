@@ -190,6 +190,9 @@ func request_collect(cell: Vector2i) -> void:
 	if result["ok"]:
 		_dirty = true
 		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"])
+		for other_id in state.players:
+			if other_id != id:
+				player_collected.rpc_id(other_id, id, result["item"])
 	elif state.players.has(id):
 		action_failed.rpc_id(id, result["reason"], result.get("item", ""))
 
@@ -345,6 +348,16 @@ func player_moved(id: int, pos: Vector2) -> void:
 		walked = 0.0
 		_play_other_step(pos)
 	_others_step[id] = walked
+
+
+## Outra criatura coletou algo: o som sai de onde ela está.
+@rpc("authority", "call_local", "reliable")
+func player_collected(id: int, item: String) -> void:
+	if world == null or not players.has(id) or id == my_id:
+		return
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(pos, Sounds.pickup(item))
 
 
 ## O servidor recusou a posição (rápido demais ou dentro de algo): volta.
