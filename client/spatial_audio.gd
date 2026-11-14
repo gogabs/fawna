@@ -13,6 +13,9 @@ extends Node3D
 const METERS_PER_CELL := WorldGen.METERS_PER_CELL
 const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâneo
 const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
+const SCENE_CUSTOM_GODOT_PHYSICS := 3  # ResonanceRuntimeConfig.scene_type
+## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa.
+const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -8.0
@@ -27,6 +30,7 @@ var _ambient := {}  # Vector2i -> AudioStreamPlayer3D
 var _listener_cell := WorldGen.NO_CELL
 var _listener_pos := Vector2.ZERO
 var _turn_tween: Tween
+var _compass_players: Array[AudioStreamPlayer3D] = []  # um por hora do relógio
 
 
 func _ready() -> void:
@@ -40,6 +44,7 @@ func _ready() -> void:
 	_camera.add_child(listener)
 	listener.make_current()
 	_setup_resonance()
+	_setup_compass()
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
@@ -84,12 +89,28 @@ func set_heading(heading: int, smooth := true) -> void:
 	_turn_tween.tween_property(_camera, "rotation:y", goal, TURN_SECONDS)
 
 
-## Clique da bússola, soando na direção para onde a criatura passou a olhar.
-## Toca antes de o ouvinte terminar de girar, então dá para ouvi-lo vir do
-## lado e chegar à frente.
+## Bússola como um relógio em volta da cabeça: cada direção tem sua hora
+## fixa (norte ao meio-dia, à frente; leste às 3, à direita; sul às 6, atrás;
+## oeste às 9, à esquerda; as colaterais nas horas entre elas). As fontes
+## giram junto com a cabeça, então a posição de cada som nunca muda: o que
+## muda é qual delas toca. Ficam sempre criadas, para o Steam Audio já
+## conhecê-las quando o clique, que é bem curto, precisar tocar.
+func _setup_compass() -> void:
+	for heading in Compass.STEPS:
+		var player := _new_player(Sounds.compass(heading), -4.0)
+		var a := Compass.angle(heading)
+		player.position = Vector3(sin(a), 0.0, -cos(a)) * COMPASS_DISTANCE * METERS_PER_CELL
+		player.name = "Bussola_" + Compass.name_of(heading)
+		_camera.add_child(player)
+		_compass_players.append(player)
+
+
 func play_compass(heading: int) -> void:
-	var point := _listener_pos + Compass.forward(heading) * COMPASS_DISTANCE
-	play_at_point(point, Sounds.compass(heading), -4.0)
+	if _compass_players.is_empty():
+		return
+	var player := _compass_players[posmod(heading, Compass.STEPS)]
+	player.stop()
+	player.play()
 
 
 ## A vila soa diferente conforme a horta cresce.
@@ -111,10 +132,10 @@ func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 
 
 ## Toca um som curto num ponto do mundo (ex.: esbarrão, passos de alguém).
-func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0) -> void:
+func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0, hrtf := true) -> void:
 	if _camera == null or stream == null:
 		return
-	var player := _new_player(stream, volume_db)
+	var player := _new_player(stream, volume_db, hrtf)
 	player.position = point_to_3d(point)
 	player.finished.connect(player.queue_free)
 	add_child(player)
@@ -153,11 +174,12 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	return found.slice(0, MAX_AMBIENT_SOURCES)
 
 
-func _new_player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer3D:
+func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioStreamPlayer3D:
 	var player: AudioStreamPlayer3D
-	if using_hrtf:
+	if using_hrtf and hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
+		volume_db += HRTF_GAIN_DB
 	else:
 		player = AudioStreamPlayer3D.new()
 		player.unit_size = METERS_PER_CELL * 2.0
@@ -179,6 +201,10 @@ func _setup_resonance() -> void:
 		push_warning("Nexus Resonance incompleto; usando o áudio 3D do Godot.")
 		return
 	config.set("direct_binaural", true)
+	# Sem geometria, a cena padrão do Steam Audio fica com 0 triângulos, a
+	# simulação nunca começa e todo ResonancePlayer sai mudo. A cena "Custom"
+	# (raios da física do Godot) faz a simulação rodar mesmo sem geometria.
+	config.set("scene_type", SCENE_CUSTOM_GODOT_PHYSICS)
 	config.set("realtime_rays", 0)
 	config.set("pathing_enabled", false)
 	var runtime: Node = ClassDB.instantiate("ResonanceRuntime")
@@ -192,9 +218,24 @@ func _setup_resonance() -> void:
 	_player_config.set("reflections_enabled", false)
 	_player_config.set("simulation_occlusion_enabled", false)
 	_player_config.set("air_absorption_enabled", false)
+	# Reflexões desligadas: zera também a mistura delas, senão o addon avisa
+	# a cada som que não recebeu parâmetros de reflexão.
+	for prop in _player_config.get_property_list():
+		var prop_name: String = prop["name"]
+		if prop_name.contains("reflection") and prop_name.contains("mix"):
+			_player_config.set(prop_name, 0.0)
 	_player_config.set("min_distance", METERS_PER_CELL)
 	_player_config.set("max_distance", METERS_PER_CELL * (AMBIENT_RADIUS + 2))
 	using_hrtf = true
+	get_tree().create_timer(2.0).timeout.connect(_log_resonance_state)
+
+
+func _log_resonance_state() -> void:
+	if not Engine.has_singleton("ResonanceServer"):
+		return
+	var server := Engine.get_singleton("ResonanceServer")
+	if server.has_method("is_simulating"):
+		print("[audio] Steam Audio simulando: %s" % ("sim" if server.is_simulating() else "não (os sons com HRTF vão sair mudos)"))
 
 
 ## Cria uma classe do Nexus Resonance pelo nome. Algumas são nativas

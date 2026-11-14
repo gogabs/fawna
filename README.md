@@ -55,8 +55,10 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 
 O jogo é em primeira pessoa: a criatura anda livremente (não mais de casa
 em casa) e olha para uma de 8 direções. A cada giro, uma bússola dá um
-clique em 3D, vindo da nova direção: agudo no norte, grave no sul, igual no
-leste e no oeste, e abafado nas diagonais. As falas dizem onde as coisas
+clique: agudo no norte, grave no sul, igual no leste e no oeste, e abafado
+nas diagonais. A bússola é um relógio em volta da cabeça: cada direção soa
+sempre na sua hora (norte ao meio-dia, à frente; leste às 3; sul às 6, atrás;
+oeste às 9), e o que muda é qual delas toca. As falas dizem onde as coisas
 estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
 ## Como se joga (por enquanto)
