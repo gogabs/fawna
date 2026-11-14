@@ -30,10 +30,9 @@ const MANIFEST := {
 	"coleta_frutas": ["world/wallfoliage.ogg", "world/wallfoliage2.ogg", "world/wallfoliage3.ogg"],
 	"amb_bambu": ["recursos/amb_bambu.ogg"],
 	"amb_gravetos": ["recursos/amb_gravetos.ogg"],
-	"amb_argila": ["recursos/amb_argila.ogg"],
 	"amb_frutas": ["recursos/amb_frutas.ogg"],
 	"bambu_golpe": ["recursos/bambu_golpe_1.ogg", "recursos/bambu_golpe_2.ogg", "recursos/bambu_golpe_3.ogg", "recursos/bambu_golpe_4.ogg"],
-	"bambu_queda": ["recursos/bambu_queda.ogg"],
+	"bambu_queda": ["recursos/bambu_queda_1.ogg", "recursos/bambu_queda_2.ogg", "recursos/bambu_queda_3.ogg"],
 	"chegada": ["world/notify.ogg"],
 	"ui_mover": ["world/menuclick.ogg"],
 	"ui_confirmar": ["world/menuenter.ogg"],
@@ -110,13 +109,13 @@ static func pickup(item := "") -> AudioStream:
 
 
 ## Som baixinho e contínuo de cada recurso coletável, para achá-lo de ouvido:
-## o bambu range e bate os colmos, os gravetos estalam secos, a argila
-## borbulha e goteja, e as frutas (raras) têm moscas rondando.
+## o bambu range e bate os colmos, os gravetos estalam secos e as frutas
+## (raras) têm moscas rondando. A argila não tem som próprio (escolha do
+## Gabs): fica sempre na beira da água, que já soa.
 static func resource_loop(thing: WorldGen.Thing) -> AudioStream:
 	var key: String = {
 		WorldGen.Thing.BAMBU: "amb_bambu",
 		WorldGen.Thing.GRAVETOS: "amb_gravetos",
-		WorldGen.Thing.ARGILA: "amb_argila",
 		WorldGen.Thing.ARBUSTO_FRUTAS: "amb_frutas",
 	}.get(thing, "")
 	if key.is_empty():
@@ -125,6 +124,10 @@ static func resource_loop(thing: WorldGen.Thing) -> AudioStream:
 	if stream != null:
 		_make_loop(stream)
 	return stream
+
+
+static func has_resource_loop(thing: WorldGen.Thing) -> bool:
+	return thing in [WorldGen.Thing.BAMBU, WorldGen.Thing.GRAVETOS, WorldGen.Thing.ARBUSTO_FRUTAS]
 
 
 ## O colmo oco do bambu levando um golpe de machado (o som do machado

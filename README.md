@@ -88,10 +88,10 @@ novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
 
 ## Como se joga (por enquanto)
 
-1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. Cada um tem um som baixinho e próprio, em 3D:
+1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu, os gravetos e as frutas têm um som baixinho e próprio, em 3D:
    - **Touceira de bambu** (bosque e lagoa; rara na pradaria): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos.
    - **Gravetos** no chão (sobretudo no bosque): estalidos secos. Dão 2 lenhas.
-   - **Argila**, só na beira da água (margens das lagoas e dos riachos): barro borbulhando e gotejando. Dá 1 argila.
+   - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
    - **Arbusto com frutas**, raro (uns poucos por região): moscas rondando. Dá 2 frutas.
 
    O que é recolhido some (sem som e sem fala no Tab) e rebrota com o tempo: gravetos em 5 minutos, argila em 8, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.

@@ -266,7 +266,7 @@ func _nearest_resources(center: Vector2i) -> Array:
 			if dx * dx + dy * dy > r * r:
 				continue
 			var cell := center + Vector2i(dx, dy)
-			if not Harvest.is_source(_world.thing_at(cell)):
+			if not Sounds.has_resource_loop(_world.thing_at(cell)):
 				continue
 			if _harvest != null and not _harvest.is_available(cell):
 				continue

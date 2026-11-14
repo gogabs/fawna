@@ -71,8 +71,13 @@ jogo gera os sons por código. Publicados com autorização do Gabs (2026-11-14)
 ## Recursos coletáveis (recursos/)
 
 Sons para achar e recolher os recursos (`Sounds.resource_loop`, `pickup`,
-`bamboo_knock`, `bamboo_fall`). Nomes esperados: `amb_bambu`, `amb_gravetos`,
-`amb_argila` e `amb_frutas` (loops baixinhos, tocados em 3D na posição do
-recurso), `coleta_<bambu|lenha|argila|frutas>_N`, `bambu_golpe_N` e
-`bambu_queda`. Enquanto não existirem, o jogo usa sons do pacote `world/` e
-sons gerados por código (`client/sound_bank.gd`).
+`bamboo_knock`, `bamboo_fall`). Escolhidos pelo Gabs (2026-11-14):
+`bambu_golpe_1..3`, `bambu_queda_1..3`, `coleta_bambu_1..4`,
+`coleta_lenha_1..4`, `coleta_argila_1..3` e `coleta_frutas_1..3`; a cada vez
+um é sorteado, sem repetir o anterior. Ainda fora do repositório, até o Gabs
+autorizar publicar: copie para `assets/sounds/recursos/` para ouvir.
+
+Loops para achar de ouvido (em 3D, na posição do recurso): `amb_bambu`,
+`amb_gravetos` e `amb_frutas`, ainda em escolha. A argila não tem loop: fica
+sempre na beira da água, que já soa. Sem os arquivos, o jogo usa sons do
+pacote `world/` e sons gerados por código (`client/sound_bank.gd`).
