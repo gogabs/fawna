@@ -5,7 +5,7 @@ extends RefCounted
 ##
 ## Cada pássaro é uma entidade com posição própria. Eles vivem em grupos: um
 ## sabiá sozinho é um grupo de um, um casal de rolinhas é um grupo de dois e
-## um bando de carriças é um grupo de quatro a sete. O grupo decide quando
+## um bando de carriças é um grupo de três a cinco. O grupo decide quando
 ## trocar de poleiro (e voa junto); cada pássaro canta por conta própria,
 ## só quando está pousado.
 ##
@@ -35,7 +35,7 @@ const SPECIES := {
 	Species.CARRICA: {
 		"name": "carriça-do-cardo",
 		"perches": [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARVORE],
-		"group": [4, 7],
+		"group": [3, 5],
 		"song_every": [4.0, 12.0],
 		"stay": [14.0, 40.0],
 		"speed": 7.0,
@@ -62,7 +62,7 @@ const SPECIES := {
 	Species.CORVO: {
 		"name": "corvo-cinza",
 		"perches": [WorldGen.Thing.ARVORE],
-		"group": [2, 4],
+		"group": [2, 3],
 		"song_every": [9.0, 28.0],
 		"stay": [30.0, 90.0],
 		"speed": 6.0,
@@ -104,7 +104,7 @@ const SPECIES := {
 	Species.PERIQUITO: {
 		"name": "periquito-do-brejo",
 		"perches": [WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO],
-		"group": [3, 6],
+		"group": [2, 4],
 		"song_every": [6.0, 18.0],
 		"stay": [20.0, 60.0],
 		"speed": 7.0,
@@ -116,8 +116,13 @@ const SPECIES := {
 	},
 }
 
+## Quanto do mapa tem pássaros: multiplica todas as chances de SPAWNS.
+## 1.0 é a densidade original (mundo vivo demais); abaixe para mais silêncio,
+## suba para mais vida. As proporções entre as espécies não mudam.
+const DENSITY := 0.5
+
 ## O que nasce em cada pedaço (CHUNK casas) de cada bioma: [espécie, chance
-## de ter um grupo, quantos grupos no máximo].
+## de ter um grupo (antes de DENSITY), quantos grupos no máximo].
 const SPAWNS := {
 	WorldGen.Biome.BOSQUE: [[Species.SABIA, 0.55, 1], [Species.CARRICA, 0.15, 1], [Species.CORVO, 0.15, 1], [Species.CORUJA, 0.15, 1]],
 	WorldGen.Biome.PRADARIA: [[Species.CARRICA, 0.4, 1], [Species.SABIA, 0.1, 1], [Species.CORVO, 0.1, 1], [Species.GAVIAO, 0.12, 1]],
@@ -229,7 +234,7 @@ func _spawn_chunk(chunk: Vector2i) -> Array:
 	for entry in SPAWNS.get(biome, []):
 		var species: int = entry[0]
 		for n in int(entry[2]):
-			if rng.randf() >= float(entry[1]):
+			if rng.randf() >= float(entry[1]) * DENSITY:
 				continue
 			var perches := _perches_in_chunk(origin, species)
 			if perches.is_empty():
