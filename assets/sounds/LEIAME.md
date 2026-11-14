@@ -67,3 +67,12 @@ jogo gera os sons por código. Publicados com autorização do Gabs (2026-11-14)
   - `carrica_1_*`: [703254](https://freesound.org/s/703254/) (chapim)
   - `rolinha_0_*`: [735366](https://freesound.org/s/735366/) (pomba)
   - `asas_0`: [330967](https://freesound.org/s/330967/); `asas_1`: [561009](https://freesound.org/s/561009/)
+
+## Recursos coletáveis (recursos/)
+
+Sons para achar e recolher os recursos (`Sounds.resource_loop`, `pickup`,
+`bamboo_knock`, `bamboo_fall`). Nomes esperados: `amb_bambu`, `amb_gravetos`,
+`amb_argila` e `amb_frutas` (loops baixinhos, tocados em 3D na posição do
+recurso), `coleta_<bambu|lenha|argila|frutas>_N`, `bambu_golpe_N` e
+`bambu_queda`. Enquanto não existirem, o jogo usa sons do pacote `world/` e
+sons gerados por código (`client/sound_bank.gd`).

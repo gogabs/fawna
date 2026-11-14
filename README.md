@@ -88,7 +88,13 @@ novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
 
 ## Como se joga (por enquanto)
 
-1. Ande até árvores, arbustos ou água e aperte **Espaço** para coletar madeira, sementes ou água. Os recursos se regeneram.
+1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. Cada um tem um som baixinho e próprio, em 3D:
+   - **Touceira de bambu** (bosque e lagoa; rara na pradaria): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos.
+   - **Gravetos** no chão (sobretudo no bosque): estalidos secos. Dão 2 lenhas.
+   - **Argila**, só na beira da água (margens das lagoas e dos riachos): barro borbulhando e gotejando. Dá 1 argila.
+   - **Arbusto com frutas**, raro (uns poucos por região): moscas rondando. Dá 2 frutas.
+
+   O que é recolhido some (sem som e sem fala no Tab) e rebrota com o tempo: gravetos em 5 minutos, argila em 8, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
 2. A Origem, no centro do mundo, é o ponto de partida. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
@@ -154,6 +160,7 @@ Os cantos são gerados por código (`client/bird_songs.gd`), discretos e meio in
 godot --headless --path . --script res://tests/test_world.gd
 godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
+godot --headless --path . --script res://tests/test_harvest.gd
 ```
 
 Caminheiro (precisa rodar como cena):
