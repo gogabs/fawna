@@ -30,15 +30,19 @@ continua guardada; `USE_OCARINA` em `autoload/music.gd` a traz de volta.
 
 Sons da roupa de algodão e da tornozeleira de conchas da criatura: giro,
 início e parada do movimento, farfalhar contínuo e conchas a cada dois passos.
-Os outros jogadores soam igual, posicionados em 3D. A pasta `foley/` está no
-`.gitignore` e não vai para o GitHub até a licença de todos os sons ser
-confirmada; sem ela, o jogo segue sem esses sons. Nomes esperados (ver
-`MANIFEST` em `client/sounds.gd`): `giro_1..3.ogg`, `inicio_sintetico.ogg`,
-`parada_sintetica.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`,
-`farfalhar_1..7.ogg`, `tornozeleira_concha.ogg` e `tornozeleira_1..10.ogg`. A
-tornozeleira é um trecho de "SeaShell_01", de agoniasboy no Freesound (CC0);
-as variações 1 a 10 são sacudidas novas montadas com os cliques recortados
-dessa mesma gravação, sorteadas sem repetir a anterior.
+Os outros jogadores soam igual, posicionados em 3D. Publicados com autorização
+do Gabs (2026-11-14).
+
+- `farfalhar_1..7.ogg`, `inicio_amigo.ogg`, `parada_amigo.ogg`: farfalhares de
+  roupa gravados por um amigo do Gabs, cedidos ao projeto sem exigência de
+  atribuição.
+- `giro_1..3.ogg`, `inicio_sintetico.ogg`, `parada_sintetica.ogg`: gerados por
+  código para o projeto.
+- `tornozeleira_concha.ogg`: trecho (1,4 a 2,3 s, passa-baixa 6,5 kHz) de
+  ["SeaShell_01", de agoniasboy no Freesound](https://freesound.org/s/152772/),
+  CC0. Obrigado, agoniasboy.
+- `tornozeleira_1..10.ogg`: sacudidas novas montadas com os cliques recortados
+  dessa mesma gravação, com altura e ritmo sorteados.
 
 ## Caminheiro (caminheiro/)
 
