@@ -25,6 +25,9 @@ const STEP_RESTART := 0.6 * STEP_INTERVAL
 ## Outra criatura conta como andando se a posição dela mudou há menos que
 ## isto (a posição chega a cada 0,1 s, às vezes com atraso).
 const OTHER_WALK_GRACE := 0.25
+## Volume dos passos (da própria criatura e das outras). Um pouco abaixo do
+## arquivo original, para os passos não dominarem o ambiente.
+const FOOTSTEP_DB := -3.0
 ## Foley de movimento (roupa de algodão e tornozeleira de conchas, que toda
 ## criatura usa). Tudo segue o mesmo relógio dos passos: a tornozeleira fica
 ## num tornozelo só, então soa a cada dois passos; cada farfalhar dura cerca
@@ -551,7 +554,7 @@ func _tick_my_steps(moved: bool, delta: float) -> void:
 
 func _play_my_step() -> void:
 	var cell := WorldGen.cell_of(_pos)
-	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true)
+	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true, FOOTSTEP_DB)
 	for sound: Array in _step_foley(_step_count):
 		_play(sound[0], true, sound[1])
 
@@ -795,7 +798,7 @@ func _play_other_step(pos: Vector2, n: int) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), FOOTSTEP_DB)
 	for sound: Array in _step_foley(n):
 		_play_other(pos, sound[0], sound[1])
 
