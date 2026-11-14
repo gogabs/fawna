@@ -35,7 +35,7 @@ var _compass_players: Array[AudioStreamPlayer3D] = []  # um por hora do relógio
 ## são reaproveitadas: o Steam Audio demora a registrar uma fonte nova, e um
 ## som curto numa fonte recém-criada acabava antes disso, saindo mudo.
 var _voices: Array[AudioStreamPlayer3D] = []
-var _next_voice := 0
+var _voice_order: Array[AudioStreamPlayer3D] = []  # da que tocou há mais tempo à mais recente
 
 
 func _ready() -> void:
@@ -137,7 +137,7 @@ func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 	play_at_point(WorldGen.cell_center(cell), stream, volume_db)
 
 
-const VOICE_COUNT := 16
+const VOICE_COUNT := 32
 
 
 func _setup_voices() -> void:
@@ -146,33 +146,43 @@ func _setup_voices() -> void:
 		voice.name = "Voz_%d" % i
 		add_child(voice)
 		_voices.append(voice)
+		_voice_order.append(voice)
 
 
 ## Toca um som curto num ponto do mundo (ex.: esbarrão, passos de alguém).
-func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0, hrtf := true) -> void:
+## vary dá uma leve variação de altura e volume (bom para passos).
+func play_at_point(point: Vector2, stream: AudioStream, volume_db := 0.0, hrtf := true, vary := false) -> void:
 	if _camera == null or stream == null:
 		return
+	var pitch := 1.0
+	if vary:
+		pitch = randf_range(0.94, 1.06)
+		volume_db += randf_range(-1.5, 0.0)
 	if hrtf and using_hrtf and not _voices.is_empty():
-		_play_on_voice(point, stream, volume_db)
+		_play_on_voice(point, stream, volume_db, pitch)
 		return
 	var player := _new_player(stream, volume_db, hrtf)
+	player.pitch_scale = pitch
 	player.position = point_to_3d(point)
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.play()
 
 
-## Usa a próxima voz livre (ou a mais antiga, se todas estiverem tocando).
-func _play_on_voice(point: Vector2, stream: AudioStream, volume_db: float) -> void:
-	var voice := _voices[_next_voice]
-	for i in _voices.size():
-		var candidate := _voices[(_next_voice + i) % _voices.size()]
+## Usa a voz livre que está parada há mais tempo. Uma voz que ainda está
+## tocando nunca é reiniciada, a não ser que as 32 estejam ocupadas; aí vai a
+## que começou primeiro, que é a que está mais perto de acabar.
+func _play_on_voice(point: Vector2, stream: AudioStream, volume_db: float, pitch := 1.0) -> void:
+	var voice: AudioStreamPlayer3D = _voice_order[0]
+	for candidate in _voice_order:
 		if not candidate.playing:
 			voice = candidate
 			break
-	_next_voice = (_voices.find(voice) + 1) % _voices.size()
+	_voice_order.erase(voice)
+	_voice_order.append(voice)
 	voice.stop()
 	voice.stream = stream
+	voice.pitch_scale = pitch
 	voice.volume_db = volume_db + HRTF_GAIN_DB
 	voice.position = point_to_3d(point)
 	voice.play()

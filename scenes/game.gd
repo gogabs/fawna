@@ -63,6 +63,10 @@ var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
+## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
+## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
+## fim do passo anterior não é cortado e os dois se sobrepõem naturalmente.
+var _sfx_voices: Array[AudioStreamPlayer] = []
 
 
 func _ready() -> void:
@@ -474,7 +478,7 @@ func _set_pos(new_pos: Vector2) -> void:
 	if _step_distance >= STEP_LENGTH:
 		_step_distance = 0.0
 		var step_cell := WorldGen.cell_of(new_pos)
-		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)))
+		_play(Sounds.footstep(world.biome_at(step_cell), world.thing_at(step_cell)), true)
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
 		var old_cell := _cell
@@ -643,9 +647,33 @@ func _say_who() -> void:
 	Speech.say("No mundo: %s." % ", ".join(names))
 
 
-func _play(stream: AudioStream) -> void:
-	sfx.stream = stream
-	sfx.play()
+const SFX_VOICES := 8
+
+
+## Toca um som da própria criatura. vary dá a passos uma leve variação de
+## altura e volume, para dois passos iguais seguidos não soarem idênticos.
+func _play(stream: AudioStream, vary := false) -> void:
+	if stream == null:
+		return
+	if _sfx_voices.is_empty():
+		_sfx_voices.append(sfx)
+		for i in SFX_VOICES - 1:
+			var voice := AudioStreamPlayer.new()
+			voice.name = "Sfx_%d" % (i + 1)
+			add_child(voice)
+			_sfx_voices.append(voice)
+	var voice: AudioStreamPlayer = null
+	for candidate in _sfx_voices:
+		if not candidate.playing:
+			voice = candidate
+			break
+	if voice == null:  # todas tocando: reaproveita a que começou primeiro
+		voice = _sfx_voices.pop_front()
+		_sfx_voices.append(voice)
+	voice.stream = stream
+	voice.pitch_scale = randf_range(0.94, 1.06) if vary else 1.0
+	voice.volume_db = randf_range(-1.5, 0.0) if vary else 0.0
+	voice.play()
 
 
 ## Passos de outras criaturas soam na posição delas (com HRTF, se instalado).
@@ -653,7 +681,7 @@ func _play_other_step(pos: Vector2) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)))
+	audio.play_at_point(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), 0.0, true, true)
 
 
 ## Troca o ambiente de fundo quando a criatura muda de bioma, com um fade.
