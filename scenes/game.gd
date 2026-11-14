@@ -16,8 +16,8 @@ const WALK_SPEED := 1.8  # casas por segundo (cerca de 2,7 m/s; antes 1,5)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
 ## Ritmo dos passos: quantos passos por segundo enquanto a criatura anda.
 ## Os passos seguem o relógio, como uma animação, e não a distância andada.
-## Para deixar mais rápido ou mais lento, mude só este número (antes era 3,3).
-const STEPS_PER_SECOND := 3.6
+## Para deixar mais rápido ou mais lento, mude só este número (3,3 é o ritmo escolhido pelo Gabs).
+const STEPS_PER_SECOND := 3.3
 const STEP_INTERVAL := 1.0 / STEPS_PER_SECOND
 ## Ao começar a andar, o primeiro passo sai na hora, a menos que o último
 ## tenha sido há bem pouco (toques rápidos na tecla não viram rajada).
