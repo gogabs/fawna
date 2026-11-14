@@ -26,6 +26,7 @@ var _world: WorldGen
 var _players := {}
 var _my_id := 0
 var heading := 0  # para onde a criatura local olha
+var caminheiro: Caminheiro  # a rota acesa aparece em azul
 
 
 func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
@@ -57,6 +58,12 @@ func _draw() -> void:
 			var thing := _world.thing_at(cell)
 			if THING_COLORS.has(thing):
 				draw_rect(rect.grow(-4), THING_COLORS[thing])
+	if caminheiro != null and caminheiro.active and _players.has(_my_id):
+		var previous: Vector2 = _players[_my_id]["pos"]
+		for point in caminheiro.route():
+			draw_line(point_to_pixel(previous), point_to_pixel(point), Color(0.35, 0.65, 1.0, 0.7), 2.0)
+			draw_circle(point_to_pixel(point), 3.0, Color("6fb3ff"))
+			previous = point
 	for id in _players:
 		var color := Color.WHITE if id == _my_id else Color("ffb38a")
 		var center := point_to_pixel(_players[id]["pos"])
