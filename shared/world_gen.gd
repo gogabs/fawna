@@ -23,6 +23,11 @@ const VILLAGE_CLEAR_RADIUS := 3.0
 const VILLAGE_DRY_RADIUS := 10.0  # sem riachos colados na vila
 const TRAIL_HALF_WIDTH := 0.8  # casas: trilhas com uns 2,4 m de largura
 const LAKE_RADIUS := 9.0  # casas, antes da ondulação da margem
+const TRAIL_STEP := 0.5  # casas entre os pontos da linha de uma trilha
+const TRAIL_SWAY := 2.5  # casas que a trilha se afasta da reta, no máximo
+const TRAIL_SWAY_EASE := 6.0  # casas, perto das pontas, em que a curva some
+const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
+const TRAIL_EDGE := 2
 
 const BIOME_NAMES := {
 	Biome.BOSQUE: "bosque de micélio",
@@ -68,11 +73,12 @@ const DENSITY := {
 }
 
 var world_seed: int
-var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões e trilhas
+var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões e curva as trilhas
 var _stream_noise := FastNoiseLite.new()  # riachos finos entre regiões
 var _lake_noise := FastNoiseLite.new()  # margem ondulada das lagoas
 var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada casa]
 var _regions := {}  # Vector2i (região) -> Biome
+var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 
 
 func _init(new_seed: int) -> void:
@@ -191,15 +197,16 @@ func _generate_chunk(chunk: Vector2i) -> Array:
 	biomes.resize(CHUNK * CHUNK)
 	var origin := chunk * CHUNK
 	var segments := _segments_near(origin + Vector2i.ONE * (CHUNK / 2))
+	var trails := _trail_mask(origin, segments)
 	for y in CHUNK:
 		for x in CHUNK:
 			var cell := origin + Vector2i(x, y)
-			things[y * CHUNK + x] = _compute_thing(cell, segments)
+			things[y * CHUNK + x] = _compute_thing(cell, trails[y * CHUNK + x])
 			biomes[y * CHUNK + x] = region_biome(region_of(cell))
 	return [things, biomes]
 
 
-func _compute_thing(cell: Vector2i, segments: Array) -> Thing:
+func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 	if cell == center():
 		return Thing.VILA
 	var p := cell_center(cell)
@@ -209,16 +216,18 @@ func _compute_thing(cell: Vector2i, segments: Array) -> Thing:
 	var region := region_of(cell)
 	var biome := region_biome(region)
 	var water := _is_water(cell, region, biome)
-	if _on_trail(p, segments):
+	if trail == TRAIL_CELL:
 		return Thing.PONTE if water != Thing.NADA else Thing.TRILHA
 	if water != Thing.NADA:
-		return water
+		return Thing.PONTE if trail == TRAIL_EDGE else water
 	var roll := _random([cell.x, cell.y])
 	var chances: Dictionary = DENSITY[biome]
 	var total := 0.0
 	for thing in chances:
 		total += chances[thing]
 		if roll < total:
+			if trail == TRAIL_EDGE and BLOCKING.has(thing):
+				return Thing.TRILHA
 			return thing
 	return Thing.NADA
 
@@ -242,30 +251,102 @@ func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
 
 # --- Trilhas -------------------------------------------------------------------
 
-## Trechos de trilha (pares de pontos) que podem passar perto de uma casa: os
-## que ligam o ponto de encontro de cada região às vizinhas leste e sul, nas
-## regiões em volta.
+## Trechos de trilha que podem passar perto de uma casa: os que ligam o ponto
+## de encontro de cada região às vizinhas leste e sul, nas regiões em volta.
+## Cada trecho é a linha (trail_line) de uma região à vizinha.
 func _segments_near(cell: Vector2i) -> Array:
 	var segments := []
 	var here := Vector2i(roundi(float(cell.x) / REGION_SIZE), roundi(float(cell.y) / REGION_SIZE))
 	for ry in range(here.y - 2, here.y + 2):
 		for rx in range(here.x - 2, here.x + 2):
 			var region := Vector2i(rx, ry)
-			var a := region_landmark(region)
-			segments.append([a, region_landmark(region + Vector2i.RIGHT)])
-			segments.append([a, region_landmark(region + Vector2i.DOWN)])
+			segments.append(trail_line(region, region + Vector2i.RIGHT))
+			segments.append(trail_line(region, region + Vector2i.DOWN))
 	return segments
 
 
-## A casa está numa trilha? As trilhas são retas entortadas por ruído, para
-## serpentear como um caminho de verdade.
-func _on_trail(p: Vector2, segments: Array) -> bool:
-	var q := p + _warp(p, 2.5)
-	for seg in segments:
-		var closest := Geometry2D.get_closest_point_to_segment(q, seg[0], seg[1])
-		if q.distance_to(closest) <= TRAIL_HALF_WIDTH:
-			return true
-	return false
+## Caminho da trilha entre os pontos de encontro de duas regiões vizinhas, como
+## uma linha de pontos (em casas), do ponto de "from" ao de "to". Em terra, a
+## trilha serpenteia em volta da reta; sobre a água, vira uma ponte reta, da
+## última margem seca até a próxima. Os pontos são o que o caminho de fato
+## percorre, então servem para achar rotas e marcar as curvas.
+func trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
+	var key := [from, to]
+	if _trail_lines.has(key):
+		return _trail_lines[key]
+	var reverse := [to, from]
+	if _trail_lines.has(reverse):
+		var flipped := (_trail_lines[reverse] as PackedVector2Array).duplicate()
+		flipped.reverse()
+		return flipped
+	var line := _build_trail_line(from, to)
+	_trail_lines[key] = line
+	return line
+
+
+func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
+	var a := region_landmark(from)
+	var b := region_landmark(to)
+	var length := a.distance_to(b)
+	var steps := maxi(1, ceili(length / TRAIL_STEP))
+	var side := (b - a).normalized().orthogonal()
+	# Pontos da trilha serpenteando, e se cada um cai na água.
+	var points := PackedVector2Array()
+	var wet := []
+	for i in steps + 1:
+		var t := float(i) / steps
+		var s := a.lerp(b, t)
+		# A curva some perto das pontas, para todas as trilhas de uma região
+		# se encontrarem bem no ponto de encontro.
+		var ease := clampf(minf(t, 1.0 - t) * length / TRAIL_SWAY_EASE, 0.0, 1.0)
+		var p := s + side * _warp_noise.get_noise_2d(s.x, s.y) * TRAIL_SWAY * ease
+		points.append(p)
+		wet.append(_is_water_at(cell_of(p)))
+	# Sobre a água, só ficam as margens: a ponte é a reta entre elas.
+	var line := PackedVector2Array()
+	for i in points.size():
+		if not wet[i] or i == 0 or i == points.size() - 1:
+			line.append(points[i])
+	return line
+
+
+func _is_water_at(cell: Vector2i) -> bool:
+	var region := region_of(cell)
+	return _is_water(cell, region, region_biome(region)) != Thing.NADA
+
+
+## Marca, numa máscara do pedaço, as casas da trilha (TRAIL_CELL: o centro fica
+## a até TRAIL_HALF_WIDTH da linha) e as casas que uma criatura andando bem na
+## linha encostaria (TRAIL_EDGE). Nas da beira, o que bloquearia vira trilha
+## ou ponte, para que seguir a linha nunca esbarre em nada.
+func _trail_mask(origin: Vector2i, segments: Array) -> PackedByteArray:
+	var mask := PackedByteArray()
+	mask.resize(CHUNK * CHUNK)
+	var low := Vector2(origin) - Vector2.ONE * 2.0
+	var high := Vector2(origin + Vector2i.ONE * CHUNK) + Vector2.ONE * 2.0
+	for line: PackedVector2Array in segments:
+		for i in line.size() - 1:
+			var p: Vector2 = line[i]
+			var q: Vector2 = line[i + 1]
+			if maxf(p.x, q.x) < low.x or minf(p.x, q.x) > high.x or maxf(p.y, q.y) < low.y or minf(p.y, q.y) > high.y:
+				continue
+			var x0 := maxi(origin.x, floori(minf(p.x, q.x)) - 2)
+			var x1 := mini(origin.x + CHUNK - 1, floori(maxf(p.x, q.x)) + 2)
+			var y0 := maxi(origin.y, floori(minf(p.y, q.y)) - 2)
+			var y1 := mini(origin.y + CHUNK - 1, floori(maxf(p.y, q.y)) + 2)
+			for y in range(y0, y1 + 1):
+				for x in range(x0, x1 + 1):
+					var index := (y - origin.y) * CHUNK + (x - origin.x)
+					if mask[index] == TRAIL_CELL:
+						continue
+					var c := Vector2(x + 0.5, y + 0.5)
+					var on_line := Geometry2D.get_closest_point_to_segment(c, p, q)
+					if c.distance_to(on_line) <= TRAIL_HALF_WIDTH:
+						mask[index] = TRAIL_CELL
+						continue
+					if _cell_to_segment(Vector2i(x, y), p, q) <= PLAYER_RADIUS + 0.05:
+						mask[index] = TRAIL_EDGE
+	return mask
 
 
 ## Trilha mais próxima de um ponto, procurando até "radius" casas. Devolve a
@@ -284,6 +365,25 @@ func nearest_trail(pos: Vector2, radius := 8) -> Vector2i:
 			if distance < best_distance:
 				best = cell
 				best_distance = distance
+	return best
+
+
+## Distância entre o quadrado de uma casa e o trecho de p a q (zero se ele
+## passa por dentro da casa).
+static func _cell_to_segment(cell: Vector2i, p: Vector2, q: Vector2) -> float:
+	var rect := Rect2(Vector2(cell), Vector2.ONE)
+	if rect.has_point(p) or rect.has_point(q):
+		return 0.0
+	var corners := [rect.position, rect.position + Vector2(1, 0), rect.end, rect.position + Vector2(0, 1)]
+	var best := INF
+	for i in 4:
+		var c: Vector2 = corners[i]
+		var d: Vector2 = corners[(i + 1) % 4]
+		if Geometry2D.segment_intersects_segment(p, q, c, d) != null:
+			return 0.0
+		best = minf(best, c.distance_to(Geometry2D.get_closest_point_to_segment(c, p, q)))
+	for e: Vector2 in [p, q]:
+		best = minf(best, e.distance_to(Vector2(clampf(e.x, rect.position.x, rect.end.x), clampf(e.y, rect.position.y, rect.end.y))))
 	return best
 
 
