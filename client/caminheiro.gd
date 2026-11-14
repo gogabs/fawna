@@ -39,7 +39,10 @@ var _finder: Wayfinder
 var _beacon: Variant = null  # Vector2 do beacon atual
 var _previous := Vector2.ZERO  # de onde a criatura saiu rumo ao beacon atual
 var _beat_timer := 0.0
-var _beat_player: AudioStreamPlayer3D
+## Duas fontes para a batida, em rodízio: o reverb da batida (já no arquivo)
+## dura mais que o intervalo, e reiniciar a mesma fonte cortaria a cauda.
+var _beat_players: Array[AudioStreamPlayer3D] = []
+var _next_beat := 0
 var _woosh_player: AudioStreamPlayer3D
 var _woosh_tween: Tween
 
@@ -51,11 +54,13 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 	_audio = audio
 	_finder = Wayfinder.new(world)
 	if audio != null:
-		_beat_player = audio.make_far_voice(BEAT_DISTANCE + 6.0)
+		for i in 2:
+			var player := audio.make_far_voice(BEAT_DISTANCE + 6.0)
+			if player != null:
+				player.name = "Caminheiro_batida_%d" % i
+				player.stream = Sounds.heartbeat()
+				_beat_players.append(player)
 		_woosh_player = audio.make_far_voice(WOOSH_TO + 6.0)
-		if _beat_player != null:
-			_beat_player.name = "Caminheiro_batida"
-			_beat_player.stream = Sounds.heartbeat()
 		if _woosh_player != null:
 			_woosh_player.name = "Caminheiro_woosh"
 			_woosh_player.stream = Sounds.woosh()
@@ -77,8 +82,8 @@ func start(from: Vector2, destination: Vector2, new_place_name: String) -> bool:
 func stop() -> void:
 	active = false
 	_beacon = null
-	if _beat_player != null:
-		_beat_player.stop()
+	for player in _beat_players:
+		player.stop()
 
 
 ## Distância aproximada até o destino, pelas trilhas, contada ao acender.
@@ -158,13 +163,15 @@ func _replan(pos: Vector2) -> void:
 
 
 func _beat(pos: Vector2, beacon: Vector2) -> void:
-	if _beat_player == null:
+	if _beat_players.is_empty():
 		return
+	var player := _beat_players[_next_beat]
+	_next_beat = (_next_beat + 1) % _beat_players.size()
 	var direction := (beacon - pos).normalized()
-	_beat_player.position = SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
-	_beat_player.volume_db = BEAT_DB + _gain()
-	_beat_player.stop()
-	_beat_player.play()
+	player.position = SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
+	player.volume_db = BEAT_DB + _gain()
+	player.stop()
+	player.play()
 
 
 ## O woosh sai de perto da criatura e voa rumo ao próximo beacon.

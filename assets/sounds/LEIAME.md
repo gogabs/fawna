@@ -25,3 +25,10 @@ frases de shakuhachi, em ré menor. Gerada por `tools/musica_sombria.py`
 (MIDI em `assets/music/sombria.mid`, soundfont FluidR3_GM, licença MIT).
 Composição do próprio projeto. A musiquinha de ocarina (`musica/vila_*.ogg`)
 continua guardada; `USE_OCARINA` em `autoload/music.gd` a traz de volta.
+
+## Caminheiro (caminheiro/)
+
+`caminheiro/batida.ogg` é a batida do Caminheiro: um coração ouvido de dentro,
+duas pancadas graves de tambor abafado, com passa-baixa forte e um reverb
+curto e escuro já aplicados no arquivo. Gerado por `tools/som_caminheiro.py`
+(som do próprio projeto).
