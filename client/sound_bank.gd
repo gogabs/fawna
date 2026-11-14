@@ -275,8 +275,6 @@ static func resource_loop(thing: WorldGen.Thing) -> AudioStreamWAV:
 				_cache[key] = _bamboo_loop()
 			WorldGen.Thing.GRAVETOS:
 				_cache[key] = _twigs_loop()
-			WorldGen.Thing.ARGILA:
-				_cache[key] = _clay_loop()
 			WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _flies_loop()
 			_:
@@ -337,27 +335,6 @@ static func _twigs_loop() -> AudioStreamWAV:
 			for i in mini(length, count - at):
 				last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.15)
 				samples[at + i] += last * pow(1.0 - float(i) / length, 3.0) * 0.35
-	return _to_wav(samples, true)
-
-
-## Argila: barro molhado, com bolhas lentas e gotas que caem no raso.
-static func _clay_loop() -> AudioStreamWAV:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 1010
-	var count := RATE * 5
-	var samples := _filtered_noise(count, 0.985, 0.04, rng)
-	for k in 4:  # bolhas que estouram: um "blop" que sobe de tom
-		var start := rng.randi_range(0, count - 4000)
-		var freq := rng.randf_range(110.0, 190.0)
-		for i in 3600:
-			var t := float(i) / RATE
-			samples[start + i] += sin(TAU * freq * (1.0 + t * 9.0) * t) * exp(-t * 22.0) * 0.3
-	for k in 5:  # gotas
-		var start := rng.randi_range(0, count - 2000)
-		var freq := rng.randf_range(900.0, 1500.0)
-		for i in 1600:
-			var t := float(i) / RATE
-			samples[start + i] += sin(TAU * freq * (1.0 + t * 5.0) * t) * exp(-t * 60.0) * 0.12
 	return _to_wav(samples, true)
 
 
