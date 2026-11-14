@@ -214,6 +214,24 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 	return found.slice(0, MAX_AMBIENT_SOURCES)
 
 
+## Uma fonte que alcança longe (até "reach" casas), para os pássaros. Fica
+## criada e é reaproveitada: o Steam Audio às vezes não pega fontes criadas
+## no meio do jogo. Quem chama decide o som, o volume e a posição.
+func make_far_voice(reach: float) -> AudioStreamPlayer3D:
+	if _camera == null:
+		return null
+	var player := _new_player(null, 0.0)
+	if using_hrtf:
+		var config: Resource = _player_config.duplicate()
+		config.set("max_distance", METERS_PER_CELL * reach)
+		player.set("player_config", config)
+	else:
+		player.max_distance = METERS_PER_CELL * reach
+		player.unit_size = METERS_PER_CELL * 3.0
+	add_child(player)
+	return player
+
+
 func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioStreamPlayer3D:
 	var player: AudioStreamPlayer3D
 	if using_hrtf and hrtf:

@@ -129,11 +129,18 @@ tests/      Testes automáticos
 
 O servidor é autoritativo: os clientes só enviam intenções, como andar, e o servidor valida e avisa todos. O mundo vem de uma semente, então o servidor só precisa guardar o que os jogadores mudaram.
 
+## Pássaros
+
+Os primeiros seres vivos além das criaturas. Cada pássaro é uma entidade com posição própria, simulada no servidor (`shared/aviary.gd`): voa entre árvores e arbustos, canta só quando está pousado e foge de quem chega perto demais. Vivem em grupos: o sabiá-da-névoa anda sozinho no bosque, a rolinha-do-junco em casal perto da lagoa e a carriça-do-cardo em bandos de 4 a 7 nos arbustos da pradaria. Só existem perto de alguém, e cada jogador só recebe o que acontece até uns 48 m dele. No cliente (`scenes/birds.gd`), os cantos e as asas tocam em 3D com HRTF, numa altura de verdade (no alto da árvore, no arbusto, subindo no voo).
+
+Os cantos são gerados por código (`client/bird_songs.gd`), discretos e meio inumanos. Gravações em `assets/sounds/passaros/` entram no lugar deles: `<espécie>_<voz>_<frase>` para os cantos (cada pássaro nasce com uma das vozes da espécie), `<espécie>_alarme` para o susto e `asas_<n>` para o voo. Uma voz sem arquivos usa os cantos gerados. `tools/comparar_passaros/` tem a página usada para escolher os sons. `tests/test_birds.gd -- --exportar=PASTA` salva os cantos gerados em .wav para ouvir.
+
 ## Testes
 
 ```sh
 godot --headless --path . --script res://tests/test_world.gd
 godot --headless --path . --script res://tests/test_updater.gd
+godot --headless --path . --script res://tests/test_birds.gd
 ```
 
 Minigames (precisa rodar como cena):
