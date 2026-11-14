@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_collision()
 	_test_compass()
 	_test_regions_and_trails()
+	_test_straight_bridges()
 	_test_collect_craft_contribute()
 	_test_save_roundtrip()
 	if _failures == 0:
@@ -149,6 +150,36 @@ func _test_regions_and_trails() -> void:
 			if world.thing_at(cell) == WorldGen.Thing.PONTE or world.thing_at(cell) == WorldGen.Thing.TRILHA:
 				_check(world.is_passable(cell), "trilha e ponte são passáveis")
 				return
+
+
+func _test_straight_bridges() -> void:
+	var world := WorldGen.new(7)
+	var bridges := 0
+	for ry in range(-3, 3):
+		for rx in range(-3, 3):
+			for d: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+				var line := world.trail_line(Vector2i(rx, ry), Vector2i(rx, ry) + d)
+				for i in line.size() - 1:
+					var a: Vector2 = line[i]
+					var b: Vector2 = line[i + 1]
+					# Sobre a água não há curva: a linha só tem pontos nas
+					# margens, e a ponte é a reta entre eles.
+					if i > 0 and i < line.size() - 1:
+						_check(world.thing_at(WorldGen.cell_of(a)) != WorldGen.Thing.PONTE, "curva de trilha em cima da água em %s" % a)
+					if a.distance_to(b) > WorldGen.TRAIL_STEP * 1.5:
+						bridges += 1
+					# Seguir a linha da trilha nunca esbarra em nada.
+					var steps := maxi(1, ceili(a.distance_to(b) / 0.25))
+					for k in steps:
+						var p := a.lerp(b, float(k) / steps)
+						if p.distance_to(WorldGen.village_point()) > WorldGen.VILLAGE_CLEAR_RADIUS and not world.is_free(p):
+							_check(false, "a linha da trilha esbarra em algo em %s" % p)
+							return
+	_check(bridges > 0, "deveria haver alguma ponte perto da vila")
+	# A linha é a mesma nos dois sentidos.
+	var there := world.trail_line(Vector2i.ZERO, Vector2i.RIGHT)
+	var back := world.trail_line(Vector2i.RIGHT, Vector2i.ZERO)
+	_check(there[0] == back[back.size() - 1] and back[0] == there[there.size() - 1], "trilha igual nos dois sentidos")
 
 
 func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
