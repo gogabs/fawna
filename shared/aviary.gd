@@ -21,7 +21,7 @@ enum Species { SABIA, CARRICA, ROLINHA, CORVO, CORUJA, GAVIAO, PERIQUITO }
 const SPECIES := {
 	Species.SABIA: {
 		"name": "sabiá-da-névoa",
-		"perches": [WorldGen.Thing.ARVORE],
+		"perches": [WorldGen.Thing.BAMBU],
 		"group": [1, 1],
 		"song_every": [7.0, 18.0],  # entre um canto e outro
 		"stay": [25.0, 70.0],  # tempo num poleiro antes de mudar
@@ -34,7 +34,7 @@ const SPECIES := {
 	},
 	Species.CARRICA: {
 		"name": "carriça-do-cardo",
-		"perches": [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARVORE],
+		"perches": [WorldGen.Thing.ARBUSTO, WorldGen.Thing.BAMBU],
 		"group": [3, 5],
 		"song_every": [4.0, 12.0],
 		"stay": [14.0, 40.0],
@@ -47,7 +47,7 @@ const SPECIES := {
 	},
 	Species.ROLINHA: {
 		"name": "rolinha-do-junco",
-		"perches": [WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO],
+		"perches": [WorldGen.Thing.BAMBU, WorldGen.Thing.ARBUSTO],
 		"group": [1, 2],
 		"song_every": [10.0, 26.0],
 		"stay": [40.0, 100.0],
@@ -58,10 +58,10 @@ const SPECIES := {
 		"songs": 3,
 		"voices": 1,
 	},
-	# Bando pequeno no alto das árvores, grasnando de longe.
+	# Bando pequeno no alto dos bambus, grasnando de longe.
 	Species.CORVO: {
 		"name": "corvo-cinza",
-		"perches": [WorldGen.Thing.ARVORE],
+		"perches": [WorldGen.Thing.BAMBU],
 		"group": [2, 3],
 		"song_every": [9.0, 28.0],
 		"stay": [30.0, 90.0],
@@ -75,7 +75,7 @@ const SPECIES := {
 	# Sozinha, quieta e parada por muito tempo; só se mexe quando é preciso.
 	Species.CORUJA: {
 		"name": "coruja-do-breu",
-		"perches": [WorldGen.Thing.ARVORE],
+		"perches": [WorldGen.Thing.BAMBU],
 		"group": [1, 1],
 		"song_every": [16.0, 45.0],
 		"stay": [90.0, 220.0],
@@ -86,10 +86,10 @@ const SPECIES := {
 		"songs": 2,
 		"voices": 6,
 	},
-	# Um gavião sozinho nas árvores altas da pradaria, chamando lá de cima.
+	# Um gavião sozinho no alto dos bambus da pradaria, chamando lá de cima.
 	Species.GAVIAO: {
 		"name": "gavião-peneira",
-		"perches": [WorldGen.Thing.ARVORE],
+		"perches": [WorldGen.Thing.BAMBU],
 		"group": [1, 1],
 		"song_every": [14.0, 35.0],
 		"stay": [40.0, 120.0],
@@ -103,7 +103,7 @@ const SPECIES := {
 	# Bando barulhento perto da água.
 	Species.PERIQUITO: {
 		"name": "periquito-do-brejo",
-		"perches": [WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO],
+		"perches": [WorldGen.Thing.BAMBU, WorldGen.Thing.ARBUSTO],
 		"group": [2, 4],
 		"song_every": [6.0, 18.0],
 		"stay": [20.0, 60.0],

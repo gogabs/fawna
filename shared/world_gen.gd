@@ -14,20 +14,26 @@ extends RefCounted
 ## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA }
-enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS }
+enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
 const WORLD_LIMIT := 4096  # casas a partir da Origem; além disso, fim do caminho
 const ORIGIN_CLEAR_RADIUS := 3.0
 const ORIGIN_DRY_RADIUS := 10.0  # sem riachos colados na Origem
-const TRAIL_HALF_WIDTH := 0.8  # casas: trilhas com uns 2,4 m de largura
+const TRAIL_HALF_WIDTH := 1.6  # casas: trilhas com uns 4,8 m de largura
+const TRAIL_VERGE := 1.2  # casas além da trilha em que nada nasce (acostamento)
 const LAKE_RADIUS := 9.0  # casas, antes da ondulação da margem
 const TRAIL_STEP := 0.5  # casas entre os pontos da linha de uma trilha
-const TRAIL_SWAY := 2.5  # casas que a trilha se afasta da reta, no máximo
-const TRAIL_SWAY_EASE := 6.0  # casas, perto das pontas, em que a curva some
+const TRAIL_SWAY := 4.0  # casas que a trilha se afasta da reta, no máximo
+const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
+## Frequência do ruído que curva as trilhas: baixa, para cada trilha fazer no
+## máximo uma ou duas curvas longas e suaves entre regiões, em vez de
+## serpentear.
+const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
 const TRAIL_EDGE := 2
+const TRAIL_SIDE := 3
 
 const BIOME_NAMES := {
 	Biome.BOSQUE: "bosque de micélio",
@@ -43,7 +49,6 @@ const BIOME_IN := {
 }
 
 const THING_NAMES := {
-	Thing.ARVORE: "árvore",
 	Thing.RIACHO: "riacho",
 	Thing.ARBUSTO: "arbusto com gravetos",
 	Thing.ORIGEM: "Origem",
@@ -56,7 +61,7 @@ const THING_NAMES := {
 }
 
 ## Coisas que não deixam passar.
-const BLOCKING := [Thing.ARVORE, Thing.RIACHO, Thing.LAGO, Thing.BAMBU]
+const BLOCKING := [Thing.RIACHO, Thing.LAGO, Thing.BAMBU]
 ## Chão por onde se anda: não são "coisas" para a fala listar.
 const GROUND := [Thing.NADA, Thing.TRILHA, Thing.PONTE]
 
@@ -71,12 +76,12 @@ const NO_CELL := Vector2i(-9999999, -9999999)
 ## sorteadas). Recursos coletáveis (shared/harvest.gd): touceiras de bambu,
 ## argila na beira da água e arbustos, que dão gravetos para lenha ou, raros,
 ## frutas. A última faixa de arbustos é onde antes ficavam os gravetos soltos
-## no chão: assim o resto do mundo de cada semente continua igual.
+## no chão. Não há árvores: o mundo é de bambu e arbustos.
 const BIOME_WEIGHTS := {Biome.BOSQUE: 0.45, Biome.PRADARIA: 0.4, Biome.LAGOA: 0.15}
 const DENSITY := {
-	Biome.BOSQUE: [[Thing.ARVORE, 0.09], [Thing.ARBUSTO, 0.012], [Thing.BAMBU, 0.01], [Thing.ARBUSTO, 0.025]],
-	Biome.PRADARIA: [[Thing.ARVORE, 0.008], [Thing.ARBUSTO, 0.03], [Thing.BAMBU, 0.002], [Thing.ARBUSTO, 0.004]],
-	Biome.LAGOA: [[Thing.ARVORE, 0.02], [Thing.ARBUSTO, 0.02], [Thing.BAMBU, 0.012], [Thing.ARBUSTO, 0.006]],
+	Biome.BOSQUE: [[Thing.ARBUSTO, 0.012], [Thing.BAMBU, 0.01], [Thing.ARBUSTO, 0.025]],
+	Biome.PRADARIA: [[Thing.ARBUSTO, 0.03], [Thing.BAMBU, 0.002], [Thing.ARBUSTO, 0.004]],
+	Biome.LAGOA: [[Thing.ARBUSTO, 0.02], [Thing.BAMBU, 0.012], [Thing.ARBUSTO, 0.006]],
 }
 ## Fração dos arbustos que dá frutas em vez de gravetos: são raros (uns poucos
 ## por região).
@@ -90,7 +95,8 @@ const STREAM_WIDTH := 0.02  # no ruído dos riachos
 const STREAM_BANK := 0.05
 
 var world_seed: int
-var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões e curva as trilhas
+var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões
+var _trail_noise := FastNoiseLite.new()  # curva as trilhas, devagar
 var _stream_noise := FastNoiseLite.new()  # riachos finos entre regiões
 var _lake_noise := FastNoiseLite.new()  # margem ondulada das lagoas
 var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada casa]
@@ -102,6 +108,9 @@ func _init(new_seed: int) -> void:
 	world_seed = new_seed
 	_warp_noise.seed = new_seed
 	_warp_noise.frequency = 0.04
+	_trail_noise.seed = new_seed + 3571
+	_trail_noise.frequency = TRAIL_BEND_FREQUENCY
+	_trail_noise.fractal_type = FastNoiseLite.FRACTAL_NONE  # sem zigue-zague miúdo
 	_stream_noise.seed = new_seed + 7919
 	_stream_noise.frequency = 0.007
 	_stream_noise.fractal_type = FastNoiseLite.FRACTAL_NONE  # riachos longos e suaves
@@ -237,18 +246,20 @@ func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 		return Thing.PONTE if water != Thing.NADA else Thing.TRILHA
 	if water != Thing.NADA:
 		return Thing.PONTE if trail == TRAIL_EDGE else water
+	# Na beira da trilha não nasce nada (nem bambu, nem arbusto, nem argila):
+	# a trilha fica limpa e fácil de seguir.
+	if trail != 0:
+		return Thing.NADA
 	var roll := _random([cell.x, cell.y])
 	var total := 0.0
 	for band: Array in DENSITY[biome]:
 		var thing: Thing = band[0]
 		total += float(band[1])
 		if roll < total:
-			if trail == TRAIL_EDGE and BLOCKING.has(thing):
-				return Thing.TRILHA
 			if thing == Thing.ARBUSTO and cell_random(cell, "fruta") < FRUIT_BUSH_CHANCE:
 				return Thing.ARBUSTO_FRUTAS
 			return thing
-	if trail != TRAIL_EDGE and _is_clay(cell, region, biome):
+	if _is_clay(cell, region, biome):
 		return Thing.ARGILA
 	return Thing.NADA
 
@@ -333,8 +344,9 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 		var s := a.lerp(b, t)
 		# A curva some perto das pontas, para todas as trilhas de uma região
 		# se encontrarem bem no ponto de encontro.
-		var ease := clampf(minf(t, 1.0 - t) * length / TRAIL_SWAY_EASE, 0.0, 1.0)
-		var p := s + side * _warp_noise.get_noise_2d(s.x, s.y) * TRAIL_SWAY * ease
+		# Suave (smoothstep), para não virar uma quina onde a curva começa.
+		var ease := smoothstep(0.0, 1.0, minf(t, 1.0 - t) * length / TRAIL_SWAY_EASE)
+		var p := s + side * _trail_noise.get_noise_2d(s.x, s.y) * TRAIL_SWAY * ease
 		points.append(p)
 		wet.append(_is_water_at(cell_of(p)))
 	# Sobre a água, só ficam as margens: a ponte é a reta entre elas.
@@ -351,36 +363,40 @@ func _is_water_at(cell: Vector2i) -> bool:
 
 
 ## Marca, numa máscara do pedaço, as casas da trilha (TRAIL_CELL: o centro fica
-## a até TRAIL_HALF_WIDTH da linha) e as casas que uma criatura andando bem na
-## linha encostaria (TRAIL_EDGE). Nas da beira, o que bloquearia vira trilha
-## ou ponte, para que seguir a linha nunca esbarre em nada.
+## a até TRAIL_HALF_WIDTH da linha), as casas que uma criatura andando bem na
+## linha encostaria (TRAIL_EDGE: água ali vira ponte, para que seguir a linha
+## nunca esbarre em nada) e o acostamento (TRAIL_SIDE: até TRAIL_VERGE casas
+## além da trilha), onde não nasce nada.
 func _trail_mask(origin: Vector2i, segments: Array) -> PackedByteArray:
 	var mask := PackedByteArray()
 	mask.resize(CHUNK * CHUNK)
-	var low := Vector2(origin) - Vector2.ONE * 2.0
-	var high := Vector2(origin + Vector2i.ONE * CHUNK) + Vector2.ONE * 2.0
+	var reach := TRAIL_HALF_WIDTH + TRAIL_VERGE + 1.0
+	var pad := ceili(reach)
+	var low := Vector2(origin) - Vector2.ONE * reach
+	var high := Vector2(origin + Vector2i.ONE * CHUNK) + Vector2.ONE * reach
 	for line: PackedVector2Array in segments:
 		for i in line.size() - 1:
 			var p: Vector2 = line[i]
 			var q: Vector2 = line[i + 1]
 			if maxf(p.x, q.x) < low.x or minf(p.x, q.x) > high.x or maxf(p.y, q.y) < low.y or minf(p.y, q.y) > high.y:
 				continue
-			var x0 := maxi(origin.x, floori(minf(p.x, q.x)) - 2)
-			var x1 := mini(origin.x + CHUNK - 1, floori(maxf(p.x, q.x)) + 2)
-			var y0 := maxi(origin.y, floori(minf(p.y, q.y)) - 2)
-			var y1 := mini(origin.y + CHUNK - 1, floori(maxf(p.y, q.y)) + 2)
+			var x0 := maxi(origin.x, floori(minf(p.x, q.x)) - pad)
+			var x1 := mini(origin.x + CHUNK - 1, floori(maxf(p.x, q.x)) + pad)
+			var y0 := maxi(origin.y, floori(minf(p.y, q.y)) - pad)
+			var y1 := mini(origin.y + CHUNK - 1, floori(maxf(p.y, q.y)) + pad)
 			for y in range(y0, y1 + 1):
 				for x in range(x0, x1 + 1):
 					var index := (y - origin.y) * CHUNK + (x - origin.x)
 					if mask[index] == TRAIL_CELL:
 						continue
 					var c := Vector2(x + 0.5, y + 0.5)
-					var on_line := Geometry2D.get_closest_point_to_segment(c, p, q)
-					if c.distance_to(on_line) <= TRAIL_HALF_WIDTH:
+					var distance := c.distance_to(Geometry2D.get_closest_point_to_segment(c, p, q))
+					if distance <= TRAIL_HALF_WIDTH:
 						mask[index] = TRAIL_CELL
-						continue
-					if _cell_to_segment(Vector2i(x, y), p, q) <= PLAYER_RADIUS + 0.05:
+					elif _cell_to_segment(Vector2i(x, y), p, q) <= PLAYER_RADIUS + 0.05:
 						mask[index] = TRAIL_EDGE
+					elif distance <= TRAIL_HALF_WIDTH + TRAIL_VERGE and mask[index] == 0:
+						mask[index] = TRAIL_SIDE
 	return mask
 
 
