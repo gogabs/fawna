@@ -253,7 +253,7 @@ func request_collect(cell: Vector2i) -> void:
 	var result := state.collect(id, cell)
 	if result["ok"]:
 		_dirty = true
-		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]))
+		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]), result.get("parts", {}))
 		resource_changed.rpc(cell, state.harvest.info(cell), "coleta", id)
 		for other_id in state.players:
 			if other_id != id:
@@ -396,15 +396,15 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 
 
 @rpc("authority", "call_local", "reliable")
-func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1) -> void:
+func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}) -> void:
 	if world == null:
 		return
 	inventory = new_inventory
 	if verb.is_empty():
 		return
 	_play(Sounds.pickup(item))
-	var total := int(inventory.get(item, 0))
-	var what := "Você %s %s." % [verb, Economy.item_text(item, amount)]
+	var total := Bag.count(inventory, item)
+	var what := "Você %s %s." % [verb, Economy.collected_text(item, amount, parts)]
 	Speech.say("%s Agora tem %d." % [what, total])
 
 
@@ -448,13 +448,13 @@ func action_failed(reason: String, detail: String) -> void:
 		"colhido" when detail == "bambu":
 			action_failed("bambu_colhido", "")
 		"colhido":
-			Speech.say("Já colheram %s aqui. Volta com o tempo." % (Economy.ITEM_NAMES[detail][1] if Economy.ITEM_NAMES.has(detail) else "tudo"))
+			Speech.say("Já colheram %s aqui. Volta com o tempo." % (Economy.names_of(detail)[1] if Economy.is_item(detail) else "tudo"))
 		"bambu_caido":
 			Speech.say("Este bambu já caiu. Aperte Espaço para recolher.")
 		"bambu_colhido":
 			Speech.say("Só restam os tocos deste bambu. Ele rebrota com o tempo.")
 		"cheio":
-			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
+			Speech.say("Você já carrega o máximo de %s." % Economy.names_of(detail)[1])
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -809,7 +809,7 @@ func _say_inventory() -> void:
 	var hands := "Mãos livres." if wielded.is_empty() else "Nas mãos: %s." % Bag.spoken_name(wielded)
 	var labels: PackedStringArray = []
 	for entry: Array in Bag.entries(inventory):
-		labels.append(Bag.entry_label(entry[0], entry[1]))
+		labels.append(Bag.entry_label(entry[0], entry[1], inventory))
 	if labels.is_empty():
 		Speech.say("Bolsa vazia. %s" % hands)
 	else:
@@ -837,7 +837,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:
@@ -991,13 +991,13 @@ func _menu_root() -> Array:
 	]
 
 
-## Itens da bolsa, agrupados ("Argila, 2"). Os que têm ação abrem um
+## Itens da bolsa, agrupados ("Argila, 2"; "Pedra, 3 grandes, 1 pequena"). Os que têm ação abrem um
 ## submenu (o machado: Empunhar); os outros só repetem o nome.
 func _bag_items() -> Array:
 	var items := []
 	for entry: Array in Bag.entries(inventory):
 		var item: String = entry[0]
-		var label := Bag.entry_label(item, entry[1])
+		var label := Bag.entry_label(item, entry[1], inventory)
 		if Bag.can_wield(item):
 			items.append({"label": label, "open": _bag_item_actions.bind(item)})
 		else:

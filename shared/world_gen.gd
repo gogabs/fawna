@@ -14,7 +14,7 @@ extends RefCounted
 ## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA }
-enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS }
+enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -58,6 +58,7 @@ const THING_NAMES := {
 	Thing.BAMBU: "touceira de bambu",
 	Thing.ARGILA: "argila",
 	Thing.ARBUSTO_FRUTAS: "arbusto com frutas",
+	Thing.PEDRAS: "pedras",
 }
 
 ## Coisas que não deixam passar.
@@ -91,6 +92,13 @@ const FRUIT_BUSH_CHANCE := 0.07
 const CLAY_BANK := 2.5
 const CLAY_LAKE_CHANCE := 0.07
 const CLAY_STREAM_CHANCE := 0.05
+## Pedras soltas: espalhadas pelo mundo todo, bem mais comuns na beira da
+## água (riachos e lagoas), onde dão mais pedras pequenas (Harvest). Só nascem
+## em casas que ficariam vazias, então o resto do mundo de cada semente não muda.
+const STONE_CHANCE := 0.004
+const STONE_WATER_CHANCE := 0.03
+const WATERSIDE_LAKE_BANK := 3.0  # casas além da margem da lagoa
+const WATERSIDE_STREAM_BANK := 0.07  # no ruído dos riachos
 const STREAM_WIDTH := 0.02  # no ruído dos riachos
 const STREAM_BANK := 0.05
 
@@ -261,7 +269,25 @@ func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 			return thing
 	if _is_clay(cell, region, biome):
 		return Thing.ARGILA
+	var stone_chance := STONE_WATER_CHANCE if is_waterside(cell) else STONE_CHANCE
+	if cell_random(cell, "pedra") < stone_chance:
+		return Thing.PEDRAS
 	return Thing.NADA
+
+
+## A casa fica perto de um riacho ou da margem de uma lagoa? (As pedras daqui
+## são mais miúdas, roladas pela água.)
+func is_waterside(cell: Vector2i) -> bool:
+	var region := region_of(cell)
+	if region_biome(region) == Biome.LAGOA:
+		var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
+		var distance := cell_center(cell).distance_to(lake_center)
+		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
+		if distance < radius + WATERSIDE_LAKE_BANK:
+			return true
+	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:
+		return false
+	return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < WATERSIDE_STREAM_BANK
 
 
 ## Barro na beira da água: margem das lagoas e beira dos riachos.

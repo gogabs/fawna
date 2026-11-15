@@ -25,7 +25,18 @@ const SOURCES := {
 	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
+	WorldGen.Thing.PEDRAS: {"item": "pedra", "amount": 3, "hits": 0, "regrow": 600.0},
 }
+
+## Recursos com tamanho (Economy.SIZES): a chance de cada peça recolhida
+## sair de cada tamanho. Os arbustos dão só lenha média e pequena (a grande
+## virá das árvores). Na beira da água (WorldGen.is_waterside) as pedras são
+## mais miúdas.
+const SIZE_CHANCES := {
+	"lenha": {"media": 0.5, "pequena": 0.5},
+	"pedra": {"grande": 1.0 / 3.0, "media": 1.0 / 3.0, "pequena": 1.0 / 3.0},
+}
+const WATERSIDE_STONE_CHANCES := {"grande": 0.15, "media": 0.25, "pequena": 0.6}
 
 ## Como se fala de uma fonte já colhida que continua no lugar. Quem não está
 ## aqui some da fala até rebrotar.
@@ -42,10 +53,14 @@ var world: WorldGen
 ## Vector2i -> { "hits": golpes dados, "regrow_at": hora (Unix) em que volta;
 ## 0 enquanto não foi recolhida, "struck_at": hora do último golpe }
 var _nodes := {}
+## Sorteia o tamanho de cada peça recolhida (só no servidor importa). Os
+## testes podem fixar a semente.
+var rng := RandomNumberGenerator.new()
 
 
 func _init(new_world: WorldGen) -> void:
 	world = new_world
+	rng.randomize()
 
 
 static func is_source(thing: int) -> bool:
@@ -126,7 +141,38 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 	return {"ok": true, "reason": "", "hits_left": left, "felled": left == 0}
 
 
-## Recolhe a fonte inteira. Devolve { ok, reason, item, amount, hits_left }.
+## Chance de cada tamanho para o que esta casa dá ({} se o item não tem
+## tamanho).
+func size_chances(cell: Vector2i) -> Dictionary:
+	var item := item_of(world.thing_at(cell))
+	if item == "pedra" and world.is_waterside(cell):
+		return WATERSIDE_STONE_CHANCES
+	return SIZE_CHANCES.get(item, {})
+
+
+## Sorteia o tamanho de cada uma das "amount" peças: {"pedra_grande": 1, ...}.
+func _roll_parts(cell: Vector2i, item: String, amount: int) -> Dictionary:
+	var chances := size_chances(cell)
+	if chances.is_empty():
+		return {}
+	var parts := {}
+	for i in amount:
+		var roll := rng.randf()
+		var pick: String = chances.keys()[-1]
+		for size: String in chances:
+			roll -= float(chances[size])
+			if roll < 0.0:
+				pick = size
+				break
+		var key := Economy.sized(item, pick)
+		parts[key] = int(parts.get(key, 0)) + 1
+	return parts
+
+
+## Recolhe a fonte inteira. Devolve { ok, reason, item, amount, parts, hits_left }.
+## parts: quanto de cada tamanho, para recursos com tamanho
+## ({"lenha_media": 1, "lenha_pequena": 1}); vazio para os outros. É parts
+## que vai para a bolsa quando não está vazio.
 ## reason: "nada", "colhido" ou "golpear" (o bambu ainda está de pé).
 func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	if at < 0.0:
@@ -141,7 +187,9 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	if left > 0:
 		return {"ok": false, "reason": "golpear", "item": source["item"], "hits_left": left}
 	_nodes[cell] = {"hits": 0, "regrow_at": at + float(source["regrow"]), "struck_at": 0.0}
-	return {"ok": true, "reason": "", "item": source["item"], "amount": int(source["amount"])}
+	var amount := int(source["amount"])
+	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
+		"parts": _roll_parts(cell, source["item"], amount)}
 
 
 ## Estado de uma casa para mandar pela rede: tempos relativos, porque o
