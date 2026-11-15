@@ -280,8 +280,7 @@ func request_strike(cell: Vector2i) -> void:
 	if result["ok"]:
 		_dirty = true
 		resource_changed.rpc(cell, state.harvest.info(cell), "queda" if result["felled"] else "golpe", id)
-	elif state.players.has(id) and result["reason"] in ["caido", "colhido"]:
-		action_failed.rpc_id(id, "bambu_" + result["reason"], "")
+	# Golpe em bambu já caído ou já recolhido: só o som do machado, sem fala.
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -459,14 +458,6 @@ func action_failed(reason: String, detail: String) -> void:
 	match reason:
 		"golpear":
 			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J.")
-		"colhido" when detail == "bambu":
-			action_failed("bambu_colhido", "")
-		"colhido":
-			Speech.say("Já colheram %s aqui. Volta com o tempo." % (Economy.ITEM_NAMES[detail][1] if Economy.ITEM_NAMES.has(detail) else "tudo"))
-		"bambu_caido":
-			Speech.say("Este bambu já caiu. Aperte Espaço para recolher.")
-		"bambu_colhido":
-			Speech.say("Só restam os tocos deste bambu. Ele rebrota com o tempo.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
 		"nao_tem":
@@ -476,7 +467,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"maos_livres":
 			Speech.say("Suas mãos já estão livres.")
 		_:
-			pass  # "nada", "devagar", "longe": ignora em silêncio
+			pass  # "nada", "colhido", "devagar", "longe": ignora em silêncio
 
 
 @rpc("authority", "call_local", "reliable")
