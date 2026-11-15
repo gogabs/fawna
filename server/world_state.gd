@@ -12,10 +12,14 @@ const MOVE_SLACK := 0.4  # folga para atrasos da rede
 const REACH := 1.6  # até onde dá para coletar ou golpear (do centro da criatura ao centro da casa)
 const ORIGIN_REACH := 1.2
 const MAX_STACK := 99
+const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
+const BUILD_REACH := 1.9  # a obra ocupa a casa toda: dá para trabalhar de um pouco mais longe
 
 var world: WorldGen
 ## Recursos coletáveis: golpes dados, o que foi colhido e quando volta.
 var harvest: Harvest
+## Construções (marcos, fogueiras). Ver Builds e Crafting.
+var builds: Builds
 ## id do peer -> { "name": String, "pos": Vector2 }
 var players := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
@@ -26,11 +30,13 @@ var equipment := {}
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
 var _last_strike := {}  # id -> Time.get_ticks_msec()
+var _last_build := {}  # id -> Time.get_ticks_msec()
 
 
 func _init(world_seed: int) -> void:
 	world = WorldGen.new(world_seed)
 	harvest = Harvest.new(world)
+	builds = Builds.new(world)
 
 
 func add_player(id: int, player_name: String) -> Vector2:
@@ -52,6 +58,7 @@ func remove_player(id: int) -> void:
 	_last_collect.erase(id)
 	_last_move.erase(id)
 	_last_strike.erase(id)
+	_last_build.erase(id)
 
 
 func inventory_of(id: int) -> Dictionary:
@@ -164,6 +171,62 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	return harvest.strike(cell)
 
 
+## Começa uma construção na casa "cell" (a que está à frente da criatura,
+## escolhida pelo cliente; o servidor confere se está ao alcance, livre e
+## sem ninguém em cima). Devolve { ok, reason, id }.
+func start_build(id: int, kind: String, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
+	for other_id in players:
+		var other: Vector2 = players[other_id]["pos"]
+		if WorldGen.cell_of(other) == cell or other.distance_to(WorldGen.cell_center(cell)) < 0.5 + WorldGen.PLAYER_RADIUS:
+			return {"ok": false, "reason": "ocupado"}
+	return builds.start(kind, cell)
+
+
+## Um Espaço numa construção ao alcance: deposita materiais, bate, acende
+## ou alimenta o fogo (Builds.work). Devolve o resultado de Builds.work.
+func work_build(id: int, build_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(build["cell"])) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_build.get(id, -BUILD_COOLDOWN_MS)) < BUILD_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_build[id] = now
+	return builds.work(build_id, inventory_of(id))
+
+
+## Fabrica uma arma com o que está na bolsa. Devolve { ok, reason, item,
+## missing }.
+func craft(id: int, weapon: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Crafting.WEAPONS.has(weapon):
+		return {"ok": false, "reason": "desconhecida"}
+	var inv := inventory_of(id)
+	var materials: Dictionary = Crafting.WEAPONS[weapon]["materials"]
+	var missing := Crafting.missing(inv, materials)
+	if not missing.is_empty():
+		return {"ok": false, "reason": "faltam", "item": weapon, "missing": missing}
+	if int(inv.get(weapon, 0)) >= MAX_STACK:
+		return {"ok": false, "reason": "cheio", "item": weapon}
+	for item: String in materials:
+		inv[item] = int(inv[item]) - int(materials[item])
+		if int(inv[item]) <= 0:
+			inv.erase(item)
+	inv[weapon] = int(inv.get(weapon, 0)) + 1
+	return {"ok": true, "item": weapon}
+
+
 ## Retrato dos jogadores para quem acabou de entrar.
 func snapshot() -> Dictionary:
 	return players.duplicate(true)
@@ -176,6 +239,7 @@ func to_save() -> Dictionary:
 		"inventories": inventories,
 		"equipment": equipment,
 		"harvest": harvest.to_save(),
+		"builds": builds.to_save(),
 	}
 
 
@@ -194,6 +258,9 @@ static func from_save(data: Dictionary) -> WorldState:
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
+	var built = data.get("builds", {})
+	if typeof(built) == TYPE_DICTIONARY:
+		state.builds.load_save(built)
 	return state
 
 

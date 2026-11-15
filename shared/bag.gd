@@ -18,12 +18,25 @@ const STARTER := {"machado": 1}
 ## ao empunhar.
 const WIELDABLE := {
 	"machado": "J para golpear.",
+	"lanca": "J para golpear.",
+	"clava": "J para golpear.",
 }
 
 ## Nomes dos itens da bolsa que ainda não estão em Economy.ITEM_NAMES.
 const NAMES := {
 	"machado": ["machado", "machados"],
+	"lanca": ["lança de bambu", "lanças de bambu"],
+	"clava": ["clava de pedra", "clavas de pedra"],
 }
+
+
+## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
+const FEMININE := ["lanca", "clava", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas"]
+
+
+## Nome falado com artigo: "o machado", "a lança de bambu".
+static func with_article(item: String) -> String:
+	return ("a " if item in FEMININE else "o ") + spoken_name(item)
 
 
 ## Nome do item com a primeira letra maiúscula, no singular: "Argila".

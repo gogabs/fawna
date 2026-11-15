@@ -75,6 +75,17 @@ const MANIFEST := {
 	"guardar": ["ferramentas/guardar.ogg", "ferramentas/guardar_1.ogg", "ferramentas/guardar_2.ogg", "ferramentas/guardar_3.ogg", "ferramentas/guardar_4.ogg", "ferramentas/amolar_extra.ogg"],
 	"bolsa_abrir": ["ferramentas/bolsa_abrir.ogg", "ferramentas/bolsa_abrir_1.ogg", "ferramentas/bolsa_abrir_2.ogg", "ferramentas/bolsa_abrir_3.ogg", "ferramentas/bolsa_abrir_4.ogg"],
 	"bolsa_mexer": ["ferramentas/bolsa_mexer.ogg", "ferramentas/bolsa_mexer_1.ogg", "ferramentas/bolsa_mexer_2.ogg", "ferramentas/bolsa_mexer_3.ogg", "ferramentas/bolsa_mexer_4.ogg"],
+	# Construções e fogo (assets/sounds/obras/). Sem os arquivos, gerados por
+	# código (SoundBank).
+	"obra_deposito": ["obras/deposito_1.ogg", "obras/deposito_2.ogg", "obras/deposito_3.ogg"],
+	"obra_batida": ["obras/batida_1.ogg", "obras/batida_2.ogg", "obras/batida_3.ogg", "obras/batida_4.ogg"],
+	"obra_etapa": ["obras/etapa.ogg"],
+	"obra_pronta": ["obras/pronta.ogg"],
+	"fogo_faisca": ["obras/faisca_1.ogg", "obras/faisca_2.ogg", "obras/faisca_3.ogg"],
+	"fogo_acender": ["obras/acender.ogg"],
+	"fogo_lenha": ["obras/lenha_1.ogg", "obras/lenha_2.ogg"],
+	"fogo_apagar": ["obras/apagar.ogg"],
+	"fogo_crepitar": ["obras/crepitar.ogg"],
 	"bolsa_fechar": ["ferramentas/bolsa_fechar.ogg", "ferramentas/bolsa_fechar_1.ogg", "ferramentas/bolsa_fechar_2.ogg", "ferramentas/bolsa_fechar_3.ogg", "ferramentas/bolsa_fechar_4.ogg"],
 }
 
@@ -269,6 +280,49 @@ static func bag_close() -> AudioStream:
 ## Mexer nos itens da bolsa (passar de um para outro).
 static func bag_rummage() -> AudioStream:
 	return _pick_variant("bolsa_mexer", ui_move)
+
+
+## Construções: pedras e materiais entrando na obra, uma batida de
+## trabalho, uma etapa concluída e a obra pronta.
+static func build_deposit() -> AudioStream:
+	return _pick_variant("obra_deposito", SoundBank.stone_place)
+
+
+static func build_knock() -> AudioStream:
+	return _pick_variant("obra_batida", SoundBank.stone_knock)
+
+
+static func build_stage() -> AudioStream:
+	return _pick_variant("obra_etapa", SoundBank.build_stage)
+
+
+static func build_done() -> AudioStream:
+	return _pick_variant("obra_pronta", SoundBank.build_done)
+
+
+## Fogo: pedra contra pedra (faísca), a chama pegando, lenha entrando, a
+## fogueira apagando e o crepitar contínuo (em loop, nas fontes fixas).
+static func fire_spark() -> AudioStream:
+	return _pick_variant("fogo_faisca", SoundBank.fire_spark)
+
+
+static func fire_ignite() -> AudioStream:
+	return _pick_variant("fogo_acender", SoundBank.fire_ignite)
+
+
+static func fire_feed() -> AudioStream:
+	return _pick_variant("fogo_lenha", SoundBank.fire_feed)
+
+
+static func fire_out() -> AudioStream:
+	return _pick_variant("fogo_apagar", SoundBank.fire_out)
+
+
+static func fire_loop() -> AudioStream:
+	var stream := _pick_variant("fogo_crepitar", SoundBank.fire_loop)
+	if stream != null:
+		_make_loop(stream)
+	return stream
 
 
 ## O primeiro arquivo da lista que existir (os sons escolhidos vêm antes dos

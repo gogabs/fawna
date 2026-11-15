@@ -220,6 +220,166 @@ static func stow() -> AudioStreamWAV:
 	return _cache["guardar"]
 
 
+## --- Construções e fogo ---------------------------------------------------------
+
+## Pedra batendo em pedra: um "clac" curto e brilhante, com um corpo médio.
+static func stone_knock() -> AudioStreamWAV:
+	if not _cache.has("pedra_batida"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2101
+		var count := int(0.22 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		for i in count:
+			var t := float(i) / RATE
+			var ring := sin(TAU * 1850.0 * t) * 0.5 + sin(TAU * 2730.0 * t) * 0.3 + sin(TAU * 4100.0 * t) * 0.2
+			var body := sin(TAU * 520.0 * t) * exp(-t * 35.0) * 0.4
+			var click := rng.randf_range(-1.0, 1.0) * exp(-t * 400.0)
+			samples[i] = (ring * exp(-t * 55.0) + body + click * 0.8) * 0.55
+		_cache["pedra_batida"] = _to_wav(samples)
+	return _cache["pedra_batida"]
+
+
+## Pedra (ou material) assentada na obra: baque grave com cascalho.
+static func stone_place() -> AudioStreamWAV:
+	if not _cache.has("pedra_assentada"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2202
+		var count := int(0.4 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var low := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var thud := sin(TAU * (95.0 - 30.0 * t) * t) * exp(-t * 14.0)
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.55)
+			var gravel := low * exp(-t * 9.0) * (0.6 + 0.4 * sin(TAU * 31.0 * t))
+			samples[i] = (thud * 0.8 + gravel * 0.45) * 0.7
+		_cache["pedra_assentada"] = _to_wav(samples)
+	return _cache["pedra_assentada"]
+
+
+## Etapa concluída: duas pedras e um tom curto subindo.
+static func build_stage() -> AudioStreamWAV:
+	if not _cache.has("obra_etapa"):
+		_cache["obra_etapa"] = _mix(stone_place(), _tone([392.0, 523.25], 0.4, 0.3))
+	return _cache["obra_etapa"]
+
+
+## Obra pronta: um acorde de três notas.
+static func build_done() -> AudioStreamWAV:
+	if not _cache.has("obra_pronta"):
+		_cache["obra_pronta"] = _tone([392.0, 493.88, 587.33, 783.99], 0.9, 0.35)
+	return _cache["obra_pronta"]
+
+
+## Pedra contra pedra soltando faíscas: o clac mais um chiado agudo.
+static func fire_spark() -> AudioStreamWAV:
+	if not _cache.has("fogo_faisca"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2303
+		var count := int(0.3 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var knock := stone_knock()
+		var prev := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var n := rng.randf_range(-1.0, 1.0)
+			var hiss := (n - prev) * 0.5  # só os agudos
+			prev = n
+			samples[i] = hiss * exp(-t * 18.0) * 0.5
+			if i * 2 < knock.data.size():
+				samples[i] += knock.data.decode_s16(i * 2) / 32767.0
+		_cache["fogo_faisca"] = _to_wav(samples)
+	return _cache["fogo_faisca"]
+
+
+## A chama pegando: um sopro que cresce e abre em estalos.
+static func fire_ignite() -> AudioStreamWAV:
+	if not _cache.has("fogo_acender"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2404
+		var count := int(1.4 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var low := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var swell := minf(t / 0.5, 1.0) * exp(-maxf(t - 0.5, 0.0) * 2.5)
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.82 - 0.3 * minf(t / 0.5, 1.0))
+			samples[i] = low * swell * 0.7
+		_add_crackles(samples, rng, 0.4, 1.3, 14, 0.5)
+		_cache["fogo_acender"] = _to_wav(samples)
+	return _cache["fogo_acender"]
+
+
+## Lenha entrando no fogo: madeira batendo e um chiado que sobe.
+static func fire_feed() -> AudioStreamWAV:
+	if not _cache.has("fogo_lenha"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2505
+		var count := int(0.8 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		_hollow_knock(samples, 0, 230.0, 0.6)
+		_add_crackles(samples, rng, 0.15, 0.75, 8, 0.4)
+		_cache["fogo_lenha"] = _to_wav(samples)
+	return _cache["fogo_lenha"]
+
+
+## A fogueira apagando: o crepitar morrendo num chiado.
+static func fire_out() -> AudioStreamWAV:
+	if not _cache.has("fogo_apagar"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2606
+		var count := int(1.6 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var low := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.7)
+			samples[i] = low * exp(-t * 2.2) * 0.35
+		_add_crackles(samples, rng, 0.0, 0.8, 6, 0.3)
+		_cache["fogo_apagar"] = _to_wav(samples)
+	return _cache["fogo_apagar"]
+
+
+## Crepitar contínuo da fogueira acesa (loop de 4 s): um rumor grave e
+## estalos soltos de tamanhos variados.
+static func fire_loop() -> AudioStreamWAV:
+	if not _cache.has("fogo_crepitar"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 2707
+		var count := int(4.0 * RATE)
+		var samples := _filtered_noise(count, 0.97, 0.55, rng)
+		var flutter := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			flutter = lerpf(rng.randf_range(0.6, 1.0), flutter, 0.999)
+			samples[i] *= flutter * (0.85 + 0.15 * sin(TAU * 0.5 * t))
+		_add_crackles(samples, rng, 0.05, 3.9, 40, 0.45)
+		_cache["fogo_crepitar"] = _to_wav(samples, true)
+	return _cache["fogo_crepitar"]
+
+
+## Estalos de fogo: rajadas curtíssimas e brilhantes entre "from" e "to"
+## segundos, de intensidade sorteada.
+static func _add_crackles(samples: PackedFloat32Array, rng: RandomNumberGenerator, from: float, to: float, amount: int, volume: float) -> void:
+	for k in amount:
+		var start := int(rng.randf_range(from, to) * RATE)
+		var length := rng.randi_range(40, 260)
+		var strength := rng.randf_range(0.25, 1.0) * volume
+		var prev := 0.0
+		for i in length:
+			if start + i >= samples.size():
+				break
+			var n := rng.randf_range(-1.0, 1.0)
+			samples[start + i] += (n - prev * 0.6) * strength * pow(1.0 - float(i) / length, 3.0)
+			prev = n
+
+
 ## Soma dois sons gerados (mono, mesma taxa).
 static func _mix(a: AudioStreamWAV, b: AudioStreamWAV) -> AudioStreamWAV:
 	var count := maxi(a.data.size(), b.data.size()) / 2
