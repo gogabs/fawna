@@ -81,3 +81,23 @@ Loops para achar de ouvido (em 3D, na posição do recurso): `amb_bambu`,
 `amb_gravetos` e `amb_frutas`, ainda em escolha. A argila não tem loop: fica
 sempre na beira da água, que já soa. Sem os arquivos, o jogo usa sons do
 pacote `world/` e sons gerados por código (`client/sound_bank.gd`).
+
+## Recursos, machado e bolsa (recursos/, ferramentas/, menu/)
+
+Escolhidos pelo Gabs (2026-11-14) entre candidatos do Freesound, recortados,
+filtrados e nivelados; publicados com autorização dele (os dois sons do menu
+que vêm do pacote world não estão aqui). Todos CC0 1.0, salvo onde dito.
+
+- `ferramentas/machado_golpe_1..3.ogg`: "Whoosh - 60cm ish stick" ([Sadiquecat, 855840](https://freesound.org/s/855840/)).
+- `ferramentas/machado_impacto_1..4.ogg`: "Axe chopping wood" ([xkeril, 753925](https://freesound.org/s/753925/)).
+- `ferramentas/bolsa_abrir.ogg`, `bolsa_mexer.ogg`, `bolsa_fechar.ogg`: "Leather bag handling" ([vintage2005, 435533](https://freesound.org/s/435533/)).
+- `ferramentas/empunhar.ogg`, `guardar.ogg`, `amolar_extra.ogg`: "Scythe Sharpen" ([CapsLok, 181921](https://freesound.org/s/181921/)), três passadas na pedra de amolar.
+- `menu/menu_navegar.ogg`: "tapping kindling" ([itinerantmonk108, 737557](https://freesound.org/s/737557/)).
+- `recursos/bambu_golpe_1..3.ogg`: o mesmo "tapping kindling" (toc oco).
+- `recursos/bambu_queda_1.ogg`: "Falling Bamboo" ([AyeJayCee, 326299](https://freesound.org/s/326299/)); `bambu_queda_2..3.ogg`: "BambooCracking" ([klakmart, 108263](https://freesound.org/s/108263/)).
+- `recursos/coleta_bambu_1..4.ogg`: "Wood Jostling" ([ErikH2000, 213066](https://freesound.org/s/213066/)).
+- `recursos/coleta_lenha_1..4.ogg`: "Snapping small twigs gathering wood" ([Alex_hears_things, 636854](https://freesound.org/s/636854/)).
+- `recursos/coleta_argila_1..3.ogg`: "MudSquelch" ([ahill86, 207142](https://freesound.org/s/207142/)).
+- `recursos/coleta_frutas_1..3.ogg`: "Rustling foliage" ([DDT197, 445788](https://freesound.org/s/445788/)) com o estalo de "pencil snap..." ([kyles, 637746](https://freesound.org/s/637746/)).
+- `recursos/amb_bambu.ogg` e `recursos/amb_frutas.ogg`: gerados por código para o projeto (`tools/sons_recursos.py`): madeira oca batendo, e farfalhar baixinho com gotinhas ascendentes (a frutinha).
+- Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos gravetos (ainda em aberto, usa o gerado por código).
