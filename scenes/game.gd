@@ -59,6 +59,12 @@ const BED_VOLUME_DB := -22.0  # fundo do bioma
 const WIND_OPEN_DB := -12.0
 const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
+## Escutar com atenção (segurar Tab): o vento, o fundo do bioma e a música
+## baixam, e os sons dos recursos sobem. Um toque curto no Tab continua
+## falando os arredores.
+const FOCUS_HOLD := 0.35  # segundos segurando até virar escuta
+const FOCUS_DUCK_DB := -14.0
+const FOCUS_FADE := 0.4
 const WIND_LAKE_RADIUS := 4
 const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
 const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
@@ -105,7 +111,12 @@ var _bed: AudioStreamPlayer  # ambiente de fundo do bioma
 var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
+var _bed_tween: Tween
+var _tab_down_ms := -1  # quando o Tab foi apertado (-1: solto)
+var _focus := false  # escutando com atenção
+var _focus_changed_now := false  # o vento acompanha a escuta mais rápido
 var _caminheiro: Caminheiro
+var _tracked_resource := WorldGen.NO_CELL  # recurso que o cristal procura (NO_CELL: um lugar)
 var _menu: FloatingMenu
 ## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
 ## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
@@ -162,6 +173,8 @@ func _process(delta: float) -> void:
 		_harvest_timer = 0.0
 		if not harvest.prune().is_empty():
 			audio.refresh_resources()
+	if _tab_down_ms >= 0 and not _focus and Time.get_ticks_msec() - _tab_down_ms >= int(FOCUS_HOLD * 1000.0):
+		_set_focus(true)
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta)
 	_send_timer += delta
@@ -172,6 +185,10 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if world != null and event.is_action("ouvir_arredores") and not event.is_echo():
+		_on_listen_key(event.is_pressed())
+		get_viewport().set_input_as_handled()
+		return
 	if world == null or not event.is_pressed():
 		return
 	# Setas: menu flutuante, sempre ativo.
@@ -198,8 +215,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_swing()
 	elif event.is_action("ajuda"):
 		_say_help()
-	elif event.is_action("ouvir_arredores"):
-		_say_surroundings()
 	elif event.is_action("onde_estou"):
 		Speech.say(Narrator.where_am_i(world, _pos, _heading))
 	elif event.is_action("direcao"):
@@ -837,7 +852,42 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+
+
+## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
+## soltar.
+func _on_listen_key(pressed: bool) -> void:
+	if pressed:
+		_tab_down_ms = Time.get_ticks_msec()
+		return
+	if _tab_down_ms < 0:
+		return
+	_tab_down_ms = -1
+	if _focus:
+		_set_focus(false)
+	else:
+		_say_surroundings()
+
+
+func _set_focus(on: bool) -> void:
+	if _focus == on:
+		return
+	_focus = on
+	_focus_changed_now = true
+	audio.set_resource_focus(on, FOCUS_FADE)
+	Music.set_duck(FOCUS_DUCK_DB if on else 0.0, FOCUS_FADE)
+	if _bed != null:
+		if _bed_tween != null:
+			_bed_tween.kill()
+		_bed_tween = create_tween()
+		_bed_tween.tween_property(_bed, "volume_db", _bed_target_db(), FOCUS_FADE)
+	_update_wind()
+	_focus_changed_now = false
+
+
+func _bed_target_db() -> float:
+	return BED_VOLUME_DB + (FOCUS_DUCK_DB if _focus else 0.0)
 
 
 func _say_surroundings() -> void:
@@ -916,8 +966,11 @@ func _update_biome_bed() -> void:
 	_bed.volume_db = -40.0
 	add_child(_bed)
 	_bed.play(randf() * stream.get_length())
-	var tween := create_tween().set_parallel()
-	tween.tween_property(_bed, "volume_db", BED_VOLUME_DB, 1.5)
+	if _bed_tween != null:
+		_bed_tween.kill()
+	_bed_tween = create_tween()
+	_bed_tween.tween_property(_bed, "volume_db", _bed_target_db(), 1.5)
+	var tween := create_tween()
 	if old != null:
 		tween.tween_property(old, "volume_db", -40.0, 1.5)
 		tween.chain().tween_callback(old.queue_free)
@@ -942,10 +995,12 @@ func _update_wind() -> void:
 		target = WIND_OPEN_DB
 	elif world.biome_at(cell) == WorldGen.Biome.BOSQUE:
 		target = WIND_SHELTER_DB
+	if _focus:
+		target += FOCUS_DUCK_DB
 	if _wind_tween != null:
 		_wind_tween.kill()
 	_wind_tween = create_tween()
-	_wind_tween.tween_property(_wind, "volume_db", target, 2.5)
+	_wind_tween.tween_property(_wind, "volume_db", target, FOCUS_FADE if _focus_changed_now else 2.5)
 
 
 func _near_lake(cell: Vector2i) -> bool:
@@ -1032,35 +1087,126 @@ func _stow() -> String:
 	return ""
 
 
-## Destinos do Caminheiro. Por enquanto, só a Origem.
+## Recursos que o Caminheiro sabe achar: rótulo no menu, coisas do mundo que
+## contam e como se fala do destino (com artigo, para "rumo ao bambu").
+const CAMINHEIRO_RESOURCES := [
+	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
+	["Lenha", [WorldGen.Thing.ARBUSTO], "a lenha"],
+	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
+	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
+	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
+]
+## Até onde (em casas, em linha reta) o Caminheiro procura um recurso: uma
+## região e meia para cada lado.
+const RESOURCE_SEARCH_RADIUS := 72
+
+
+## Menu do Caminheiro: Locais (lugares do mapa) e Recursos (leva ao coletável
+## mais próximo de cada tipo). A fabricação pendura aqui a categoria
+## Construções.
 func _caminheiro_items() -> Array:
-	var items := [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "Origem")}]
+	var items := [
+		{"label": "Locais", "open": _caminheiro_places},
+		{"label": "Recursos", "open": _caminheiro_resources},
+	]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
 	return items
 
 
-func _track(destination: Vector2, place_name: String) -> String:
+## Lugares do mapa. Por enquanto, só a Origem.
+## A FAZER (pedido do Gabs, 2026-11-15): um local só aparece aqui quando tem
+## um marco construído (Builds.marked_regions(), da fabricação). A Origem
+## continua sempre.
+func _caminheiro_places() -> Array:
+	return [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem")}]
+
+
+func _caminheiro_resources() -> Array:
+	var items := []
+	for entry: Array in CAMINHEIRO_RESOURCES:
+		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2])})
+	return items
+
+
+## Acende o cristal rumo ao recurso coletável mais próximo destes tipos.
+func _track_resource(things: Array, place: String) -> String:
+	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS)
+	if cell == WorldGen.NO_CELL:
+		return "Não há %s por perto." % place.substr(place.find(" ") + 1)
+	return _track(resource_destination(world, cell, _pos), place, cell)
+
+
+## A casa do recurso coletável mais próximo (em linha reta), entre as coisas
+## pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
+## nenhum no raio.
+static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int) -> Vector2i:
+	var here := WorldGen.cell_of(pos)
+	var best := WorldGen.NO_CELL
+	var best_distance := INF
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			if dx * dx + dy * dy > radius * radius:
+				continue
+			var cell := here + Vector2i(dx, dy)
+			if not things.has(the_world.thing_at(cell)):
+				continue
+			if the_harvest != null and not the_harvest.is_available(cell):
+				continue
+			var distance := WorldGen.cell_center(cell).distance_squared_to(pos)
+			if distance < best_distance:
+				best_distance = distance
+				best = cell
+	return best
+
+
+## Para onde o cristal leva, para chegar a um recurso: o próprio recurso, se
+## dá para pisar nele; senão (o bambu bloqueia), a casa livre ao lado mais
+## perto de quem vem.
+static func resource_destination(the_world: WorldGen, cell: Vector2i, from: Vector2) -> Vector2:
+	var center := WorldGen.cell_center(cell)
+	if the_world.is_free(center):
+		return center
+	var best := center
+	var best_distance := INF
+	for offset in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+		var spot := WorldGen.cell_center(cell + offset)
+		if the_world.is_free(spot) and spot.distance_to(from) < best_distance:
+			best_distance = spot.distance_to(from)
+			best = spot
+	return best
+
+
+## place vem com artigo ("a Origem", "o bambu"), para a fala juntar direito.
+## resource: a casa do recurso, quando o destino é um recurso.
+func _track(destination: Vector2, place: String, resource := WorldGen.NO_CELL) -> String:
+	_tracked_resource = resource
 	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
 		_caminheiro.stop()
-		return "Você já está na %s." % place_name
-	if not _caminheiro.start(_pos, destination, place_name):
-		return "O cristal do Caminheiro não achou caminho até a %s." % place_name
+		_tracked_resource = WorldGen.NO_CELL
+		return "Você já está %s." % Narrator.contract("em", place)
+	if not _caminheiro.start(_pos, destination, place):
+		return "O cristal do Caminheiro não achou caminho até %s." % place
 	view.queue_redraw()
 	var meters := Compass.meters(_caminheiro.estimated_length())
-	return "O cristal do Caminheiro brilha azul, rumo à %s, a uns %s pelas trilhas. Siga as batidas do coração." % [place_name, meters]
+	return "O cristal do Caminheiro brilha azul, rumo %s, a uns %s. Siga as batidas do coração." % [Narrator.contract("a", place), meters]
 
 
 func _stop_tracking() -> String:
 	_caminheiro.stop()
+	_tracked_resource = WorldGen.NO_CELL
 	view.queue_redraw()
 	return "O cristal do Caminheiro se apagou."
 
 
-func _on_caminheiro_arrived(place_name: String) -> void:
+func _on_caminheiro_arrived(place: String) -> void:
 	_play(Sounds.chime())
 	view.queue_redraw()
-	Speech.say("Você chegou à %s. O cristal do Caminheiro se apaga." % place_name)
+	var where := ""
+	if _tracked_resource != WorldGen.NO_CELL:
+		where = ", " + Compass.describe(WorldGen.cell_center(_tracked_resource) - _pos, _heading)
+		_tracked_resource = WorldGen.NO_CELL
+	Speech.say("Você chegou %s%s." % [Narrator.contract("a", place), where])
 
 
 func _on_menu_sound(kind: String) -> void:

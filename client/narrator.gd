@@ -7,6 +7,21 @@ const SURROUNDINGS_RADIUS := 5
 const SURROUNDINGS_MAX_ITEMS := 6
 
 
+## Junta preposição e artigo: ("a", "a Origem") -> "à Origem";
+## ("em", "o bambu") -> "no bambu"; ("até", "as pedras") -> "até as pedras".
+static func contract(prep: String, place: String) -> String:
+	var cut := place.find(" ")
+	var article := place.left(cut) if cut > 0 else ""
+	var rest := place.substr(cut + 1) if cut > 0 else place
+	var table: Dictionary = {
+		"a": {"a": "à", "o": "ao", "as": "às", "os": "aos"},
+		"em": {"a": "na", "o": "no", "as": "nas", "os": "nos"},
+	}.get(prep, {})
+	if table.has(article):
+		return "%s %s" % [table[article], rest]
+	return "%s %s" % [prep, place]
+
+
 static func steps(n: int) -> String:
 	return "1 passo" if n == 1 else "%d passos" % n
 
