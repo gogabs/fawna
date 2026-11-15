@@ -19,6 +19,9 @@ var mode := Mode.NONE
 var address := DEFAULT_ADDRESS
 var port := DEFAULT_PORT
 var player_name := "Criatura"
+## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
+## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
+var vsync := false
 var world_seed := 0
 var seed_from_cmdline := false
 ## Onde o servidor salva o mundo. --novo-mundo ignora o save existente.
@@ -32,6 +35,7 @@ var auto_commands: PackedStringArray = []
 func _ready() -> void:
 	world_seed = randi()
 	load_settings()
+	apply_vsync()
 	_parse_cmdline()
 
 
@@ -41,6 +45,7 @@ func load_settings() -> void:
 	if config.load(SETTINGS_PATH) != OK:
 		return
 	player_name = config.get_value("jogador", "nome", player_name)
+	vsync = config.get_value("video", "vsync", vsync)
 	var server: String = config.get_value("conexao", "servidor", "")
 	if not server.is_empty():
 		set_server(server)
@@ -50,7 +55,15 @@ func save_settings() -> void:
 	var config := ConfigFile.new()
 	config.set_value("jogador", "nome", player_name)
 	config.set_value("conexao", "servidor", server_text())
+	config.set_value("video", "vsync", vsync)
 	config.save(SETTINGS_PATH)
+
+
+func apply_vsync() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	DisplayServer.window_set_vsync_mode(
+		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 
 
 ## Aceita "ip" ou "ip:porta".
