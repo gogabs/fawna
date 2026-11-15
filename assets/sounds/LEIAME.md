@@ -85,14 +85,14 @@ pacote `world/` e sons gerados por código (`client/sound_bank.gd`).
 ## Recursos, machado e bolsa (recursos/, ferramentas/, menu/)
 
 Escolhidos pelo Gabs (2026-11-14) entre candidatos do Freesound, recortados,
-filtrados e nivelados; publicados com autorização dele (os dois sons do menu
-que vêm do pacote world não estão aqui). Todos CC0 1.0, salvo onde dito.
+filtrados e nivelados; publicados com autorização dele. Todos CC0 1.0.
 
 - `ferramentas/machado_golpe_1..3.ogg`: "Whoosh - 60cm ish stick" ([Sadiquecat, 855840](https://freesound.org/s/855840/)).
 - `ferramentas/machado_impacto_1..4.ogg`: "Axe chopping wood" ([xkeril, 753925](https://freesound.org/s/753925/)).
 - `ferramentas/bolsa_abrir.ogg`, `bolsa_mexer.ogg`, `bolsa_fechar.ogg`: "Leather bag handling" ([vintage2005, 435533](https://freesound.org/s/435533/)).
 - `ferramentas/empunhar.ogg`, `guardar.ogg`, `amolar_extra.ogg`: "Scythe Sharpen" ([CapsLok, 181921](https://freesound.org/s/181921/)), três passadas na pedra de amolar.
 - `menu/menu_navegar.ogg`: "tapping kindling" ([itinerantmonk108, 737557](https://freesound.org/s/737557/)).
+- `menu/menu_abrir.ogg` e `menu/menu_fechar.ogg`: `dlgopen.ogg` e `dlgclose.ogg` do "World Sounds Audio Pack" (o mesmo de `world/`, CC0 1.0, ver `world/license.txt`), recortados e nivelados. Publicados com autorização do Gabs (2026-11-15).
 - `recursos/bambu_golpe_1..3.ogg`: o mesmo "tapping kindling" (toc oco).
 - `recursos/bambu_queda_1.ogg`: "Falling Bamboo" ([AyeJayCee, 326299](https://freesound.org/s/326299/)); `bambu_queda_2..3.ogg`: "BambooCracking" ([klakmart, 108263](https://freesound.org/s/108263/)).
 - `recursos/coleta_bambu_1..4.ogg`: "Wood Jostling" ([ErikH2000, 213066](https://freesound.org/s/213066/)).
