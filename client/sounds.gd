@@ -16,7 +16,6 @@ const MANIFEST := {
 	"passo_pradaria": ["world/grassstep1.ogg", "world/grassstep2.ogg", "world/grassstep3.ogg", "world/grassstep4.ogg", "world/grassstep5.ogg"],
 	"passo_bosque": ["world/leavesstep1.ogg", "world/leavesstep2.ogg", "world/leavesstep3.ogg", "world/leavesstep4.ogg", "world/leavesstep5.ogg"],
 	"colisao": ["world/wallbrush.ogg", "world/wallbrush2.ogg"],
-	"colisao_arvore": ["world/walltree.ogg"],
 	"colisao_agua": ["world/wallwater.ogg"],
 	# Recursos coletáveis. Os de recursos/ são os escolhidos para cada um;
 	# enquanto não existirem, valem os do pacote world/ ou os gerados por
@@ -38,7 +37,6 @@ const MANIFEST := {
 	"ui_abrir": ["menu/menu_abrir.ogg", "world/menuopen.ogg"],
 	"ui_fechar": ["menu/menu_fechar.ogg", "world/menuclose.ogg"],
 	"amb_agua": ["world/loop_brook.ogg"],
-	"amb_arvore": ["world/loop_windintrees.ogg"],
 	"amb_arbusto": ["world/loop_windinbushes.ogg"],
 	"amb_origem": ["world/loop_windchimes1.ogg"],
 	"bussola_norte": ["bussola/norte.ogg"],
@@ -97,12 +95,10 @@ static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA) -> Au
 	return _pick(key, func(): return SoundBank.footstep(biome))
 
 
-## Esbarrão, com o som do material quando houver (árvore, água...).
+## Esbarrão, com o som do material quando houver (água...).
 static func bump(thing := WorldGen.Thing.NADA) -> AudioStream:
 	var key := "colisao"
-	if thing == WorldGen.Thing.ARVORE:
-		key = "colisao_arvore"
-	elif thing == WorldGen.Thing.RIACHO or thing == WorldGen.Thing.LAGO:
+	if thing == WorldGen.Thing.RIACHO or thing == WorldGen.Thing.LAGO:
 		key = "colisao_agua"
 	if not _has_file(key):
 		key = "colisao"
@@ -345,8 +341,6 @@ static func ambient(thing: WorldGen.Thing) -> AudioStream:
 			key = "amb_agua"
 		WorldGen.Thing.LAGO:
 			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
-		WorldGen.Thing.ARVORE:
-			key = "amb_arvore"
 		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 			key = "amb_arbusto"
 		WorldGen.Thing.ORIGEM:
@@ -375,7 +369,7 @@ static func music(level: int) -> AudioStream:
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
 
 
 static func _has_file(key: String) -> bool:
