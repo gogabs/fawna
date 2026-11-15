@@ -14,7 +14,7 @@ extends RefCounted
 ## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA }
-enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO }
+enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, GRAVETOS, ARGILA, ARBUSTO_FRUTAS }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -45,15 +45,19 @@ const BIOME_IN := {
 const THING_NAMES := {
 	Thing.ARVORE: "árvore",
 	Thing.RIACHO: "riacho",
-	Thing.ARBUSTO: "arbusto de sementes",
+	Thing.ARBUSTO: "arbusto",
 	Thing.ORIGEM: "Origem",
 	Thing.TRILHA: "trilha",
 	Thing.PONTE: "ponte",
 	Thing.LAGO: "lagoa",
+	Thing.BAMBU: "touceira de bambu",
+	Thing.GRAVETOS: "gravetos",
+	Thing.ARGILA: "argila",
+	Thing.ARBUSTO_FRUTAS: "arbusto com frutas",
 }
 
 ## Coisas que não deixam passar.
-const BLOCKING := [Thing.ARVORE, Thing.RIACHO, Thing.LAGO]
+const BLOCKING := [Thing.ARVORE, Thing.RIACHO, Thing.LAGO, Thing.BAMBU]
 ## Chão por onde se anda: não são "coisas" para a fala listar.
 const GROUND := [Thing.NADA, Thing.TRILHA, Thing.PONTE]
 
@@ -64,13 +68,24 @@ const PLAYER_RADIUS := 0.3  # casas
 const NO_CELL := Vector2i(-9999999, -9999999)
 
 ## Quanto de cada região é de cada tipo, e o que nasce em cada uma
-## (chance por casa).
+## (chance por casa). Recursos coletáveis (shared/harvest.gd): touceiras de
+## bambu, gravetos caídos no chão, argila na beira da água e, raros, arbustos
+## com frutas.
 const BIOME_WEIGHTS := {Biome.BOSQUE: 0.45, Biome.PRADARIA: 0.4, Biome.LAGOA: 0.15}
 const DENSITY := {
-	Biome.BOSQUE: {Thing.ARVORE: 0.09, Thing.ARBUSTO: 0.012},
-	Biome.PRADARIA: {Thing.ARVORE: 0.008, Thing.ARBUSTO: 0.03},
-	Biome.LAGOA: {Thing.ARVORE: 0.02, Thing.ARBUSTO: 0.02},
+	Biome.BOSQUE: {Thing.ARVORE: 0.09, Thing.ARBUSTO: 0.012, Thing.BAMBU: 0.01, Thing.GRAVETOS: 0.025},
+	Biome.PRADARIA: {Thing.ARVORE: 0.008, Thing.ARBUSTO: 0.03, Thing.BAMBU: 0.002, Thing.GRAVETOS: 0.004},
+	Biome.LAGOA: {Thing.ARVORE: 0.02, Thing.ARBUSTO: 0.02, Thing.BAMBU: 0.012, Thing.GRAVETOS: 0.006},
 }
+## Fração dos arbustos que dá frutas: são raros (uns poucos por região).
+const FRUIT_BUSH_CHANCE := 0.07
+## Argila: só na beira da água. Chance por casa na margem das lagoas (até
+## CLAY_BANK casas além da água) e na beira dos riachos.
+const CLAY_BANK := 2.5
+const CLAY_LAKE_CHANCE := 0.07
+const CLAY_STREAM_CHANCE := 0.05
+const STREAM_WIDTH := 0.02  # no ruído dos riachos
+const STREAM_BANK := 0.05
 
 var world_seed: int
 var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões e curva as trilhas
@@ -228,8 +243,26 @@ func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 		if roll < total:
 			if trail == TRAIL_EDGE and BLOCKING.has(thing):
 				return Thing.TRILHA
+			if thing == Thing.ARBUSTO and cell_random(cell, "fruta") < FRUIT_BUSH_CHANCE:
+				return Thing.ARBUSTO_FRUTAS
 			return thing
+	if trail != TRAIL_EDGE and _is_clay(cell, region, biome):
+		return Thing.ARGILA
 	return Thing.NADA
+
+
+## Barro na beira da água: margem das lagoas e beira dos riachos.
+func _is_clay(cell: Vector2i, region: Vector2i, biome: Biome) -> bool:
+	var roll := cell_random(cell, "argila")
+	if biome == Biome.LAGOA and roll < CLAY_LAKE_CHANCE:
+		var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
+		var distance := cell_center(cell).distance_to(lake_center)
+		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
+		if distance < radius + CLAY_BANK:
+			return true
+	if roll < CLAY_STREAM_CHANCE and cell_center(cell).distance_to(origin_point()) >= ORIGIN_DRY_RADIUS:
+		return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_BANK
+	return false
 
 
 func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
@@ -244,7 +277,7 @@ func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
 	# Riachos finos e raros, que cortam as regiões (mas não a Origem).
 	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:
 		return Thing.NADA
-	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < 0.02:
+	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_WIDTH:
 		return Thing.RIACHO
 	return Thing.NADA
 
@@ -415,6 +448,12 @@ func is_free(pos: Vector2, radius := PLAYER_RADIUS) -> bool:
 
 
 # --- Aleatório fixo ------------------------------------------------------------
+
+## Número entre 0 e 1, fixo para cada casa, rótulo e semente (ex.: a dureza
+## de uma touceira de bambu).
+func cell_random(cell: Vector2i, tag: String) -> float:
+	return _random([cell.x, cell.y, tag])
+
 
 ## Número entre 0 e 1, fixo para cada chave e semente.
 func _random(key: Array) -> float:
