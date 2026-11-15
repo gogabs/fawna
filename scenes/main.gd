@@ -5,7 +5,8 @@ extends Control
 ## Sem leitor de tela, anunciamos o foco com a fala do jogo.
 ## O visual tem contraste alto e foco bem marcado, para quem enxerga pouco.
 ##
-## O VSync fica desligado (project.godot, com teto de 60 quadros por segundo):
+## O VSync fica desligado por padrão (project.godot, com teto de 60 quadros por
+## segundo; dá para ligar em Opções):
 ## o Godot só entrega o foco novo ao leitor de tela quando o quadro sai, e com
 ## VSync isso pode levar segundos em PCs com o monitor desligado, cortina de
 ## tela ou driver de vídeo antigo.
@@ -21,6 +22,7 @@ extends Control
 @onready var quit_button: Button = %QuitButton
 @onready var name_edit: LineEdit = %NameEdit
 @onready var server_edit: LineEdit = %ServerEdit
+@onready var vsync_check: CheckButton = %VsyncCheck
 @onready var back_button: Button = %BackButton
 @onready var ui_sound: AudioStreamPlayer = %UiSound
 
@@ -39,8 +41,9 @@ func _ready() -> void:
 	quit_button.pressed.connect(func(): get_tree().quit())
 	back_button.pressed.connect(_show_main)
 	name_edit.text_submitted.connect(func(_t): server_edit.grab_focus())
-	server_edit.text_submitted.connect(func(_t): _show_main())
-	for control: Control in [connect_button, options_button, quit_button, name_edit, server_edit, back_button]:
+	server_edit.text_submitted.connect(func(_t): vsync_check.grab_focus())
+	vsync_check.toggled.connect(_on_vsync_toggled)
+	for control: Control in [connect_button, options_button, quit_button, name_edit, server_edit, vsync_check, back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
 	for button: Button in [connect_button, options_button, quit_button, back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
@@ -67,6 +70,7 @@ func _show_main(save := true) -> void:
 	if save:
 		Net.player_name = name_edit.text.strip_edges() if not name_edit.text.strip_edges().is_empty() else "Criatura"
 		Net.set_server(server_edit.text)
+		Net.vsync = vsync_check.button_pressed
 		Net.save_settings()
 	options_page.hide()
 	main_page.show()
@@ -78,10 +82,24 @@ func _show_main(save := true) -> void:
 func _show_options() -> void:
 	name_edit.text = Net.player_name
 	server_edit.text = Net.server_text()
+	vsync_check.set_pressed_no_signal(Net.vsync)
 	main_page.hide()
 	options_page.show()
 	Speech.say("Opções.", true)
 	name_edit.grab_focus.call_deferred()
+
+
+## Aplica na hora, para dar para sentir a diferença antes de salvar.
+func _on_vsync_toggled(on: bool) -> void:
+	Net.vsync = on
+	Net.apply_vsync()
+	_play(Sounds.ui_confirm())
+	if not Speech.screen_reader_active():
+		Speech.say(_on_off(on))
+
+
+func _on_off(on: bool) -> String:
+	return "ligado" if on else "desligado"
 
 
 func _on_connect() -> void:
@@ -102,6 +120,8 @@ func _on_focus(control: Control) -> void:
 		var field := control as LineEdit
 		var value := field.text if not field.text.is_empty() else "vazio"
 		Speech.say("%s, campo de texto, %s" % [field.accessibility_name, value], interrupt)
+	elif control == vsync_check:
+		Speech.say("VSync, %s. Botão de alternar. Deixe desligado se o leitor de tela demorar." % _on_off(vsync_check.button_pressed), interrupt)
 	elif control == connect_button:
 		Speech.say("Conectar, como %s, em %s. Botão." % [Net.player_name, Net.server_text()], interrupt)
 	elif control is Button:
