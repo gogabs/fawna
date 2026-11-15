@@ -1,7 +1,16 @@
-"""Gera a batida do Caminheiro (assets/sounds/caminheiro/batida.ogg).
+"""Gera os sons do Caminheiro (assets/sounds/caminheiro/).
 
-Um coração ouvido de dentro: duas pancadas graves ("tum-tum") de um tambor
-bem abafado, com passa-baixa forte (só o gravão) e um reverb curto e escuro.
+batida.ogg: um coração ouvido de dentro, duas pancadas graves ("tum-tum") de
+um tambor bem abafado, com passa-baixa forte (só o gravão) e um reverb curto
+e escuro.
+
+camada.ogg: a camada que soa junto com a batida só quando a criatura está
+de frente para o cristal. Um brilho de cristal escuro e baixinho (um tom de
+vidro com parciais inarmônicas, como uma tigela de cristal tocada de leve)
+em cada pancada do "tum-tum", com um sopro de ar por cima. Tem médios e
+agudos que a batida não tem, então também deixa mais claro, pelo HRTF, que
+o som está bem à frente.
+
 Os efeitos são aplicados aqui, no arquivo; o jogo só toca o resultado.
 
     python3 tools/som_caminheiro.py
@@ -78,6 +87,39 @@ def reverb(x, segundos, rng):
     return seco * (1 - REVERB_MISTURA) + molhado * REVERB_MISTURA
 
 
+CAMADA_TOM_HZ = 392.0  # sol: tom do cristal (as parciais são inarmônicas)
+CAMADA_PARCIAIS = [(1.0, 1.0, 4.5), (2.76, 0.45, 7.0), (5.40, 0.18, 11.0), (8.93, 0.07, 16.0)]
+CAMADA_CORTE_HZ = 2600.0  # tira o brilho áspero: o cristal é escuro
+
+
+def brilho(n, inicio, volume, tom, rng):
+    """Um toque de cristal: parciais de tigela que decaem, ataque macio
+    (sem estalo) e um batimento lento entre duas cópias quase iguais."""
+    som = np.zeros(n)
+    t = np.arange(n - inicio) / RATE
+    ataque = np.minimum(t / 0.012, 1.0)
+    for razao, ganho, decai in CAMADA_PARCIAIS:
+        f = tom * razao
+        fase = rng.uniform(0, 2 * np.pi)
+        onda = np.sin(2 * np.pi * f * t + fase) + 0.6 * np.sin(2 * np.pi * (f + 1.3) * t + fase)
+        som[inicio:] += onda * ganho * np.exp(-t * decai)
+    ar = rng.uniform(-1, 1, len(t)) * np.exp(-t * 25.0) * 0.05
+    som[inicio:] = (som[inicio:] + ar) * ataque * volume
+    return som
+
+
+def camada():
+    rng = np.random.default_rng(1618)
+    n = int(RATE * 0.8)  # cabe entre as batidas (0,857 s a 70 bpm)
+    som = brilho(n, 0, 1.0, CAMADA_TOM_HZ, rng) + brilho(n, int(RATE * 0.24), 0.6, CAMADA_TOM_HZ * 0.75, rng)
+    som = passa_baixa(som, CAMADA_CORTE_HZ, 1)
+    fim = int(RATE * 0.12)
+    som[-fim:] *= np.linspace(1.0, 0.0, fim) ** 2
+    som = reverb(som, 0.5, rng)[:n]
+    som[-fim:] *= np.linspace(1.0, 0.0, fim)
+    return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)
+
+
 def batida():
     rng = np.random.default_rng(2718)
     n = int(RATE * 0.7)
@@ -93,12 +135,13 @@ def batida():
 def main():
     os.makedirs(DIR, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        raw = os.path.join(tmp, "batida.f32")
-        batida().tofile(raw)
-        ogg = os.path.join(DIR, "batida.ogg")
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(RATE), "-ac", "1",
-                        "-i", raw, "-c:a", "libvorbis", "-q:a", "6", ogg], check=True)
-        print("ok:", os.path.relpath(ogg, RAIZ))
+        for nome, gerar in [("batida", batida), ("camada", camada)]:
+            raw = os.path.join(tmp, nome + ".f32")
+            gerar().tofile(raw)
+            ogg = os.path.join(DIR, nome + ".ogg")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(RATE), "-ac", "1",
+                            "-i", raw, "-c:a", "libvorbis", "-q:a", "6", ogg], check=True)
+            print("ok:", os.path.relpath(ogg, RAIZ))
 
 
 if __name__ == "__main__":

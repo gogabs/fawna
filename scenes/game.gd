@@ -163,7 +163,7 @@ func _process(delta: float) -> void:
 		if not harvest.prune().is_empty():
 			audio.refresh_resources()
 	if _caminheiro != null:
-		_caminheiro.update(_pos, delta)
+		_caminheiro.update(_pos, delta, Compass.forward(_heading))
 	_send_timer += delta
 	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
 		_send_timer = 0.0
