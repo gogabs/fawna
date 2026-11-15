@@ -24,7 +24,7 @@ const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com
 const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
 const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
 const BEAT_AWAY_DB := -3.0  # fora de frente, a batida cai de leve
-const LAYER_DB := -10.0  # camada de cristal, por cima da batida, quando de frente
+const LAYER_DB := -17.0  # camada de cristal, bem baixinha: só uma cor por cima da batida, de frente
 ## De frente: o beacon está a no máximo isto do rumo para onde a criatura
 ## olha. A criatura gira de 45 em 45 graus, então metade do giro (22,5°) é a
 ## menor tolerância que sempre deixa um rumo de frente: é o rumo certo dos 8.
