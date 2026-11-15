@@ -1,7 +1,7 @@
 class_name Caminheiro
 extends Node
 ## O Caminheiro: um pequeno cristal que brilha azul na direção que o coração
-## manda. Rastreia um lugar do mapa (por enquanto, só a vila).
+## manda. Rastreia um lugar do mapa (por enquanto, só a Origem).
 ##
 ## A rota vem do Wayfinder, como uma fila de beacons (as curvas do caminho
 ## pelas trilhas, estradas e pontes). Enquanto está aceso:

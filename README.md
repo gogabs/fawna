@@ -46,7 +46,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Girar 45° para a esquerda / direita | Q / E |
 | Menu flutuante (Caminheiro) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
 | Para onde estou olhando | F |
-| Coletar / menu da vila | Espaço |
+| Coletar | Espaço |
 | Inventário | I |
 | Ajuda (lista de comandos) | H |
 | Ouvir os arredores | Tab |
@@ -66,7 +66,7 @@ cada uma com uma característica só: bosque de micélio, pradaria de
 girassóis ou lagoa das vitórias-régias. O que há dentro delas é gerado aos
 pedaços, conforme alguém chega perto. Trilhas de terra ligam o ponto de
 encontro de cada região aos das vizinhas, com pontes onde cruzam a água; a
-vila é o ponto de encontro da primeira região. As trilhas são a base para o
+Origem (nome provisório) é o ponto de encontro da primeira região. As trilhas são a base para o
 Caminheiro e para os caminhos dos NPCs. As falas dizem onde as coisas
 estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
@@ -74,7 +74,7 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta. Por enquanto a única opção é
-o **Caminheiro**, e o único destino é a vila.
+o **Caminheiro**, e o único destino é a Origem.
 
 O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
 manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
@@ -83,19 +83,15 @@ o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
 curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
 vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
 beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
-vila, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
+Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
 
 ## Como se joga (por enquanto)
 
 1. Ande até árvores, arbustos ou água e aperte **Espaço** para coletar madeira, sementes ou água. Os recursos se regeneram.
-2. Na vila (centro do mundo), aperte **Espaço** para abrir o menu:
-   - **1, carpintaria:** 2 madeiras viram 1 tábua. Aperte Espaço junto com as batidas do serrote (acerte 5 de 8).
-   - **2, jardinagem:** 1 semente e 1 balde de água viram 1 muda. Ouça as 4 mudas com A/D, Q/E ou ←/→ e regue a que soa murcha (acerte 2 de 3).
-   - **3:** entregar para a horta comunitária. **4:** ouvir como ela está.
-3. A horta cresce em 3 estágios (canteiro, horta, horta com irrigação solar), com a ajuda de todos. A cada estágio a vila soa mais viva.
+2. A Origem, no centro do mundo, é o ponto de partida. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
-Se o minigame não der certo, nada é perdido. O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
+O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
 
 ## Fala e leitores de tela
 
@@ -109,7 +105,7 @@ Para instalar o Prism, baixe `prismatoid-gdextension` na [página de releases](h
 
 ## Áudio espacial
 
-Árvores, água, arbustos e a vila tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
+Árvores, água, arbustos e a Origem tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
 
 Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) instalado, o som usa o HRTF binaural do Steam Audio, que deixa frente e trás claros **com fone de ouvido**. Sem ele, o jogo usa o áudio 3D do Godot (esquerda, direita e distância). O console avisa qual está em uso (`[audio] HRTF ...`).
 
@@ -136,9 +132,9 @@ O workflow escreve a versão no `project.godot` exportado, então não precisa e
 
 ```
 autoload/   Speech (fala) e Net (modo de rede e conexão)
-shared/     Código que roda igual no servidor e no cliente (mundo, recursos, receitas, obras)
+shared/     Código que roda igual no servidor e no cliente (mundo, recursos, trilhas, pássaros)
 server/     Estado autoritativo do mundo e salvamento (só no servidor)
-client/     Minigames, narrador, áudio espacial, sons, tema dos menus e atualizador
+client/     Narrador, Caminheiro, menu flutuante, áudio espacial, sons, tema dos menus e atualizador
 tools/      Scripts para baixar as extensões nativas
 scenes/     Atualizador (primeira tela), menu (main) e jogo (game), que carrega as chamadas de rede
 tests/      Testes automáticos
@@ -160,10 +156,9 @@ godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
 ```
 
-Minigames (precisa rodar como cena):
+Caminheiro (precisa rodar como cena):
 
 ```sh
-godot --headless --path . res://tests/test_minigames.tscn
 godot --headless --path . res://tests/test_caminheiro.tscn
 ```
 

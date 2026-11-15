@@ -4,8 +4,8 @@ extends Node
 ## até o mundo.
 ##
 ## A musiquinha de ocarina (tools/musica_vila.py) continua guardada: com
-## USE_OCARINA, ela volta a tocar e fica mais cheia conforme a horta cresce
-## (níveis 0 a 3), trocando de versão no fim do loop.
+## USE_OCARINA, ela volta a tocar; set_level escolhe uma das versões (níveis 0
+## a 3), trocando no fim do loop.
 
 const VOLUME_DB := -20.0
 ## Todos os sons do jogo passam pelo barramento Master, que fica bem mais

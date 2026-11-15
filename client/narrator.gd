@@ -36,10 +36,10 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 		WorldGen.Thing.PONTE:
 			biome = "numa ponte, " + biome
 	var facing := "olhando para o %s" % Compass.name_of(heading)
-	var to_village := WorldGen.village_point() - pos
-	if to_village.length() <= WorldState.VILLAGE_REACH:
-		return "Você está na vila, %s, %s." % [biome, facing]
-	return "Você está %s, %s. A vila fica %s." % [biome, facing, Compass.describe(to_village, heading)]
+	var to_origin := WorldGen.origin_point() - pos
+	if to_origin.length() <= WorldState.ORIGIN_REACH:
+		return "Você está na Origem, %s, %s." % [biome, facing]
+	return "Você está %s, %s. A Origem fica %s." % [biome, facing, Compass.describe(to_origin, heading)]
 
 
 ## Lista o que está por perto, do mais próximo ao mais distante, em relação
@@ -74,12 +74,3 @@ static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Ar
 	if lines.is_empty():
 		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(here)]
 	return ". ".join(lines) + "."
-
-
-static func garden_status(garden: Dictionary) -> String:
-	var stage := int(garden.get("stage", 0))
-	if stage >= Economy.GARDEN_STAGES.size():
-		return "A %s está completa." % Economy.GARDEN_NAME
-	var missing := Economy.stage_missing(stage, garden.get("delivered", {}))
-	var next_name: String = Economy.GARDEN_STAGES[stage]["name"]
-	return "A %s precisa de %s para virar %s." % [Economy.GARDEN_NAME, Economy.items_text(missing), next_name]

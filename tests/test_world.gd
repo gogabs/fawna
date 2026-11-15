@@ -7,7 +7,7 @@ var _failures := 0
 
 func _init() -> void:
 	_test_same_seed_same_world()
-	_test_village_is_free()
+	_test_origin_is_free()
 	_test_has_both_biomes()
 	_test_narrator_direction()
 	_test_world_state_moves()
@@ -15,7 +15,7 @@ func _init() -> void:
 	_test_compass()
 	_test_regions_and_trails()
 	_test_straight_bridges()
-	_test_collect_craft_contribute()
+	_test_collect()
 	_test_save_roundtrip()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
@@ -43,13 +43,13 @@ func _test_same_seed_same_world() -> void:
 	_check(differs, "sementes diferentes deveriam gerar mundos diferentes")
 
 
-func _test_village_is_free() -> void:
+func _test_origin_is_free() -> void:
 	for world_seed in range(20):
 		var world := WorldGen.new(world_seed)
 		var center := WorldGen.center()
-		_check(world.thing_at(center) == WorldGen.Thing.VILA, "a vila deveria estar no centro")
+		_check(world.thing_at(center) == WorldGen.Thing.ORIGEM, "a Origem deveria estar no centro")
 		for offset in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-			_check(world.is_passable(center + offset), "o entorno da vila deveria ser livre (semente %d)" % world_seed)
+			_check(world.is_passable(center + offset), "o entorno da Origem deveria ser livre (semente %d)" % world_seed)
 
 
 func _test_has_both_biomes() -> void:
@@ -71,17 +71,14 @@ func _test_world_state_moves() -> void:
 	var state := WorldState.new(42)
 	var pos := state.add_player(10, "Lua")
 	_check(state.world.is_free(pos), "o ponto de entrada deveria ser livre")
-	_check(pos.distance_to(WorldGen.village_point()) < 2.0, "entra perto da vila")
+	_check(pos.distance_to(WorldGen.origin_point()) < 2.0, "entra perto da Origem")
 	var t := 100000
 	var result := state.move_to(10, pos + Vector2(6, 0), t)
 	_check(not result["ok"] and result["pos"] == pos, "teletransporte deveria ser recusado")
 	result = state.move_to(99, pos, t)
 	_check(not result["ok"], "jogador desconhecido não deveria andar")
 	result = state.move_to(10, pos + Vector2(0, -0.15), t + 100)
-	_check(result["ok"], "andar um pouquinho em direção à vila deveria funcionar")
-	_check(state.near_village(10) == (state.players[10]["pos"].distance_to(WorldGen.village_point()) <= WorldState.VILLAGE_REACH), "perto da vila")
-	state.players[10]["pos"] = WorldGen.village_point()
-	_check(state.near_village(10), "no centro da vila")
+	_check(result["ok"], "andar um pouquinho em direção à Origem deveria funcionar")
 
 
 func _test_collision() -> void:
@@ -95,7 +92,7 @@ func _test_collision() -> void:
 	_check(not world.is_free(WorldGen.cell_center(tree)), "não dá para ficar dentro da árvore")
 	_check(world.blocker_at(WorldGen.cell_center(tree)) == tree, "o obstáculo é a árvore")
 	_check(not world.is_free(Vector2(WorldGen.WORLD_LIMIT + 1.1, 5.5)), "o limite do mundo bloqueia")
-	_check(world.is_free(WorldGen.village_point()), "a vila é livre")
+	_check(world.is_free(WorldGen.origin_point()), "a Origem é livre")
 	_check(WorldGen.cell_of(Vector2(3.99, 4.0)) == Vector2i(3, 4), "casa de um ponto")
 
 
@@ -116,7 +113,7 @@ func _test_compass() -> void:
 
 func _test_regions_and_trails() -> void:
 	var world := WorldGen.new(42)
-	_check(world.region_biome(Vector2i.ZERO) == WorldGen.Biome.PRADARIA, "a vila fica numa pradaria")
+	_check(world.region_biome(Vector2i.ZERO) == WorldGen.Biome.PRADARIA, "a Origem fica numa pradaria")
 	# Regiões são grandes: casas vizinhas quase sempre têm o mesmo bioma.
 	var same := 0
 	var total := 0
@@ -126,12 +123,12 @@ func _test_regions_and_trails() -> void:
 			if world.biome_at(Vector2i(x, y)) == world.biome_at(Vector2i(x + 1, y)):
 				same += 1
 	_check(same > total * 0.9, "biomas deveriam vir em regiões grandes")
-	# Longe da vila também existe mundo (sem bordas), e é sempre o mesmo.
+	# Longe da Origem também existe mundo (sem bordas), e é sempre o mesmo.
 	var far := Vector2i(1500, -2200)
 	_check(world.thing_at(far) == WorldGen.new(42).thing_at(far), "mundo distante também é fixo pela semente")
-	# A vila é ponto de encontro de trilhas: deve haver trilha logo ao lado.
-	var near_village := world.nearest_trail(WorldGen.village_point(), 6)
-	_check(near_village != WorldGen.NO_CELL, "deveria sair uma trilha da vila")
+	# A Origem é ponto de encontro de trilhas: deve haver trilha logo ao lado.
+	var near_origin := world.nearest_trail(WorldGen.origin_point(), 6)
+	_check(near_origin != WorldGen.NO_CELL, "deveria sair uma trilha da Origem")
 	# Seguindo a reta até o ponto de encontro vizinho, quase tudo é trilha
 	# (ela serpenteia um pouco em volta da reta).
 	var a := world.region_landmark(Vector2i.ZERO)
@@ -142,7 +139,7 @@ func _test_regions_and_trails() -> void:
 		var p := a.lerp(b, (i + 0.5) / samples)
 		if world.nearest_trail(p, 3) != WorldGen.NO_CELL:
 			on_trail += 1
-	_check(on_trail >= samples * 0.9, "deveria haver trilha ligando a vila à região vizinha (%d/%d)" % [on_trail, samples])
+	_check(on_trail >= samples * 0.9, "deveria haver trilha ligando a Origem à região vizinha (%d/%d)" % [on_trail, samples])
 	# Ponte em vez de água no meio da trilha: trilhas nunca bloqueiam.
 	for y in range(-80, 80):
 		for x in range(-80, 80):
@@ -172,10 +169,10 @@ func _test_straight_bridges() -> void:
 					var steps := maxi(1, ceili(a.distance_to(b) / 0.25))
 					for k in steps:
 						var p := a.lerp(b, float(k) / steps)
-						if p.distance_to(WorldGen.village_point()) > WorldGen.VILLAGE_CLEAR_RADIUS and not world.is_free(p):
+						if p.distance_to(WorldGen.origin_point()) > WorldGen.ORIGIN_CLEAR_RADIUS and not world.is_free(p):
 							_check(false, "a linha da trilha esbarra em algo em %s" % p)
 							return
-	_check(bridges > 0, "deveria haver alguma ponte perto da vila")
+	_check(bridges > 0, "deveria haver alguma ponte perto da Origem")
 	# A linha é a mesma nos dois sentidos.
 	var there := world.trail_line(Vector2i.ZERO, Vector2i.RIGHT)
 	var back := world.trail_line(Vector2i.RIGHT, Vector2i.ZERO)
@@ -195,7 +192,7 @@ func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
 	return []
 
 
-func _test_collect_craft_contribute() -> void:
+func _test_collect() -> void:
 	var state := WorldState.new(42)
 	state.add_player(1, "Lua")
 	var spot := _find_next_to(state, WorldGen.Thing.ARVORE)
@@ -205,33 +202,17 @@ func _test_collect_craft_contribute() -> void:
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")
 	_check(state.collect(1, spot[1])["ok"], "deveria coletar madeira ao lado da árvore")
 	_check(not state.collect(1, spot[1])["ok"], "deveria haver uma pausa entre coletas")
-	state.inventories["Lua"]["madeira"] = 10
-	_check(not state.craft(1, "carpintaria", false)["ok"], "minigame perdido não deveria gastar recursos")
-	_check(state.inventories["Lua"]["madeira"] == 10, "madeira não deveria ser gasta ao perder")
-	for i in 4:
-		_check(state.craft(1, "carpintaria", true)["ok"], "carpintaria deveria funcionar")
-	_check(state.inventories["Lua"]["tabuas"] == 4 and state.inventories["Lua"]["madeira"] == 2, "4 tábuas, 2 madeiras")
-	state.add_player(2, "Tico")
-	state.inventories["Lua"]["tabuas"] = 3
-	var r := state.contribute(1)
-	_check(r["given"].get("tabuas", 0) == 3 and r["completed_stage"] == -1, "entrega parcial")
-	state.inventories["Tico"]["tabuas"] = 5
-	r = state.contribute(2)
-	_check(r["given"].get("tabuas", 0) == 1, "só entrega o que falta")
-	_check(r["completed_stage"] == 0 and state.garden["stage"] == 1, "canteiro concluído com a ajuda dos dois")
-	_check(state.garden["contributors"] == ["Lua", "Tico"], "créditos para os dois")
-	_check(state.inventories["Tico"]["tabuas"] == 4, "Tico fica com o que sobrou")
-
+	_check(state.inventories["Lua"]["madeira"] == 1, "1 madeira no inventário")
 
 func _test_save_roundtrip() -> void:
 	var state := WorldState.new(99)
 	state.add_player(1, "Lua")
 	state.inventories["Lua"] = {"madeira": 3}
-	state.garden = {"stage": 1, "delivered": {"mudas": 2}, "contributors": ["Lua"]}
+	state.inventories["Tico"] = {"tabuas": 2, "sementes": 1}
 	var path := "user://teste_mundo.json"
 	_check(WorldSave.save_state(state, path), "deveria salvar")
 	var loaded := WorldSave.load_state(path)
 	_check(loaded != null and loaded.world.world_seed == 99, "semente salva")
 	_check(loaded.inventories["Lua"]["madeira"] == 3, "inventário salvo")
-	_check(loaded.garden["stage"] == 1 and loaded.garden["delivered"]["mudas"] == 2, "horta salva")
+	_check(loaded.inventories["Tico"] == {"sementes": 1}, "itens que não existem mais ficam para trás")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

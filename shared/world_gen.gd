@@ -11,16 +11,16 @@ extends RefCounted
 ## coisas são espalhadas de forma procedural, e só são calculadas quando
 ## alguém chega perto (em pedaços de CHUNK casas, guardados em cache). Cada
 ## região tem um ponto de encontro, e trilhas de terra ligam os pontos das
-## regiões vizinhas. A vila fica no ponto de encontro da região (0, 0).
+## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA }
-enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, VILA, TRILHA, PONTE, LAGO }
+enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
-const WORLD_LIMIT := 4096  # casas a partir da vila; além disso, fim do caminho
-const VILLAGE_CLEAR_RADIUS := 3.0
-const VILLAGE_DRY_RADIUS := 10.0  # sem riachos colados na vila
+const WORLD_LIMIT := 4096  # casas a partir da Origem; além disso, fim do caminho
+const ORIGIN_CLEAR_RADIUS := 3.0
+const ORIGIN_DRY_RADIUS := 10.0  # sem riachos colados na Origem
 const TRAIL_HALF_WIDTH := 0.8  # casas: trilhas com uns 2,4 m de largura
 const LAKE_RADIUS := 9.0  # casas, antes da ondulação da margem
 const TRAIL_STEP := 0.5  # casas entre os pontos da linha de uma trilha
@@ -46,7 +46,7 @@ const THING_NAMES := {
 	Thing.ARVORE: "árvore",
 	Thing.RIACHO: "riacho",
 	Thing.ARBUSTO: "arbusto de sementes",
-	Thing.VILA: "vila",
+	Thing.ORIGEM: "Origem",
 	Thing.TRILHA: "trilha",
 	Thing.PONTE: "ponte",
 	Thing.LAGO: "lagoa",
@@ -104,8 +104,8 @@ static func cell_center(cell: Vector2i) -> Vector2:
 	return Vector2(cell) + Vector2(0.5, 0.5)
 
 
-## Ponto central da vila.
-static func village_point() -> Vector2:
+## Ponto central da Origem.
+static func origin_point() -> Vector2:
 	return cell_center(center())
 
 
@@ -126,7 +126,7 @@ func region_biome(region: Vector2i) -> Biome:
 	if _regions.has(region):
 		return _regions[region]
 	var biome := Biome.PRADARIA
-	if region != Vector2i.ZERO:  # a vila fica sempre numa pradaria
+	if region != Vector2i.ZERO:  # a Origem fica sempre numa pradaria
 		var roll := _random([region.x, region.y, "bioma"])
 		var total := 0.0
 		for b in BIOME_WEIGHTS:
@@ -144,12 +144,12 @@ func biome_at(cell: Vector2i) -> Biome:
 	return _chunk_data(cell)[1][_chunk_index(cell)] as Biome
 
 
-## Ponto de encontro da região: onde as trilhas se cruzam. Na região da vila,
-## é a própria vila; nas outras, um ponto perto do centro.
+## Ponto de encontro da região: onde as trilhas se cruzam. Na região da
+## Origem, é a própria Origem; nas outras, um ponto perto do centro.
 func region_landmark(region: Vector2i) -> Vector2:
 	var middle := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
 	if region == Vector2i.ZERO:
-		return village_point()
+		return origin_point()
 	var spread := REGION_SIZE * 0.25
 	var offset := Vector2(_random([region.x, region.y, "px"]) - 0.5, _random([region.x, region.y, "py"]) - 0.5)
 	return middle + offset * 2.0 * spread
@@ -187,7 +187,7 @@ func is_passable(cell: Vector2i) -> bool:
 
 func is_trail(cell: Vector2i) -> bool:
 	var thing := thing_at(cell)
-	return thing == Thing.TRILHA or thing == Thing.PONTE or thing == Thing.VILA
+	return thing == Thing.TRILHA or thing == Thing.PONTE or thing == Thing.ORIGEM
 
 
 func _generate_chunk(chunk: Vector2i) -> Array:
@@ -208,10 +208,10 @@ func _generate_chunk(chunk: Vector2i) -> Array:
 
 func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 	if cell == center():
-		return Thing.VILA
+		return Thing.ORIGEM
 	var p := cell_center(cell)
-	# O entorno da vila é sempre livre.
-	if p.distance_to(village_point()) < VILLAGE_CLEAR_RADIUS:
+	# O entorno da Origem é sempre livre.
+	if p.distance_to(origin_point()) < ORIGIN_CLEAR_RADIUS:
 		return Thing.NADA
 	var region := region_of(cell)
 	var biome := region_biome(region)
@@ -241,8 +241,8 @@ func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
 		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
 		if distance < radius:
 			return Thing.LAGO
-	# Riachos finos e raros, que cortam as regiões (mas não a vila).
-	if cell_center(cell).distance_to(village_point()) < VILLAGE_DRY_RADIUS:
+	# Riachos finos e raros, que cortam as regiões (mas não a Origem).
+	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:
 		return Thing.NADA
 	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < 0.02:
 		return Thing.RIACHO
