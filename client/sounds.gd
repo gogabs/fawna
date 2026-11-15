@@ -29,7 +29,6 @@ const MANIFEST := {
 	"coleta_lenha": ["world/wallwood4.ogg", "world/wallwood5.ogg", "world/wallwood6.ogg"],
 	"coleta_frutas": ["world/wallfoliage.ogg", "world/wallfoliage2.ogg", "world/wallfoliage3.ogg"],
 	"amb_bambu": ["recursos/amb_bambu.ogg"],
-	"amb_gravetos": ["recursos/amb_gravetos.ogg"],
 	"amb_frutas": ["recursos/amb_frutas.ogg"],
 	"bambu_golpe": ["recursos/bambu_golpe_1.ogg", "recursos/bambu_golpe_2.ogg", "recursos/bambu_golpe_3.ogg", "recursos/bambu_golpe_4.ogg"],
 	"bambu_queda": ["recursos/bambu_queda_1.ogg", "recursos/bambu_queda_2.ogg", "recursos/bambu_queda_3.ogg"],
@@ -119,13 +118,13 @@ static func pickup(item := "") -> AudioStream:
 
 
 ## Som baixinho e contínuo de cada recurso coletável, para achá-lo de ouvido:
-## o bambu range e bate os colmos, os gravetos estalam secos e as frutas
-## (raras) têm moscas rondando. A argila não tem som próprio (escolha do
-## Gabs): fica sempre na beira da água, que já soa.
+## o bambu range e bate os colmos e o arbusto com frutas (raro) farfalha com
+## gotinhas. Os gravetos não têm som próprio: saem dos arbustos, que já soam
+## como arbustos. A argila também não (escolha do Gabs): fica sempre na beira
+## da água, que já soa.
 static func resource_loop(thing: WorldGen.Thing) -> AudioStream:
 	var key: String = {
 		WorldGen.Thing.BAMBU: "amb_bambu",
-		WorldGen.Thing.GRAVETOS: "amb_gravetos",
 		WorldGen.Thing.ARBUSTO_FRUTAS: "amb_frutas",
 	}.get(thing, "")
 	if key.is_empty():
@@ -137,7 +136,7 @@ static func resource_loop(thing: WorldGen.Thing) -> AudioStream:
 
 
 static func has_resource_loop(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.BAMBU, WorldGen.Thing.GRAVETOS, WorldGen.Thing.ARBUSTO_FRUTAS]
+	return thing in [WorldGen.Thing.BAMBU, WorldGen.Thing.ARBUSTO_FRUTAS]
 
 
 ## O colmo oco do bambu levando um golpe de machado (o som do machado
@@ -348,7 +347,7 @@ static func ambient(thing: WorldGen.Thing) -> AudioStream:
 			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
 		WorldGen.Thing.ARVORE:
 			key = "amb_arvore"
-		WorldGen.Thing.ARBUSTO:
+		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 			key = "amb_arbusto"
 		WorldGen.Thing.ORIGEM:
 			key = "amb_origem"
@@ -376,7 +375,7 @@ static func music(level: int) -> AudioStream:
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ORIGEM]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARVORE, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
 
 
 static func _has_file(key: String) -> bool:

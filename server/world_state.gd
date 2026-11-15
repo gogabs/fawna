@@ -117,8 +117,9 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	return {"ok": true, "pos": pos}
 
 
-## Recolhe o recurso de uma casa ao alcance (gravetos, argila, frutas, ou um
-## bambu já derrubado). A fonte some e rebrota com o tempo (Harvest).
+## Recolhe o recurso de uma casa ao alcance (gravetos ou frutas de um arbusto,
+## argila, ou um bambu já derrubado). A fonte se esgota e rebrota com o tempo
+## (Harvest).
 ## Devolve { ok, item, amount, reason, hits_left }. reason: "longe", "nada",
 ## "devagar", "colhido" (já recolhido, ainda não voltou), "golpear" (bambu de
 ## pé: falta cortar com o machado) ou "cheio".

@@ -76,11 +76,11 @@ func _test_placement() -> void:
 		for thing in Harvest.SOURCES:
 			_check(int(count.get(thing, 0)) > 0, "deveria haver %s (semente %d)" % [WorldGen.THING_NAMES[thing], world_seed])
 		var fruits := int(count.get(WorldGen.Thing.ARBUSTO_FRUTAS, 0))
-		_check(fruits < int(count.get(WorldGen.Thing.GRAVETOS, 0)) / 3, "frutas deveriam ser raras")
+		_check(fruits < int(count.get(WorldGen.Thing.ARBUSTO, 0)) / 5, "frutas deveriam ser raras")
 		var clay := int(count.get(WorldGen.Thing.ARGILA, 0))
 		_check(count["argila_perto_da_agua"] == clay, "toda argila deveria estar perto da água (%d de %d)" % [count["argila_perto_da_agua"], clay])
 		_check(not world.is_passable(_find(world, WorldGen.Thing.BAMBU)[1]), "bambu deveria bloquear a passagem")
-		_check(world.is_passable(_find(world, WorldGen.Thing.GRAVETOS)[1]), "dá para pisar nos gravetos")
+		_check(world.is_passable(_find(world, WorldGen.Thing.ARBUSTO)[1]), "dá para entrar no arbusto")
 	# Mesma semente, mesmos recursos.
 	var a := WorldGen.new(7)
 	var b := WorldGen.new(7)
@@ -108,14 +108,14 @@ func _test_bamboo_needs_strikes() -> void:
 	_check(harvest.strike(cell, t + 12)["reason"] == "colhido", "toco não leva golpe")
 	_check(harvest.is_available(cell, t + 11 + 900.0), "bambu rebrota")
 	_check(harvest.hits_left(cell, t + 11 + 900.0) == needed, "bambu rebrotado pede todos os golpes de novo")
-	var gravetos: Vector2i = _find(world, WorldGen.Thing.GRAVETOS)[1]
-	_check(harvest.strike(gravetos, t)["reason"] == "nada", "gravetos não se golpeiam")
+	var bush: Vector2i = _find(world, WorldGen.Thing.ARBUSTO)[1]
+	_check(harvest.strike(bush, t)["reason"] == "nada", "arbusto não se golpeia")
 
 
 func _test_direct_collect_and_regrow() -> void:
 	var world := WorldGen.new(42)
 	var harvest := Harvest.new(world)
-	var expected := {WorldGen.Thing.GRAVETOS: "lenha", WorldGen.Thing.ARGILA: "argila", WorldGen.Thing.ARBUSTO_FRUTAS: "frutas"}
+	var expected := {WorldGen.Thing.ARBUSTO: "lenha", WorldGen.Thing.ARGILA: "argila", WorldGen.Thing.ARBUSTO_FRUTAS: "frutas"}
 	for thing in expected:
 		var cell: Vector2i = _find(world, thing)[1]
 		var got := harvest.take(cell, 5000.0)
@@ -200,3 +200,11 @@ func _test_narrator() -> void:
 	harvest.take(spot[1])
 	var after := Narrator.surroundings(world, pos, 0, [], harvest)
 	_check(not after.contains("arbusto com frutas"), "Tab não fala das frutas colhidas: " + after)
+	_check(harvest.spoken_name(spot[1]) == "arbusto", "arbusto colhido continua lá, vazio")
+	# Arbusto comum: dá gravetos (lenha) e continua lá depois de colhido.
+	var bush := _find(world, WorldGen.Thing.ARBUSTO)
+	_check(harvest.spoken_name(bush[1]) == "arbusto com gravetos", "arbusto anuncia os gravetos")
+	_check(harvest.take(bush[1])["item"] == "lenha", "gravetos do arbusto viram lenha")
+	_check(harvest.spoken_name(bush[1]) == "arbusto", "arbusto sem gravetos é só arbusto")
+	_check(not Sounds.has_resource_loop(WorldGen.Thing.ARBUSTO), "gravetos não têm emissor próprio")
+	_check(Sounds.has_ambient(WorldGen.Thing.ARBUSTO_FRUTAS), "arbusto com frutas soa como arbusto também")

@@ -19,8 +19,8 @@ const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -12.0
-## Recursos coletáveis (bambu, gravetos, argila, frutas): cada um tem um som
-## baixinho e próprio, para ser achado de ouvido. Ficam num grupo à parte do
+## Recursos coletáveis com som próprio (bambu, arbusto com frutas): um som
+## baixinho, para ser achado de ouvido. Ficam num grupo à parte do
 ## ambiente (árvores e água não abafam) e as fontes são fixas e reaproveitadas.
 const RESOURCE_SOURCES := 6
 const RESOURCE_RADIUS := 9  # casas (uns 13 m)
