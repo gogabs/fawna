@@ -63,7 +63,7 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARVORE:
 				_cache[key] = _tree_loop()
-			WorldGen.Thing.ARBUSTO:
+			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
 			WorldGen.Thing.ORIGEM:
 				_cache[key] = _origin_loop(level)
@@ -273,8 +273,6 @@ static func resource_loop(thing: WorldGen.Thing) -> AudioStreamWAV:
 		match thing:
 			WorldGen.Thing.BAMBU:
 				_cache[key] = _bamboo_loop()
-			WorldGen.Thing.GRAVETOS:
-				_cache[key] = _twigs_loop()
 			WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _flies_loop()
 			_:
@@ -316,25 +314,6 @@ static func _bamboo_loop() -> AudioStreamWAV:
 		phase += TAU * (95.0 + 25.0 * sin(TAU * 1.3 * k)) / RATE
 		var grit := 1.0 if fmod(phase, TAU) < 0.6 else 0.0
 		samples[creak_start + i] += (grit - 0.2) * sin(PI * k) * 0.05
-	return _to_wav(samples, true)
-
-
-## Gravetos: estalidos secos, raros, às vezes em pares.
-static func _twigs_loop() -> AudioStreamWAV:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 909
-	var count := RATE * 5
-	var samples := PackedFloat32Array()
-	samples.resize(count)
-	for k in 7:
-		var start := rng.randi_range(0, count - 2000)
-		for crack in rng.randi_range(1, 3):
-			var at := start + crack * rng.randi_range(400, 1400)
-			var length := rng.randi_range(120, 380)
-			var last := 0.0
-			for i in mini(length, count - at):
-				last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.15)
-				samples[at + i] += last * pow(1.0 - float(i) / length, 3.0) * 0.35
 	return _to_wav(samples, true)
 
 

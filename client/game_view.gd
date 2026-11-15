@@ -21,7 +21,6 @@ const THING_COLORS := {
 	WorldGen.Thing.ARBUSTO: Color("d98ad9"),
 	WorldGen.Thing.ORIGEM: Color("f6c453"),
 	WorldGen.Thing.BAMBU: Color("5f8a3a"),
-	WorldGen.Thing.GRAVETOS: Color("8a6a48"),
 	WorldGen.Thing.ARGILA: Color("b0654a"),
 	WorldGen.Thing.ARBUSTO_FRUTAS: Color("b02a4a"),
 }

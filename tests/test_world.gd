@@ -195,8 +195,8 @@ func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
 func _test_collect() -> void:
 	var state := WorldState.new(42)
 	state.add_player(1, "Lua")
-	var spot := _find_next_to(state, WorldGen.Thing.GRAVETOS)
-	_check(not spot.is_empty(), "deveria haver gravetos acessíveis")
+	var spot := _find_next_to(state, WorldGen.Thing.ARBUSTO)
+	_check(not spot.is_empty(), "deveria haver arbusto com gravetos acessível")
 	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
 	var far: Vector2i = spot[1] + Vector2i(5, 5)
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")

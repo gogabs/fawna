@@ -12,6 +12,8 @@ extends RefCounted
 ## Ciclo de cada fonte:
 ##   de pé -> (bambu: golpes com o machado até cair) -> pronta para recolher
 ##   -> recolhida (some: sem som, sem fala) -> rebrota depois de "regrow" s.
+## O arbusto não some: depois de colhido continua lá como um arbusto vazio
+## (TAKEN_NAMES), até os gravetos ou as frutas voltarem.
 
 ## coisa do mundo -> regras da fonte.
 ##   item: o que vai para a bolsa; amount: quanto dá de uma vez;
@@ -20,9 +22,16 @@ extends RefCounted
 ##   regrow: segundos até voltar depois de recolhida.
 const SOURCES := {
 	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0},
-	WorldGen.Thing.GRAVETOS: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
+	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
+}
+
+## Como se fala de uma fonte já colhida que continua no lugar. Quem não está
+## aqui some da fala até rebrotar.
+const TAKEN_NAMES := {
+	WorldGen.Thing.ARBUSTO: "arbusto",
+	WorldGen.Thing.ARBUSTO_FRUTAS: "arbusto",
 }
 
 ## Golpes dados num bambu que ninguém terminou de cortar se perdem depois
@@ -53,6 +62,20 @@ static func item_of(thing: int) -> String:
 
 static func now() -> float:
 	return Time.get_unix_time_from_system()
+
+
+## Nome da coisa desta casa para a fala, conforme o estado: "arbusto com
+## gravetos" vira "arbusto" depois de colhido, um bambu sem golpes faltando é
+## "bambu derrubado". Vazio se a coisa foi recolhida e sumiu.
+func spoken_name(cell: Vector2i, at := -1.0) -> String:
+	var thing := world.thing_at(cell)
+	if not is_source(thing):
+		return WorldGen.THING_NAMES.get(thing, "")
+	if not is_available(cell, at):
+		return TAKEN_NAMES.get(thing, "")
+	if needs_tool(thing) and hits_left(cell, at) == 0:
+		return "bambu derrubado"
+	return WorldGen.THING_NAMES[thing]
 
 
 ## Golpes que esta fonte pede no total (o bambu de cada lugar é um pouco mais

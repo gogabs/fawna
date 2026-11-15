@@ -440,7 +440,7 @@ func action_failed(reason: String, detail: String) -> void:
 		return
 	match reason:
 		"nada":
-			Speech.say("Não há nada para coletar aqui. Chegue bem perto de gravetos, argila, frutas ou de um bambu derrubado.")
+			Speech.say("Não há nada para coletar aqui. Chegue bem perto de um arbusto, de argila ou de um bambu derrubado.")
 		"golpear":
 			var left := int(detail)
 			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J: falta%s %s." % [
@@ -751,8 +751,8 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 			if old_thing != WorldGen.Thing.TRILHA or thing == WorldGen.Thing.PONTE:
 				Speech.say(WorldGen.THING_NAMES[thing], false)
 		_last_trail_notice = now
-	elif thing != WorldGen.Thing.NADA and (not Harvest.is_source(thing) or harvest.is_available(cell)):
-		Speech.say(WorldGen.THING_NAMES[thing], false)
+	elif thing != WorldGen.Thing.NADA and not harvest.spoken_name(cell).is_empty():
+		Speech.say(harvest.spoken_name(cell), false)
 
 
 ## Espaço: coleta o que estiver ao alcance, dando preferência ao que está à
@@ -837,7 +837,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos, argila, frutas ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 func _say_surroundings() -> void:

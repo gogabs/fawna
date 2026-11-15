@@ -14,7 +14,7 @@ extends RefCounted
 ## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA }
-enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, GRAVETOS, ARGILA, ARBUSTO_FRUTAS }
+enum Thing { NADA, ARVORE, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -45,13 +45,12 @@ const BIOME_IN := {
 const THING_NAMES := {
 	Thing.ARVORE: "árvore",
 	Thing.RIACHO: "riacho",
-	Thing.ARBUSTO: "arbusto",
+	Thing.ARBUSTO: "arbusto com gravetos",
 	Thing.ORIGEM: "Origem",
 	Thing.TRILHA: "trilha",
 	Thing.PONTE: "ponte",
 	Thing.LAGO: "lagoa",
 	Thing.BAMBU: "touceira de bambu",
-	Thing.GRAVETOS: "gravetos",
 	Thing.ARGILA: "argila",
 	Thing.ARBUSTO_FRUTAS: "arbusto com frutas",
 }
@@ -68,16 +67,19 @@ const PLAYER_RADIUS := 0.3  # casas
 const NO_CELL := Vector2i(-9999999, -9999999)
 
 ## Quanto de cada região é de cada tipo, e o que nasce em cada uma
-## (chance por casa). Recursos coletáveis (shared/harvest.gd): touceiras de
-## bambu, gravetos caídos no chão, argila na beira da água e, raros, arbustos
-## com frutas.
+## (chance por casa, em faixas: [coisa, chance], na ordem em que são
+## sorteadas). Recursos coletáveis (shared/harvest.gd): touceiras de bambu,
+## argila na beira da água e arbustos, que dão gravetos para lenha ou, raros,
+## frutas. A última faixa de arbustos é onde antes ficavam os gravetos soltos
+## no chão: assim o resto do mundo de cada semente continua igual.
 const BIOME_WEIGHTS := {Biome.BOSQUE: 0.45, Biome.PRADARIA: 0.4, Biome.LAGOA: 0.15}
 const DENSITY := {
-	Biome.BOSQUE: {Thing.ARVORE: 0.09, Thing.ARBUSTO: 0.012, Thing.BAMBU: 0.01, Thing.GRAVETOS: 0.025},
-	Biome.PRADARIA: {Thing.ARVORE: 0.008, Thing.ARBUSTO: 0.03, Thing.BAMBU: 0.002, Thing.GRAVETOS: 0.004},
-	Biome.LAGOA: {Thing.ARVORE: 0.02, Thing.ARBUSTO: 0.02, Thing.BAMBU: 0.012, Thing.GRAVETOS: 0.006},
+	Biome.BOSQUE: [[Thing.ARVORE, 0.09], [Thing.ARBUSTO, 0.012], [Thing.BAMBU, 0.01], [Thing.ARBUSTO, 0.025]],
+	Biome.PRADARIA: [[Thing.ARVORE, 0.008], [Thing.ARBUSTO, 0.03], [Thing.BAMBU, 0.002], [Thing.ARBUSTO, 0.004]],
+	Biome.LAGOA: [[Thing.ARVORE, 0.02], [Thing.ARBUSTO, 0.02], [Thing.BAMBU, 0.012], [Thing.ARBUSTO, 0.006]],
 }
-## Fração dos arbustos que dá frutas: são raros (uns poucos por região).
+## Fração dos arbustos que dá frutas em vez de gravetos: são raros (uns poucos
+## por região).
 const FRUIT_BUSH_CHANCE := 0.07
 ## Argila: só na beira da água. Chance por casa na margem das lagoas (até
 ## CLAY_BANK casas além da água) e na beira dos riachos.
@@ -236,10 +238,10 @@ func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 	if water != Thing.NADA:
 		return Thing.PONTE if trail == TRAIL_EDGE else water
 	var roll := _random([cell.x, cell.y])
-	var chances: Dictionary = DENSITY[biome]
 	var total := 0.0
-	for thing in chances:
-		total += chances[thing]
+	for band: Array in DENSITY[biome]:
+		var thing: Thing = band[0]
+		total += float(band[1])
 		if roll < total:
 			if trail == TRAIL_EDGE and BLOCKING.has(thing):
 				return Thing.TRILHA
