@@ -11,7 +11,8 @@ extends RefCounted
 ##   "open": Callable que devolve as opções do submenu (Array de opções)
 ##   "run":  Callable executado ao confirmar; depois o menu volta ao começo
 ##   "info": texto falado ao confirmar, sem sair do lugar (itens sem ação)
-## Opcionais: "empty" (o que dizer se o submenu vier vazio) e os sons do
+## Opcionais: "stay" (com "run": depois de executar, o foco fica onde está,
+## em vez de voltar ao começo), "empty" (o que dizer se o submenu vier vazio) e os sons do
 ## submenu, no lugar dos genéricos: "open_sound" (ao entrar, em vez de
 ## "abrir"), "move_sound" (ao passar pelas opções, em vez de "mover") e
 ## "close_sound" (ao sair com Baixo, em vez de "fechar").
@@ -76,13 +77,16 @@ func _confirm() -> String:
 		return item["info"]
 	if item.has("open"):
 		var items: Array = item["open"].call()
-		_levels.append({"title": item["label"], "items": items, "index": 0,
+		_levels.append({"title": item["label"], "items": items, "index": 0, "source": item["open"],
 			"move_sound": item.get("move_sound", "mover"), "close_sound": item.get("close_sound", "fechar")})
 		sound.emit(item.get("open_sound", "abrir"))
 		if items.is_empty():
 			return "%s: %s." % [item["label"], item.get("empty", "nada aqui por enquanto")]
 		return "%s. %s" % [item["label"], _describe(_levels[-1])]
 	sound.emit("confirmar")
+	if item.get("stay", false):
+		var said_here: Variant = item["run"].call() if item.has("run") else ""
+		return said_here if said_here is String else ""
 	reset()
 	if item.has("run"):
 		var said: Variant = item["run"].call()
@@ -97,10 +101,10 @@ func _back() -> String:
 	var closed: Dictionary = _levels.pop_back()
 	# As opções podem ter mudado (ex.: o cristal acendeu).
 	var level: Dictionary = _levels[-1]
-	if _levels.size() == 1:
-		var index: int = level["index"]
-		level["items"] = _root.call()
-		level["index"] = clampi(index, 0, maxi(level["items"].size() - 1, 0))
+	var source: Callable = level.get("source", _root) if _levels.size() > 1 else _root
+	var index: int = level["index"]
+	level["items"] = source.call()
+	level["index"] = clampi(index, 0, maxi(level["items"].size() - 1, 0))
 	sound.emit(closed.get("close_sound", "fechar"))
 	return _describe(level)
 

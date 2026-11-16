@@ -47,10 +47,10 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
 | Para onde estou olhando | F |
 | Coletar | Espaço |
-| O que há na bolsa e nas mãos | I |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Ouvir os arredores | Tab |
+| Ouvir os arredores | Tab (toque curto) |
+| Escutar com atenção: vento, fundo e música baixam, recursos sobem | segurar Tab |
 | Onde estou | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
@@ -75,8 +75,13 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta. As opções são o
-**Caminheiro** (o único destino, por enquanto, é a Origem), a **Bolsa** e o
-**Equipamento**.
+**Caminheiro**, a **Bolsa** e o **Equipamento**.
+
+O Caminheiro tem dois submenus: **Locais** (por enquanto, só a Origem; mais
+tarde, só os lugares com um marco construído) e **Recursos** (Bambu, Lenha,
+Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
+daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
+está: "Você chegou às pedras, atrás e à direita, 2 metros."
 
 ### Bolsa e Equipamento
 
@@ -102,7 +107,9 @@ curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
 vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
 beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
 Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
-novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
+novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
+um destino, o foco do menu fica onde está; escolher de novo o destino aceso
+apaga o cristal.
 
 ## Como se joga (por enquanto)
 

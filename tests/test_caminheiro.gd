@@ -12,6 +12,9 @@ func _ready() -> void:
 	_test_walk_following_beacons()
 	_test_replan_when_lost()
 	_test_menu()
+	_test_resources()
+	_test_contract()
+	_test_menu_stay()
 	_test_facing()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
@@ -133,6 +136,76 @@ func _test_menu() -> void:
 	_check(menu.press("direita") == "Apagar o cristal, 2 de 2", "aceso, aparece a opção de apagar")
 	_check(menu.press("baixo") == "Caminheiro", "baixo volta")
 	_check(menu.press("baixo").begins_with("Menu das setas"), "baixo no começo diz onde está")
+
+
+## Menu Recursos: o cristal leva até o coletável mais próximo de cada tipo,
+## e a criatura chega perto o bastante para coletar (ou golpear o bambu).
+func _test_resources() -> void:
+	var GameScript: GDScript = load("res://scenes/game.gd")
+	var world := WorldGen.new(220)
+	var harvest := Harvest.new(world)
+	var start := _free_point(world, WorldGen.origin_point() + Vector2(0, 1.5))
+	for entry: Array in GameScript.CAMINHEIRO_RESOURCES:
+		var cell: Vector2i = GameScript.nearest_collectable(world, harvest, start, entry[1], GameScript.RESOURCE_SEARCH_RADIUS)
+		if entry[0] == "Frutas" and cell == WorldGen.NO_CELL:
+			continue  # frutas são raras: pode não haver nenhuma no raio
+		_check(cell != WorldGen.NO_CELL, "%s: deveria haver um por perto" % entry[0])
+		if cell == WorldGen.NO_CELL:
+			continue
+		var guide := Caminheiro.new()
+		guide.setup(world, null)
+		var arrived := []
+		guide.arrived.connect(func(place): arrived.append(place))
+		_check(guide.start(start, GameScript.resource_destination(world, cell, start), entry[2]), "%s: o cristal deveria acender" % entry[0])
+		var pos := start
+		var steps := 0
+		while guide.active and steps < 20000:
+			steps += 1
+			var beacon: Vector2 = guide.current_beacon()
+			pos = _walk(world, pos, (beacon - pos).normalized() * 0.15)
+			guide.update(pos, 0.1)
+		var gap := pos.distance_to(WorldGen.cell_center(cell))
+		_check(arrived == [entry[2]], "%s: deveria chegar (parou em %s)" % [entry[0], pos])
+		_check(gap <= 3.1, "%s: chega a até 3 casas do recurso (%.1f)" % [entry[0], gap])
+		guide.free()
+	# O que já foi recolhido não conta.
+	var stones: Vector2i = GameScript.nearest_collectable(world, harvest, start, [WorldGen.Thing.PEDRAS], 72)
+	harvest.take(stones)
+	var next: Vector2i = GameScript.nearest_collectable(world, harvest, start, [WorldGen.Thing.PEDRAS], 72)
+	_check(next != stones, "pedras recolhidas não são destino")
+
+
+## Destinos com "stay": o foco fica no lugar depois de escolher, e as opções
+## de cima são recarregadas ao voltar (aparece "Apagar o cristal").
+func _test_menu_stay() -> void:
+	var lit := [""]
+	var targets := func() -> Array:
+		return [
+			{"label": "Bambu", "run": func(): lit[0] = "" if lit[0] == "Bambu" else "Bambu"; return "bambu " + lit[0], "stay": true},
+			{"label": "Pedras", "run": func(): lit[0] = "" if lit[0] == "Pedras" else "Pedras"; return "pedras " + lit[0], "stay": true},
+		]
+	var root := func() -> Array:
+		return [{"label": "Caminheiro", "open": func() -> Array:
+			var items := [{"label": "Recursos", "open": targets}]
+			if lit[0] != "":
+				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = ""; return "apagou"})
+			return items}]
+	var menu := FloatingMenu.new(root)
+	menu.press("cima")
+	menu.press("cima")
+	menu.press("direita")
+	_check(menu.press("cima") == "pedras Pedras" and menu.depth() == 3, "escolher um recurso deixa o foco no lugar")
+	_check(menu.current_label() == "Pedras", "o foco continua em Pedras")
+	_check(menu.press("cima") == "pedras " and lit[0] == "", "escolher de novo o mesmo destino apaga")
+	menu.press("cima")
+	_check(menu.press("baixo") == "Recursos, 1 de 2", "voltando, o nível de cima é recarregado com Apagar o cristal")
+
+
+func _test_contract() -> void:
+	_check(Narrator.contract("a", "a Origem") == "à Origem", "à Origem")
+	_check(Narrator.contract("a", "o bambu") == "ao bambu", "ao bambu")
+	_check(Narrator.contract("em", "as pedras") == "nas pedras", "nas pedras")
+	_check(Narrator.contract("a", "Lua") == "a Lua", "sem artigo, só a preposição")
 
 
 ## Anda com o mesmo deslize do jogo (scenes/game.gd, _walk).
