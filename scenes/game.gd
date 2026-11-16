@@ -88,6 +88,7 @@ var _save_timer := 0.0
 # Lado do cliente (inclusive quem hospeda)
 var world: WorldGen
 var my_id := 0
+var _server_version := ""  # vem do servidor ao entrar; vazio: servidor antigo, que não manda
 var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
@@ -189,7 +190,7 @@ func _process(delta: float) -> void:
 	if _tab_down_ms >= 0 and not _focus and Time.get_ticks_msec() - _tab_down_ms >= int(FOCUS_HOLD * 1000.0):
 		_set_focus(true)
 	if _caminheiro != null:
-		_caminheiro.update(_pos, delta)
+		_caminheiro.update(_pos, delta, Compass.forward(_heading))
 	_send_timer += delta
 	if _send_timer >= SEND_INTERVAL and _pos != _last_sent:
 		_send_timer = 0.0
@@ -224,8 +225,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action("interagir"):
 		_interact()
-	elif event.is_action("inventario"):
-		_say_inventory()
 	elif event.is_action("golpear"):
 		_swing()
 	elif event.is_action("ajuda"):
@@ -255,6 +254,7 @@ func request_join(player_name: String) -> void:
 	var pos := state.add_player(id, player_name)
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
+	server_version.rpc_id(id, Updater.current_version())
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	harvest_snapshot.rpc_id(id, state.harvest.snapshot())
@@ -309,8 +309,7 @@ func request_strike(cell: Vector2i) -> void:
 	if result["ok"]:
 		_dirty = true
 		resource_changed.rpc(cell, state.harvest.info(cell), "queda" if result["felled"] else "golpe", id)
-	elif state.players.has(id) and result["reason"] in ["caido", "colhido"]:
-		action_failed.rpc_id(id, "bambu_" + result["reason"], "")
+	# Golpe em bambu já caído ou já recolhido: só o som do machado, sem fala.
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -423,6 +422,24 @@ func _tell_others_handled(id: int, verb: String) -> void:
 
 # --- Rede: avisos do servidor (executados nos clientes) ----------------------
 
+## Versão do servidor, mandada logo antes do welcome. Servidor e jogo em
+## versões diferentes geram mundos diferentes (ex.: o jogo acha um arbusto com
+## gravetos onde o servidor não vê nada para coletar), então quem joga é
+## avisado. Servidor anterior à 0.5.1 não manda a versão: o aviso sai igual.
+@rpc("authority", "call_local", "reliable")
+func server_version(version: String) -> void:
+	_server_version = version
+
+
+func _warn_version_mismatch() -> void:
+	var mine := Updater.current_version()
+	if _server_version == mine or multiplayer.is_server():
+		return
+	var theirs := _server_version if not _server_version.is_empty() else "anterior à %s" % mine
+	print("[rede] servidor na versão %s, jogo na %s" % [theirs, mine])
+	Speech.say("Atenção: o servidor está numa versão diferente da sua (servidor %s, jogo %s). Coletar e outras ações podem falhar até o servidor ser atualizado." % [theirs, mine], false)
+
+
 @rpc("authority", "call_local", "reliable")
 func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) -> void:
 	my_id = multiplayer.get_unique_id()
@@ -450,6 +467,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 		"Há mais %d criatura%s no mundo." % [others, "" if others == 1 else "s"]
 	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte H para ouvir os comandos." % [
 		me["name"], Narrator.where_am_i(world, _pos, _heading), company])
+	_warn_version_mismatch()
 	_run_auto_commands()
 
 
@@ -475,9 +493,6 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 		"golpe":
 			if near:
 				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
-			if by_id == my_id:
-				var left := harvest.hits_left(cell)
-				Speech.say("Falta 1 golpe." if left == 1 else "Faltam %d golpes." % left, false)
 		"queda":
 			if near:
 				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
@@ -616,20 +631,8 @@ func action_failed(reason: String, detail: String) -> void:
 	if world == null:
 		return
 	match reason:
-		"nada":
-			Speech.say("Não há nada para coletar aqui. Chegue bem perto de um arbusto, de argila ou de um bambu derrubado.")
 		"golpear":
-			var left := int(detail)
-			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J: falta%s %s." % [
-				"" if left == 1 else "m", "1 golpe" if left == 1 else "%d golpes" % left])
-		"colhido" when detail == "bambu":
-			action_failed("bambu_colhido", "")
-		"colhido":
-			Speech.say("Já colheram %s aqui. Volta com o tempo." % (Economy.names_of(detail)[1] if Economy.is_item(detail) else "tudo"))
-		"bambu_caido":
-			Speech.say("Este bambu já caiu. Aperte Espaço para recolher.")
-		"bambu_colhido":
-			Speech.say("Só restam os tocos deste bambu. Ele rebrota com o tempo.")
+			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.names_of(detail)[1])
 		"nao_tem":
@@ -662,7 +665,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"arma_cheio":
 			Speech.say("Você já carrega o máximo de %s." % Crafting.WEAPONS[detail.split("|")[0]]["name"][1])
 		_:
-			pass  # "devagar", "longe": ignora em silêncio
+			pass  # "nada", "colhido", "devagar", "longe": ignora em silêncio
 
 
 @rpc("authority", "call_local", "reliable")
@@ -739,7 +742,7 @@ func _load_or_create_world() -> void:
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
 	birds.start_server(state.world)
-	print("[servidor] mundo único no ar, porta %d, semente %d" % [Net.port, state.world.world_seed])
+	print("[servidor] mundo único no ar, versão %s, porta %d, semente %d" % [Updater.current_version(), Net.port, state.world.world_seed])
 	_dirty = true
 	_save_world()
 
@@ -979,8 +982,6 @@ func _interact() -> void:
 			return
 	if target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
-	else:
-		action_failed("nada", "")
 
 
 ## O recurso que o Espaço recolhe: o mais perto, com preferência para o que
@@ -1086,7 +1087,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1354,7 +1355,7 @@ func _caminheiro_items() -> Array:
 ## recebeu, do mais perto ao mais longe ("Casa da Lua, 40 metros"). Um lugar
 ## só vira local quando tem um marco construído.
 func _caminheiro_places() -> Array:
-	var items := [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem")}]
+	var items := [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem"), "stay": true}]
 	var marcos := builds.all().filter(func(b): return b["kind"] == "marco" and b["done"])
 	marcos.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a["cell"])) < _pos.distance_squared_to(WorldGen.cell_center(b["cell"])))
 	for build: Dictionary in marcos:
@@ -1367,7 +1368,7 @@ func _caminheiro_places() -> Array:
 func _caminheiro_resources() -> Array:
 	var items := []
 	for entry: Array in CAMINHEIRO_RESOURCES:
-		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2])})
+		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 	return items
 
 
@@ -1421,7 +1422,10 @@ static func resource_destination(the_world: WorldGen, cell: Vector2i, from: Vect
 
 ## place vem com artigo ("a Origem", "o bambu"), para a fala juntar direito.
 ## resource: a casa do recurso, quando o destino é um recurso.
+## Escolher de novo o destino que já está aceso apaga o cristal.
 func _track(destination: Vector2, place: String, resource := WorldGen.NO_CELL) -> String:
+	if _caminheiro.active and _caminheiro.place_name == place:
+		return _stop_tracking()
 	_tracked_resource = resource
 	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
 		_caminheiro.stop()

@@ -14,6 +14,8 @@ func _ready() -> void:
 	_test_menu()
 	_test_resources()
 	_test_contract()
+	_test_menu_stay()
+	_test_facing()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -173,6 +175,32 @@ func _test_resources() -> void:
 	_check(next != stones, "pedras recolhidas não são destino")
 
 
+## Destinos com "stay": o foco fica no lugar depois de escolher, e as opções
+## de cima são recarregadas ao voltar (aparece "Apagar o cristal").
+func _test_menu_stay() -> void:
+	var lit := [""]
+	var targets := func() -> Array:
+		return [
+			{"label": "Bambu", "run": func(): lit[0] = "" if lit[0] == "Bambu" else "Bambu"; return "bambu " + lit[0], "stay": true},
+			{"label": "Pedras", "run": func(): lit[0] = "" if lit[0] == "Pedras" else "Pedras"; return "pedras " + lit[0], "stay": true},
+		]
+	var root := func() -> Array:
+		return [{"label": "Caminheiro", "open": func() -> Array:
+			var items := [{"label": "Recursos", "open": targets}]
+			if lit[0] != "":
+				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = ""; return "apagou"})
+			return items}]
+	var menu := FloatingMenu.new(root)
+	menu.press("cima")
+	menu.press("cima")
+	menu.press("direita")
+	_check(menu.press("cima") == "pedras Pedras" and menu.depth() == 3, "escolher um recurso deixa o foco no lugar")
+	_check(menu.current_label() == "Pedras", "o foco continua em Pedras")
+	_check(menu.press("cima") == "pedras " and lit[0] == "", "escolher de novo o mesmo destino apaga")
+	menu.press("cima")
+	_check(menu.press("baixo") == "Recursos, 1 de 2", "voltando, o nível de cima é recarregado com Apagar o cristal")
+
+
 func _test_contract() -> void:
 	_check(Narrator.contract("a", "a Origem") == "à Origem", "à Origem")
 	_check(Narrator.contract("a", "o bambu") == "ao bambu", "ao bambu")
@@ -188,3 +216,21 @@ func _walk(world: WorldGen, pos: Vector2, motion: Vector2) -> Vector2:
 		if world.is_free(pos + part):
 			pos += part
 	return pos
+
+
+## De frente: o beacon a no máximo 22,5° do rumo para onde a criatura olha,
+## então sempre há um dos 8 rumos de frente para ele.
+func _test_facing() -> void:
+	var pos := Vector2(10, 10)
+	_check(Caminheiro.is_facing(pos, pos + Vector2(0, -5), Compass.forward(0)), "beacon ao norte, olhando ao norte: de frente")
+	_check(Caminheiro.is_facing(pos, pos + Vector2(1, -5), Compass.forward(0)), "beacon 11° a leste do norte: de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(3, -5), Compass.forward(0)), "beacon 31° a leste do norte: fora de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(0, 5), Compass.forward(0)), "beacon atrás: fora de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(0, -5), Vector2.ZERO), "sem direção: nunca de frente")
+	for k in 72:
+		var target := pos + Vector2.from_angle(k * TAU / 72.0) * 6.0
+		var facing := 0
+		for heading in Compass.STEPS:
+			if Caminheiro.is_facing(pos, target, Compass.forward(heading)):
+				facing += 1
+		_check(facing >= 1 and facing <= 2, "algum rumo dos 8 deveria ficar de frente (ângulo %d)" % (k * 5))
