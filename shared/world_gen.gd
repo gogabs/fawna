@@ -110,6 +110,9 @@ var _lake_noise := FastNoiseLite.new()  # margem ondulada das lagoas
 var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada casa]
 var _regions := {}  # Vector2i (região) -> Biome
 var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
+## Casas ocupadas por construções (marco, fogueira): não deixam passar.
+## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
+var built := {}
 
 
 func _init(new_seed: int) -> void:
@@ -216,7 +219,7 @@ static func _chunk_index(cell: Vector2i) -> int:
 
 
 func is_passable(cell: Vector2i) -> bool:
-	return in_bounds(cell) and not BLOCKING.has(thing_at(cell))
+	return in_bounds(cell) and not BLOCKING.has(thing_at(cell)) and not built.has(cell)
 
 
 func is_trail(cell: Vector2i) -> bool:

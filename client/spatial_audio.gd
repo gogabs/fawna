@@ -25,6 +25,11 @@ const AMBIENT_VOLUME_DB := -12.0
 const RESOURCE_SOURCES := 6
 const RESOURCE_RADIUS := 9  # casas (uns 13 m)
 const RESOURCE_VOLUME_DB := -14.0
+## Fogueiras acesas: o crepitar, em fontes fixas e reaproveitadas, como os
+## recursos. Alcançam mais longe que os recursos, para guiar de volta ao fogo.
+const FIRE_SOURCES := 4
+const FIRE_RADIUS := 14  # casas (uns 21 m)
+const FIRE_VOLUME_DB := -6.0
 const MAX_SIMULATION_SOURCES := 128  # limite do Steam Audio (o máximo do addon)
 
 var using_hrtf := false
@@ -33,6 +38,9 @@ var _world: WorldGen
 var _harvest: Harvest
 var _resource_players: Array[AudioStreamPlayer3D] = []
 var _resource_cells := {}  # Vector2i -> AudioStreamPlayer3D tocando ali
+var _fire_players: Array[AudioStreamPlayer3D] = []
+var _fire_cells := {}  # Vector2i -> AudioStreamPlayer3D crepitando ali
+var _lit_fires: Array = []  # casas das fogueiras acesas (o jogo manda)
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 ## Passa-baixa da distância: quanto mais longe, mais perto desse corte.
@@ -68,6 +76,10 @@ func _ready() -> void:
 		var player := make_far_voice(RESOURCE_RADIUS + 1)
 		player.name = "Recurso_%d" % i
 		_resource_players.append(player)
+	for i in FIRE_SOURCES:
+		var player := make_far_voice(FIRE_RADIUS + 1)
+		player.name = "Fogueira_%d" % i
+		_fire_players.append(player)
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
@@ -96,6 +108,7 @@ func move_listener(pos: Vector2) -> void:
 		_listener_cell = cell
 		_refresh_ambient(cell)
 		refresh_resources()
+		_refresh_fires()
 
 
 ## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
@@ -278,6 +291,42 @@ func refresh_resources() -> void:
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
 		_resource_cells[cell] = player
+
+
+## As fogueiras acesas mudaram (acendeu, apagou, entrou no mundo).
+func set_lit_fires(cells: Array) -> void:
+	_lit_fires = cells.duplicate()
+	_refresh_fires()
+
+
+## Põe o crepitar das fogueiras acesas mais próximas nas fontes fixas.
+func _refresh_fires() -> void:
+	if _camera == null or _listener_cell == WorldGen.NO_CELL:
+		return
+	var wanted := []
+	for cell: Vector2i in _lit_fires:
+		if (cell - _listener_cell).length_squared() <= FIRE_RADIUS * FIRE_RADIUS:
+			wanted.append(cell)
+	wanted.sort_custom(func(a, b): return (a - _listener_cell).length_squared() < (b - _listener_cell).length_squared())
+	wanted = wanted.slice(0, FIRE_SOURCES)
+	var free: Array[AudioStreamPlayer3D] = _fire_players.duplicate()
+	for cell in _fire_cells.keys():
+		var player: AudioStreamPlayer3D = _fire_cells[cell]
+		if wanted.has(cell):
+			free.erase(player)
+		else:
+			player.stop()
+			_fire_cells.erase(cell)
+	for cell: Vector2i in wanted:
+		if _fire_cells.has(cell) or free.is_empty():
+			continue
+		var stream := Sounds.fire_loop()
+		var player: AudioStreamPlayer3D = free.pop_back()
+		player.stream = stream
+		player.volume_db = FIRE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
+		player.position = cell_to_3d(cell)
+		player.play(randf() * stream.get_length())
+		_fire_cells[cell] = player
 
 
 func _nearest_resources(center: Vector2i) -> Array:
