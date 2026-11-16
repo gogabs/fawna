@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_compass()
 	_test_regions_and_trails()
 	_test_straight_bridges()
+	_test_clear_wide_trails()
 	_test_collect()
 	_test_save_roundtrip()
 	if _failures == 0:
@@ -83,14 +84,14 @@ func _test_world_state_moves() -> void:
 
 func _test_collision() -> void:
 	var world := WorldGen.new(42)
-	var tree := WorldGen.NO_CELL
-	for y in range(-40, 40):
-		for x in range(-40, 40):
-			if tree == WorldGen.NO_CELL and world.thing_at(Vector2i(x, y)) == WorldGen.Thing.ARVORE:
-				tree = Vector2i(x, y)
-	_check(tree != WorldGen.NO_CELL, "deveria haver uma árvore")
-	_check(not world.is_free(WorldGen.cell_center(tree)), "não dá para ficar dentro da árvore")
-	_check(world.blocker_at(WorldGen.cell_center(tree)) == tree, "o obstáculo é a árvore")
+	var bamboo := WorldGen.NO_CELL
+	for y in range(-80, 80):
+		for x in range(-80, 80):
+			if bamboo == WorldGen.NO_CELL and world.thing_at(Vector2i(x, y)) == WorldGen.Thing.BAMBU:
+				bamboo = Vector2i(x, y)
+	_check(bamboo != WorldGen.NO_CELL, "deveria haver uma touceira de bambu")
+	_check(not world.is_free(WorldGen.cell_center(bamboo)), "não dá para ficar dentro do bambu")
+	_check(world.blocker_at(WorldGen.cell_center(bamboo)) == bamboo, "o obstáculo é o bambu")
 	_check(not world.is_free(Vector2(WorldGen.WORLD_LIMIT + 1.1, 5.5)), "o limite do mundo bloqueia")
 	_check(world.is_free(WorldGen.origin_point()), "a Origem é livre")
 	_check(WorldGen.cell_of(Vector2(3.99, 4.0)) == Vector2i(3, 4), "casa de um ponto")
@@ -177,6 +178,39 @@ func _test_straight_bridges() -> void:
 	var there := world.trail_line(Vector2i.ZERO, Vector2i.RIGHT)
 	var back := world.trail_line(Vector2i.RIGHT, Vector2i.ZERO)
 	_check(there[0] == back[back.size() - 1] and back[0] == there[there.size() - 1], "trilha igual nos dois sentidos")
+
+
+## Trilhas largas e limpas: a até 0,8 casa da linha, para os dois lados, é
+## sempre trilha, e nada (bambu, arbusto, argila) nasce em cima nem na
+## beira. E elas curvam pouco: a linha nunca vira de repente.
+func _test_clear_wide_trails() -> void:
+	for world_seed in [7, 42]:
+		var world := WorldGen.new(world_seed)
+		var resources := [WorldGen.Thing.BAMBU, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ARGILA]
+		var checked := 0
+		for ry in range(-2, 2):
+			for rx in range(-2, 2):
+				for d: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+					var line := world.trail_line(Vector2i(rx, ry), Vector2i(rx, ry) + d)
+					for i in range(1, line.size() - 1):
+						var p: Vector2 = line[i]
+						var dir: Vector2 = (line[i + 1] - line[i - 1]).normalized()
+						# Curva suave: entre pontos vizinhos, a direção muda pouco.
+						if line[i].distance_to(line[i - 1]) < WorldGen.TRAIL_STEP * 1.5 and line[i + 1].distance_to(line[i]) < WorldGen.TRAIL_STEP * 1.5:
+							var turn := absf((line[i] - line[i - 1]).angle_to(line[i + 1] - line[i]))
+							_check(turn < deg_to_rad(12.0), "trilha vira de repente em %s (semente %d)" % [p, world_seed])
+						var side := dir.orthogonal()
+						if p.distance_to(WorldGen.origin_point()) < WorldGen.ORIGIN_CLEAR_RADIUS + 2.0:
+							continue  # a clareira da Origem é toda livre
+						for offset in [-0.8, 0.8]:
+							var cell := WorldGen.cell_of(p + side * offset)
+							var thing := world.thing_at(cell)
+							checked += 1
+							_check(thing == WorldGen.Thing.TRILHA or thing == WorldGen.Thing.PONTE, "a 0,8 casa da linha deveria ser trilha em %s, é %s (semente %d)" % [cell, thing, world_seed])
+						for offset in [-2.0, -1.0, 0.0, 1.0, 2.0]:
+							var thing := world.thing_at(WorldGen.cell_of(p + side * offset))
+							_check(not resources.has(thing), "recurso (%s) em cima ou na beira da trilha em %s (semente %d)" % [thing, p + side * offset, world_seed])
+		_check(checked > 1000, "deveria ter conferido bastante trilha (%d)" % checked)
 
 
 func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:

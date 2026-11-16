@@ -61,8 +61,6 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
 		match thing:
 			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO:
 				_cache[key] = _water_loop()
-			WorldGen.Thing.ARVORE:
-				_cache[key] = _tree_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
 			WorldGen.Thing.ORIGEM:
@@ -85,17 +83,6 @@ static func _water_loop() -> AudioStreamWAV:
 			var t := float(i) / RATE
 			var env := sin(PI * i / 1800.0)
 			samples[start + i] += sin(TAU * freq * (1.0 + t * 6.0) * t) * env * 0.18
-	return _to_wav(samples, true)
-
-
-## Árvore: folhas farfalhando, com ondas lentas de vento.
-static func _tree_loop() -> AudioStreamWAV:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 22
-	var count := RATE * 3
-	var samples := _filtered_noise(count, 0.93, 0.5, rng)
-	for i in count:
-		samples[i] *= 0.55 + 0.45 * sin(TAU * float(i) / count)
 	return _to_wav(samples, true)
 
 

@@ -13,7 +13,6 @@ const BIOME_COLORS := {
 	WorldGen.Biome.LAGOA: Color("4f7f6a"),
 }
 const THING_COLORS := {
-	WorldGen.Thing.ARVORE: Color("1d2e1f"),
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
 	WorldGen.Thing.LAGO: Color("2f65b5"),
 	WorldGen.Thing.TRILHA: Color("a07a4f"),
