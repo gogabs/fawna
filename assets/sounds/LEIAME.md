@@ -47,8 +47,10 @@ do Gabs (2026-11-14).
 
 `caminheiro/batida.ogg` é a batida do Caminheiro: um coração ouvido de dentro,
 duas pancadas graves de tambor abafado, com passa-baixa forte e um reverb
-curto e escuro já aplicados no arquivo. Gerado por `tools/som_caminheiro.py`
-(som do próprio projeto).
+curto e escuro já aplicados no arquivo. `caminheiro/camada.ogg` é o brilho de
+cristal que soa por cima da batida quando a criatura está de frente para o
+cristal. Os dois são gerados por `tools/som_caminheiro.py` (sons do próprio
+projeto).
 
 ## Pássaros (passaros/)
 
