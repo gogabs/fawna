@@ -29,12 +29,28 @@ func _check(condition: bool, message: String) -> void:
 		printerr("FALHOU: " + message)
 
 
-## Uma semente e um ponto com bosque, para os testes terem árvores.
+## Um ponto de bosque com poleiros por perto: o meio de um pedaço da orla do
+## bosque, onde ficam os arbustos (o miolo do bosque quase não tem poleiros).
 func _forest_point(world: WorldGen) -> Vector2:
+	var chunks := WorldGen.REGION_SIZE / WorldGen.CHUNK
 	for r in range(1, 40):
 		for region in [Vector2i(r, 0), Vector2i(-r, 0), Vector2i(0, r), Vector2i(0, -r)]:
-			if world.region_biome(region) == WorldGen.Biome.BOSQUE:
-				return world.region_landmark(region)
+			if world.region_biome(region) != WorldGen.Biome.BOSQUE:
+				continue
+			var first: Vector2i = region * WorldGen.REGION_SIZE - Vector2i.ONE * (WorldGen.REGION_SIZE / 2)
+			for cy in chunks:
+				for cx in chunks:
+					var origin := first + Vector2i(cx, cy) * WorldGen.CHUNK
+					var middle := origin + Vector2i.ONE * (WorldGen.CHUNK / 2)
+					if world.biome_at(middle) != WorldGen.Biome.BOSQUE:
+						continue
+					var bushes := 0
+					for y in WorldGen.CHUNK:
+						for x in WorldGen.CHUNK:
+							if world.thing_at(origin + Vector2i(x, y)) == WorldGen.Thing.ARBUSTO:
+								bushes += 1
+					if bushes >= 8:
+						return WorldGen.cell_center(middle)
 	return Vector2.ZERO
 
 

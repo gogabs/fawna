@@ -21,7 +21,7 @@ enum Species { SABIA, CARRICA, ROLINHA, CORVO, CORUJA, GAVIAO, PERIQUITO }
 const SPECIES := {
 	Species.SABIA: {
 		"name": "sabiá-da-névoa",
-		"perches": [WorldGen.Thing.BAMBU],
+		"perches": [WorldGen.Thing.ARBUSTO, WorldGen.Thing.BAMBU],
 		"group": [1, 1],
 		"song_every": [7.0, 18.0],  # entre um canto e outro
 		"stay": [25.0, 70.0],  # tempo num poleiro antes de mudar
@@ -127,6 +127,7 @@ const SPAWNS := {
 	WorldGen.Biome.BOSQUE: [[Species.SABIA, 0.55, 1], [Species.CARRICA, 0.15, 1], [Species.CORVO, 0.15, 1], [Species.CORUJA, 0.15, 1]],
 	WorldGen.Biome.PRADARIA: [[Species.CARRICA, 0.4, 1], [Species.SABIA, 0.1, 1], [Species.CORVO, 0.1, 1], [Species.GAVIAO, 0.12, 1]],
 	WorldGen.Biome.LAGOA: [[Species.ROLINHA, 0.7, 1], [Species.CARRICA, 0.25, 1], [Species.PERIQUITO, 0.3, 1]],
+	WorldGen.Biome.BAMBUZAL: [[Species.SABIA, 0.3, 1], [Species.CARRICA, 0.3, 1], [Species.PERIQUITO, 0.2, 1]],
 }
 
 const CHUNK := WorldGen.CHUNK

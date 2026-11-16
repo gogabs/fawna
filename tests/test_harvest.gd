@@ -10,6 +10,7 @@ var _failures := 0
 
 func _init() -> void:
 	_test_placement()
+	_test_edges_and_water()
 	_test_bamboo_needs_strikes()
 	_test_direct_collect_and_regrow()
 	_test_strike_memory()
@@ -88,6 +89,53 @@ func _test_placement() -> void:
 	for y in range(-60, 60):
 		for x in range(-60, 60):
 			_check(a.thing_at(Vector2i(x, y)) == b.thing_at(Vector2i(x, y)), "mesma semente, mesmos recursos")
+
+
+## Cada recurso no seu lugar: arbustos quase todos na orla entre bosque e
+## campo, e bambu só no bambuzal (mais cheio na orla dele) ou na beira da água.
+func _test_edges_and_water() -> void:
+	var forest := WorldGen.FOREST_BIOMES
+	var open := WorldGen.OPEN_BIOMES
+	for world_seed in [1, 42]:
+		var world := WorldGen.new(world_seed)
+		var bushes := 0
+		var edge_bushes := 0
+		var bamboo := 0
+		var grove := {"orla": 0, "miolo": 0, "casas_orla": 0, "casas_miolo": 0}
+		for y in range(-SEARCH, SEARCH):
+			for x in range(-SEARCH, SEARCH):
+				var cell := Vector2i(x, y)
+				var thing := world.thing_at(cell)
+				var biome := world.biome_at(cell)
+				if thing == WorldGen.Thing.ARBUSTO or thing == WorldGen.Thing.ARBUSTO_FRUTAS:
+					bushes += 1
+					var other := open if forest.has(biome) else forest
+					if _biome_within(world, cell, other, 4):
+						edge_bushes += 1
+				if biome == WorldGen.Biome.BAMBUZAL:
+					var where := "orla" if _biome_within(world, cell, [WorldGen.Biome.BOSQUE, WorldGen.Biome.PRADARIA, WorldGen.Biome.LAGOA], 4) else "miolo"
+					grove["casas_" + where] += 1
+					if thing == WorldGen.Thing.BAMBU:
+						grove[where] += 1
+				elif thing == WorldGen.Thing.BAMBU:
+					bamboo += 1
+					_check(_water_within(world, cell, 7), "bambu fora do bambuzal deveria estar na beira da água, em %s (semente %d)" % [cell, world_seed])
+				_check(not (biome == WorldGen.Biome.BAMBUZAL and thing == WorldGen.Thing.ARBUSTO), "bambuzal não tem arbustos")
+		print("[lugares] semente %d: %d de %d arbustos na orla, %d bambus na água, bambuzal %s" % [world_seed, edge_bushes, bushes, bamboo, grove])
+		_check(edge_bushes > bushes * 0.75, "a maioria dos arbustos deveria estar na orla do bosque (%d de %d)" % [edge_bushes, bushes])
+		_check(bamboo > 0, "deveria haver bambu na beira da água (semente %d)" % world_seed)
+		_check(grove["orla"] > 0 and grove["miolo"] > 0, "o bambuzal deveria ter bambu na orla e no miolo (semente %d)" % world_seed)
+		var edge_rate := float(grove["orla"]) / maxi(1, grove["casas_orla"])
+		var inside_rate := float(grove["miolo"]) / maxi(1, grove["casas_miolo"])
+		_check(edge_rate > inside_rate * 2.0, "a orla do bambuzal deveria ser bem mais cheia que o miolo (%.3f contra %.3f)" % [edge_rate, inside_rate])
+
+
+func _biome_within(world: WorldGen, cell: Vector2i, biomes: Array, r: int) -> bool:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if biomes.has(world.biome_at(cell + Vector2i(dx, dy))):
+				return true
+	return false
 
 
 func _test_bamboo_needs_strikes() -> void:

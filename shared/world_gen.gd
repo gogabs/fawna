@@ -7,13 +7,14 @@ extends RefCounted
 ## jogadores mudaram; o resto é recalculado.
 ##
 ## O mundo é dividido em regiões grandes (REGION_SIZE casas de lado), cada uma
-## com uma única característica: bosque, pradaria ou lagoa. Dentro delas, as
-## coisas são espalhadas de forma procedural, e só são calculadas quando
+## com uma única característica: bosque, pradaria, lagoa ou bambuzal. Dentro
+## delas, as coisas nascem em lugares que fazem sentido (arbustos na orla do
+## bosque, bambu na orla do bambuzal e na beira da água), e só são calculadas quando
 ## alguém chega perto (em pedaços de CHUNK casas, guardados em cache). Cada
 ## região tem um ponto de encontro, e trilhas de terra ligam os pontos das
 ## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
 
-enum Biome { BOSQUE, PRADARIA, LAGOA }
+enum Biome { BOSQUE, PRADARIA, LAGOA, BAMBUZAL }
 enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS }
 
 const REGION_SIZE := 48  # casas (72 m)
@@ -39,6 +40,7 @@ const BIOME_NAMES := {
 	Biome.BOSQUE: "bosque de micélio",
 	Biome.PRADARIA: "pradaria de girassóis",
 	Biome.LAGOA: "lagoa das vitórias-régias",
+	Biome.BAMBUZAL: "bambuzal",
 }
 
 ## Com preposição, para frases como "Você está no bosque".
@@ -46,6 +48,7 @@ const BIOME_IN := {
 	Biome.BOSQUE: "no bosque de micélio",
 	Biome.PRADARIA: "na pradaria de girassóis",
 	Biome.LAGOA: "na lagoa das vitórias-régias",
+	Biome.BAMBUZAL: "no bambuzal",
 }
 
 const THING_NAMES := {
@@ -72,18 +75,51 @@ const METERS_PER_CELL := 1.5
 const PLAYER_RADIUS := 0.3  # casas
 const NO_CELL := Vector2i(-9999999, -9999999)
 
-## Quanto de cada região é de cada tipo, e o que nasce em cada uma
-## (chance por casa, em faixas: [coisa, chance], na ordem em que são
-## sorteadas). Recursos coletáveis (shared/harvest.gd): touceiras de bambu,
-## argila na beira da água e arbustos, que dão gravetos para lenha ou, raros,
-## frutas. A última faixa de arbustos é onde antes ficavam os gravetos soltos
-## no chão. Não há árvores: o mundo é de bambu e arbustos.
-const BIOME_WEIGHTS := {Biome.BOSQUE: 0.45, Biome.PRADARIA: 0.4, Biome.LAGOA: 0.15}
-const DENSITY := {
-	Biome.BOSQUE: [[Thing.ARBUSTO, 0.012], [Thing.BAMBU, 0.01], [Thing.ARBUSTO, 0.025]],
-	Biome.PRADARIA: [[Thing.ARBUSTO, 0.03], [Thing.BAMBU, 0.002], [Thing.ARBUSTO, 0.004]],
-	Biome.LAGOA: [[Thing.ARBUSTO, 0.02], [Thing.BAMBU, 0.012], [Thing.ARBUSTO, 0.006]],
-}
+## Quanto de cada região é de cada tipo.
+const BIOME_WEIGHTS := {Biome.BOSQUE: 0.4, Biome.PRADARIA: 0.37, Biome.LAGOA: 0.14, Biome.BAMBUZAL: 0.09}
+
+## Onde nascem os recursos coletáveis (shared/harvest.gd). Em vez de espalhados
+## por igual, cada um tem o seu lugar, para dar para aprender onde procurar:
+##
+## - Arbustos (gravetos para lenha ou, raros, frutas) crescem na orla: a faixa
+##   em que um bioma fechado (FOREST_BIOMES) encosta num aberto (OPEN_BIOMES).
+##   Mais cheios do lado de dentro da mata, e ainda alguns passos campo adentro.
+##   Longe da orla só há um ou outro arbusto perdido.
+## - Bambu cresce em dois lugares: no bambuzal, com as touceiras fechando a orla
+##   e mais ralas no miolo (para dar para andar lá dentro), e na beira da água,
+##   em moitas ao longo das margens das lagoas e dos riachos.
+##
+## Biomas novos só precisam entrar em FOREST_BIOMES ou OPEN_BIOMES para ganhar
+## a orla de arbustos.
+const FOREST_BIOMES := [Biome.BOSQUE]
+const OPEN_BIOMES := [Biome.PRADARIA, Biome.LAGOA]
+## Até quantas casas da divisa entre biomas a orla é procurada.
+const EDGE_REACH := 4
+## Orla do lado da mata: BUSH_FOREST_BAND casas, de BUSH_EDGE_CHANCE (por casa)
+## bem na divisa até BUSH_EDGE_FADE no fim da faixa.
+const BUSH_FOREST_BAND := 4.0
+const BUSH_EDGE_CHANCE := 0.25
+const BUSH_EDGE_FADE := 0.09
+## Orla do lado do campo: mais estreita e mais rala.
+const BUSH_OPEN_BAND := 2.0
+const BUSH_OPEN_EDGE_CHANCE := 0.12
+## Arbustos perdidos, longe de qualquer orla.
+const BUSH_STRAY_CHANCE := {Biome.BOSQUE: 0.002, Biome.PRADARIA: 0.004, Biome.LAGOA: 0.004}
+## Bambuzal: orla de BAMBOO_BAND casas, de BAMBOO_EDGE_CHANCE na divisa até
+## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE.
+const BAMBOO_BAND := 4.0
+const BAMBOO_EDGE_CHANCE := 0.16
+const BAMBOO_EDGE_FADE := 0.07
+const BAMBOO_INSIDE_CHANCE := 0.025
+## Bambu na beira da água: só onde o ruído das moitas deixa (mais ou menos
+## metade das margens), para formar moitas com espaços entre elas. Na lagoa, de
+## BAMBOO_LAKE_FROM a BAMBOO_LAKE_TO casas além da margem (a argila fica mais
+## perto da água); no riacho, até BAMBOO_STREAM_BANK no ruído dos riachos.
+const BAMBOO_WATER_CHANCE := 0.11
+const BAMBOO_LAKE_FROM := 1.0
+const BAMBOO_LAKE_TO := 4.5
+const BAMBOO_STREAM_BANK := 0.05
+const BAMBOO_GROVE_FREQUENCY := 0.06
 ## Fração dos arbustos que dá frutas em vez de gravetos: são raros (uns poucos
 ## por região).
 const FRUIT_BUSH_CHANCE := 0.07
@@ -107,6 +143,7 @@ var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões
 var _trail_noise := FastNoiseLite.new()  # curva as trilhas, devagar
 var _stream_noise := FastNoiseLite.new()  # riachos finos entre regiões
 var _lake_noise := FastNoiseLite.new()  # margem ondulada das lagoas
+var _grove_noise := FastNoiseLite.new()  # moitas de bambu na beira da água
 var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada casa]
 var _regions := {}  # Vector2i (região) -> Biome
 var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
@@ -127,6 +164,9 @@ func _init(new_seed: int) -> void:
 	_stream_noise.fractal_type = FastNoiseLite.FRACTAL_NONE  # riachos longos e suaves
 	_lake_noise.seed = new_seed + 104729
 	_lake_noise.frequency = 0.15
+	_grove_noise.seed = new_seed + 15485863
+	_grove_noise.frequency = BAMBOO_GROVE_FREQUENCY
+	_grove_noise.fractal_type = FastNoiseLite.FRACTAL_NONE
 
 
 static func center() -> Vector2i:
@@ -235,15 +275,16 @@ func _generate_chunk(chunk: Vector2i) -> Array:
 	var origin := chunk * CHUNK
 	var segments := _segments_near(origin + Vector2i.ONE * (CHUNK / 2))
 	var trails := _trail_mask(origin, segments)
+	var around := _biomes_around(origin)
 	for y in CHUNK:
 		for x in CHUNK:
 			var cell := origin + Vector2i(x, y)
-			things[y * CHUNK + x] = _compute_thing(cell, trails[y * CHUNK + x])
-			biomes[y * CHUNK + x] = region_biome(region_of(cell))
+			things[y * CHUNK + x] = _compute_thing(cell, trails[y * CHUNK + x], around, x, y)
+			biomes[y * CHUNK + x] = around[(y + EDGE_REACH) * AROUND_SIDE + x + EDGE_REACH]
 	return [things, biomes]
 
 
-func _compute_thing(cell: Vector2i, trail: int) -> Thing:
+func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int, y: int) -> Thing:
 	if cell == center():
 		return Thing.ORIGEM
 	var p := cell_center(cell)
@@ -262,20 +303,105 @@ func _compute_thing(cell: Vector2i, trail: int) -> Thing:
 	if trail != 0:
 		return Thing.NADA
 	var roll := _random([cell.x, cell.y])
-	var total := 0.0
-	for band: Array in DENSITY[biome]:
-		var thing: Thing = band[0]
-		total += float(band[1])
-		if roll < total:
-			if thing == Thing.ARBUSTO and cell_random(cell, "fruta") < FRUIT_BUSH_CHANCE:
-				return Thing.ARBUSTO_FRUTAS
-			return thing
+	var bamboo := _bamboo_chance(cell, region, biome, around, x, y)
+	if roll < bamboo:
+		return Thing.BAMBU
+	if roll < bamboo + _bush_chance(biome, around, x, y):
+		if cell_random(cell, "fruta") < FRUIT_BUSH_CHANCE:
+			return Thing.ARBUSTO_FRUTAS
+		return Thing.ARBUSTO
 	if _is_clay(cell, region, biome):
 		return Thing.ARGILA
 	var stone_chance := STONE_WATER_CHANCE if is_waterside(cell) else STONE_CHANCE
 	if cell_random(cell, "pedra") < stone_chance:
 		return Thing.PEDRAS
 	return Thing.NADA
+
+
+# --- Orlas: onde nascem arbustos e bambu ---------------------------------------
+
+const AROUND_SIDE := CHUNK + 2 * EDGE_REACH
+static var _edge_offsets: Array[Vector2i] = []  # vizinhas até EDGE_REACH, da mais perto à mais longe
+
+
+## Bioma de cada casa do pedaço e de uma moldura de EDGE_REACH casas em volta
+## dele: é o que _edge_distance consulta, sem refazer a conta a cada casa.
+func _biomes_around(origin: Vector2i) -> PackedByteArray:
+	var around := PackedByteArray()
+	around.resize(AROUND_SIDE * AROUND_SIDE)
+	for y in AROUND_SIDE:
+		for x in AROUND_SIDE:
+			around[y * AROUND_SIDE + x] = region_biome(region_of(origin + Vector2i(x - EDGE_REACH, y - EDGE_REACH)))
+	return around
+
+
+## Distância (em casas) da casa (x, y) do pedaço até a casa mais próxima cujo
+## bioma está em "kinds" (ou, com "outside", fora de "kinds"). INF se não há
+## nenhuma a até EDGE_REACH casas: a casa está longe da orla.
+static func _edge_distance(around: PackedByteArray, x: int, y: int, kinds: Array, outside := false) -> float:
+	if _edge_offsets.is_empty():
+		for dy in range(-EDGE_REACH, EDGE_REACH + 1):
+			for dx in range(-EDGE_REACH, EDGE_REACH + 1):
+				if (dx != 0 or dy != 0) and dx * dx + dy * dy <= EDGE_REACH * EDGE_REACH:
+					_edge_offsets.append(Vector2i(dx, dy))
+		_edge_offsets.sort_custom(func(a: Vector2i, b: Vector2i): return a.length_squared() < b.length_squared())
+	var base := (y + EDGE_REACH) * AROUND_SIDE + x + EDGE_REACH
+	# Atalho: quase todas as casas ficam longe de qualquer divisa. Se as oito
+	# pontas da vizinhança têm o bioma daqui, não há orla por perto.
+	var here := around[base]
+	var uniform := true
+	for far: int in [EDGE_REACH, -EDGE_REACH, EDGE_REACH * AROUND_SIDE, -EDGE_REACH * AROUND_SIDE,
+			3 * AROUND_SIDE + 3, 3 * AROUND_SIDE - 3, -3 * AROUND_SIDE + 3, -3 * AROUND_SIDE - 3]:
+		if around[base + far] != here:
+			uniform = false
+			break
+	if uniform:
+		return INF
+	for offset in _edge_offsets:
+		if kinds.has(around[base + offset.y * AROUND_SIDE + offset.x]) != outside:
+			return offset.length()
+	return INF
+
+
+## Chance de um arbusto nascer na casa: alta na orla entre mata e campo, quase
+## nenhuma longe dela.
+func _bush_chance(biome: Biome, around: PackedByteArray, x: int, y: int) -> float:
+	if FOREST_BIOMES.has(biome):
+		var distance := _edge_distance(around, x, y, OPEN_BIOMES)
+		if distance <= BUSH_FOREST_BAND:
+			return lerpf(BUSH_EDGE_CHANCE, BUSH_EDGE_FADE, (distance - 1.0) / (BUSH_FOREST_BAND - 1.0))
+	elif OPEN_BIOMES.has(biome):
+		if _edge_distance(around, x, y, FOREST_BIOMES) <= BUSH_OPEN_BAND:
+			return BUSH_OPEN_EDGE_CHANCE
+	return BUSH_STRAY_CHANCE.get(biome, 0.0)
+
+
+## Chance de uma touceira de bambu nascer na casa: na orla e no miolo do
+## bambuzal, e em moitas na beira das lagoas e dos riachos.
+func _bamboo_chance(cell: Vector2i, region: Vector2i, biome: Biome, around: PackedByteArray, x: int, y: int) -> float:
+	if biome == Biome.BAMBUZAL:
+		var distance := _edge_distance(around, x, y, [Biome.BAMBUZAL], true)
+		if distance <= BAMBOO_BAND:
+			return lerpf(BAMBOO_EDGE_CHANCE, BAMBOO_EDGE_FADE, (distance - 1.0) / (BAMBOO_BAND - 1.0))
+		return BAMBOO_INSIDE_CHANCE
+	if _grove_noise.get_noise_2d(cell.x, cell.y) < 0.0:
+		return 0.0
+	if biome == Biome.LAGOA:
+		var shore := _lake_shore(cell, region)
+		if shore >= BAMBOO_LAKE_FROM and shore < BAMBOO_LAKE_TO:
+			return BAMBOO_WATER_CHANCE
+	if cell_center(cell).distance_to(origin_point()) >= ORIGIN_DRY_RADIUS \
+			and absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < BAMBOO_STREAM_BANK:
+		return BAMBOO_WATER_CHANCE
+	return 0.0
+
+
+## Quantas casas a casa está além da margem da lagoa da região (negativo:
+## dentro da água).
+func _lake_shore(cell: Vector2i, region: Vector2i) -> float:
+	var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
+	var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
+	return cell_center(cell).distance_to(lake_center) - radius
 
 
 ## A casa fica perto de um riacho ou da margem de uma lagoa? (As pedras daqui

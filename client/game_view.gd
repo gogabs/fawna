@@ -11,6 +11,7 @@ const BIOME_COLORS := {
 	WorldGen.Biome.BOSQUE: Color("2f4a3a"),
 	WorldGen.Biome.PRADARIA: Color("8a9a3c"),
 	WorldGen.Biome.LAGOA: Color("4f7f6a"),
+	WorldGen.Biome.BAMBUZAL: Color("6f8f4a"),
 }
 const THING_COLORS := {
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
