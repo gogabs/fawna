@@ -7,6 +7,8 @@ extends Node
 ## pelas trilhas, estradas e pontes). Enquanto está aceso:
 ##   - o beacon atual bate como um coração, um tambor bem abafado que vem da
 ##     direção dele, a 70 batidas por minuto;
+##   - de frente para ele, a batida ganha uma camada de brilho de cristal por
+##     cima; fora de frente, a batida soa um pouco mais baixa;
 ##   - ao chegar num beacon, um woosh sai de perto da criatura e voa na
 ##     direção do próximo, e as batidas recomeçam de lá;
 ##   - no destino, o cristal se apaga.
@@ -21,6 +23,12 @@ const OFF_ROUTE_DISTANCE := 9.0  # casas longe da rota: traça de novo
 const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com a distância), na direção do beacon
 const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
 const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
+const BEAT_AWAY_DB := -3.0  # fora de frente, a batida cai de leve
+const LAYER_DB := -17.0  # camada de cristal, bem baixinha: só uma cor por cima da batida, de frente
+## De frente: o beacon está a no máximo isto do rumo para onde a criatura
+## olha. A criatura gira de 45 em 45 graus, então metade do giro (22,5°) é a
+## menor tolerância que sempre deixa um rumo de frente: é o rumo certo dos 8.
+const FACING_TOLERANCE_DEG := 22.5
 const WOOSH_DB := -8.0
 const WOOSH_FROM := 0.6  # casas à frente da criatura, rumo ao próximo beacon
 const WOOSH_TO := 7.0
@@ -40,6 +48,9 @@ var _beat_timer := 0.0
 ## dura mais que o intervalo, e reiniciar a mesma fonte cortaria a cauda.
 var _beat_players: Array[AudioStreamPlayer3D] = []
 var _next_beat := 0
+## A camada de cristal, também em rodízio, na mesma posição da batida.
+var _layer_players: Array[AudioStreamPlayer3D] = []
+var _forward := Vector2.ZERO  # para onde a criatura olha (zero: não se sabe)
 var _woosh_player: AudioStreamPlayer3D
 var _woosh_tween: Tween
 
@@ -57,6 +68,14 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 				player.name = "Caminheiro_batida_%d" % i
 				player.stream = Sounds.heartbeat()
 				_beat_players.append(player)
+		var layer_stream := Sounds.heartbeat_layer()
+		if layer_stream != null:
+			for i in 2:
+				var player := audio.make_far_voice(BEAT_DISTANCE + 6.0)
+				if player != null:
+					player.name = "Caminheiro_camada_%d" % i
+					player.stream = layer_stream
+					_layer_players.append(player)
 		_woosh_player = audio.make_far_voice(WOOSH_TO + 6.0)
 		if _woosh_player != null:
 			_woosh_player.name = "Caminheiro_woosh"
@@ -79,7 +98,7 @@ func start(from: Vector2, destination: Vector2, new_place_name: String) -> bool:
 func stop() -> void:
 	active = false
 	_beacon = null
-	for player in _beat_players:
+	for player in _beat_players + _layer_players:
 		player.stop()
 
 
@@ -97,8 +116,11 @@ func current_beacon() -> Variant:
 	return _beacon
 
 
-## Chamado a cada quadro com a posição da criatura.
-func update(pos: Vector2, delta: float) -> void:
+## Chamado a cada quadro com a posição da criatura e para onde ela olha
+## (Compass.forward). Sem a direção, a batida soa sempre como de frente,
+## sem a camada.
+func update(pos: Vector2, delta: float, forward := Vector2.ZERO) -> void:
+	_forward = forward
 	if not active or _beacon == null:
 		return
 	_skip_ahead(pos)
@@ -162,13 +184,30 @@ func _replan(pos: Vector2) -> void:
 func _beat(pos: Vector2, beacon: Vector2) -> void:
 	if _beat_players.is_empty():
 		return
-	var player := _beat_players[_next_beat]
+	var index := _next_beat
 	_next_beat = (_next_beat + 1) % _beat_players.size()
 	var direction := (beacon - pos).normalized()
-	player.position = SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
-	player.volume_db = BEAT_DB + _gain()
+	var where := SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
+	var facing := is_facing(pos, beacon, _forward)
+	var player := _beat_players[index]
+	player.position = where
+	player.volume_db = BEAT_DB + _gain() + (0.0 if facing or _forward == Vector2.ZERO else BEAT_AWAY_DB)
 	player.stop()
 	player.play()
+	if facing and index < _layer_players.size():
+		var layer := _layer_players[index]
+		layer.position = where
+		layer.volume_db = LAYER_DB + _gain()
+		layer.stop()
+		layer.play()
+
+
+## A criatura, olhando para forward, está de frente para o beacon?
+static func is_facing(pos: Vector2, beacon: Vector2, forward: Vector2) -> bool:
+	if forward == Vector2.ZERO or pos.distance_to(beacon) < 0.001:
+		return false
+	var off := absf(forward.angle_to(beacon - pos))
+	return off <= deg_to_rad(FACING_TOLERANCE_DEG) + 0.0001
 
 
 ## O woosh sai de perto da criatura e voa rumo ao próximo beacon.
