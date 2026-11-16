@@ -47,7 +47,6 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
 | Para onde estou olhando | F |
 | Coletar | Espaço |
-| O que há na bolsa e nas mãos | I |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
 | Ouvir os arredores | Tab (toque curto) |
@@ -108,7 +107,9 @@ curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
 vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
 beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
 Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
-novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
+novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
+um destino, o foco do menu fica onde está; escolher de novo o destino aceso
+apaga o cristal.
 
 ## Como se joga (por enquanto)
 

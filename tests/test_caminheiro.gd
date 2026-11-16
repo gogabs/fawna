@@ -14,6 +14,7 @@ func _ready() -> void:
 	_test_menu()
 	_test_resources()
 	_test_contract()
+	_test_menu_stay()
 	_test_facing()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
@@ -172,6 +173,32 @@ func _test_resources() -> void:
 	harvest.take(stones)
 	var next: Vector2i = GameScript.nearest_collectable(world, harvest, start, [WorldGen.Thing.PEDRAS], 72)
 	_check(next != stones, "pedras recolhidas não são destino")
+
+
+## Destinos com "stay": o foco fica no lugar depois de escolher, e as opções
+## de cima são recarregadas ao voltar (aparece "Apagar o cristal").
+func _test_menu_stay() -> void:
+	var lit := [""]
+	var targets := func() -> Array:
+		return [
+			{"label": "Bambu", "run": func(): lit[0] = "" if lit[0] == "Bambu" else "Bambu"; return "bambu " + lit[0], "stay": true},
+			{"label": "Pedras", "run": func(): lit[0] = "" if lit[0] == "Pedras" else "Pedras"; return "pedras " + lit[0], "stay": true},
+		]
+	var root := func() -> Array:
+		return [{"label": "Caminheiro", "open": func() -> Array:
+			var items := [{"label": "Recursos", "open": targets}]
+			if lit[0] != "":
+				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = ""; return "apagou"})
+			return items}]
+	var menu := FloatingMenu.new(root)
+	menu.press("cima")
+	menu.press("cima")
+	menu.press("direita")
+	_check(menu.press("cima") == "pedras Pedras" and menu.depth() == 3, "escolher um recurso deixa o foco no lugar")
+	_check(menu.current_label() == "Pedras", "o foco continua em Pedras")
+	_check(menu.press("cima") == "pedras " and lit[0] == "", "escolher de novo o mesmo destino apaga")
+	menu.press("cima")
+	_check(menu.press("baixo") == "Recursos, 1 de 2", "voltando, o nível de cima é recarregado com Apagar o cristal")
 
 
 func _test_contract() -> void:

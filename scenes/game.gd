@@ -210,8 +210,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action("interagir"):
 		_interact()
-	elif event.is_action("inventario"):
-		_say_inventory()
 	elif event.is_action("golpear"):
 		_swing()
 	elif event.is_action("ajuda"):
@@ -855,7 +853,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. I: o que há na bolsa e nas mãos. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1122,13 +1120,13 @@ func _caminheiro_items() -> Array:
 ## um marco construído (Builds.marked_regions(), da fabricação). A Origem
 ## continua sempre.
 func _caminheiro_places() -> Array:
-	return [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem")}]
+	return [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem"), "stay": true}]
 
 
 func _caminheiro_resources() -> Array:
 	var items := []
 	for entry: Array in CAMINHEIRO_RESOURCES:
-		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2])})
+		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 	return items
 
 
@@ -1182,7 +1180,10 @@ static func resource_destination(the_world: WorldGen, cell: Vector2i, from: Vect
 
 ## place vem com artigo ("a Origem", "o bambu"), para a fala juntar direito.
 ## resource: a casa do recurso, quando o destino é um recurso.
+## Escolher de novo o destino que já está aceso apaga o cristal.
 func _track(destination: Vector2, place: String, resource := WorldGen.NO_CELL) -> String:
+	if _caminheiro.active and _caminheiro.place_name == place:
+		return _stop_tracking()
 	_tracked_resource = resource
 	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
 		_caminheiro.stop()
