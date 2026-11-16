@@ -79,6 +79,7 @@ var _save_timer := 0.0
 # Lado do cliente (inclusive quem hospeda)
 var world: WorldGen
 var my_id := 0
+var _server_version := ""  # vem do servidor ao entrar; vazio: servidor antigo, que não manda
 var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
@@ -225,6 +226,7 @@ func request_join(player_name: String) -> void:
 	var pos := state.add_player(id, player_name)
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
+	server_version.rpc_id(id, Updater.current_version())
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	harvest_snapshot.rpc_id(id, state.harvest.snapshot())
@@ -278,8 +280,7 @@ func request_strike(cell: Vector2i) -> void:
 	if result["ok"]:
 		_dirty = true
 		resource_changed.rpc(cell, state.harvest.info(cell), "queda" if result["felled"] else "golpe", id)
-	elif state.players.has(id) and result["reason"] in ["caido", "colhido"]:
-		action_failed.rpc_id(id, "bambu_" + result["reason"], "")
+	# Golpe em bambu já caído ou já recolhido: só o som do machado, sem fala.
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -332,6 +333,24 @@ func _tell_others_handled(id: int, verb: String) -> void:
 
 # --- Rede: avisos do servidor (executados nos clientes) ----------------------
 
+## Versão do servidor, mandada logo antes do welcome. Servidor e jogo em
+## versões diferentes geram mundos diferentes (ex.: o jogo acha um arbusto com
+## gravetos onde o servidor não vê nada para coletar), então quem joga é
+## avisado. Servidor anterior à 0.5.1 não manda a versão: o aviso sai igual.
+@rpc("authority", "call_local", "reliable")
+func server_version(version: String) -> void:
+	_server_version = version
+
+
+func _warn_version_mismatch() -> void:
+	var mine := Updater.current_version()
+	if _server_version == mine or multiplayer.is_server():
+		return
+	var theirs := _server_version if not _server_version.is_empty() else "anterior à %s" % mine
+	print("[rede] servidor na versão %s, jogo na %s" % [theirs, mine])
+	Speech.say("Atenção: o servidor está numa versão diferente da sua (servidor %s, jogo %s). Coletar e outras ações podem falhar até o servidor ser atualizado." % [theirs, mine], false)
+
+
 @rpc("authority", "call_local", "reliable")
 func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) -> void:
 	my_id = multiplayer.get_unique_id()
@@ -358,6 +377,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 		"Há mais %d criatura%s no mundo." % [others, "" if others == 1 else "s"]
 	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte H para ouvir os comandos." % [
 		me["name"], Narrator.where_am_i(world, _pos, _heading), company])
+	_warn_version_mismatch()
 	_run_auto_commands()
 
 
@@ -383,9 +403,6 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 		"golpe":
 			if near:
 				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
-			if by_id == my_id:
-				var left := harvest.hits_left(cell)
-				Speech.say("Falta 1 golpe." if left == 1 else "Faltam %d golpes." % left, false)
 		"queda":
 			if near:
 				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
@@ -439,20 +456,8 @@ func action_failed(reason: String, detail: String) -> void:
 	if world == null:
 		return
 	match reason:
-		"nada":
-			Speech.say("Não há nada para coletar aqui. Chegue bem perto de um arbusto, de argila ou de um bambu derrubado.")
 		"golpear":
-			var left := int(detail)
-			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J: falta%s %s." % [
-				"" if left == 1 else "m", "1 golpe" if left == 1 else "%d golpes" % left])
-		"colhido" when detail == "bambu":
-			action_failed("bambu_colhido", "")
-		"colhido":
-			Speech.say("Já colheram %s aqui. Volta com o tempo." % (Economy.ITEM_NAMES[detail][1] if Economy.ITEM_NAMES.has(detail) else "tudo"))
-		"bambu_caido":
-			Speech.say("Este bambu já caiu. Aperte Espaço para recolher.")
-		"bambu_colhido":
-			Speech.say("Só restam os tocos deste bambu. Ele rebrota com o tempo.")
+			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.ITEM_NAMES[detail][1])
 		"nao_tem":
@@ -462,7 +467,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"maos_livres":
 			Speech.say("Suas mãos já estão livres.")
 		_:
-			pass  # "devagar", "longe": ignora em silêncio
+			pass  # "nada", "colhido", "devagar", "longe": ignora em silêncio
 
 
 @rpc("authority", "call_local", "reliable")
@@ -539,7 +544,7 @@ func _load_or_create_world() -> void:
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
 	birds.start_server(state.world)
-	print("[servidor] mundo único no ar, porta %d, semente %d" % [Net.port, state.world.world_seed])
+	print("[servidor] mundo único no ar, versão %s, porta %d, semente %d" % [Updater.current_version(), Net.port, state.world.world_seed])
 	_dirty = true
 	_save_world()
 
@@ -761,8 +766,6 @@ func _interact() -> void:
 	var target := _collect_target()
 	if target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
-	else:
-		action_failed("nada", "")
 
 
 ## O recurso que o Espaço recolhe: o mais perto, com preferência para o que
