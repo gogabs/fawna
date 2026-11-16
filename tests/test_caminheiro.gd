@@ -12,6 +12,7 @@ func _ready() -> void:
 	_test_walk_following_beacons()
 	_test_replan_when_lost()
 	_test_menu()
+	_test_facing()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -142,3 +143,21 @@ func _walk(world: WorldGen, pos: Vector2, motion: Vector2) -> Vector2:
 		if world.is_free(pos + part):
 			pos += part
 	return pos
+
+
+## De frente: o beacon a no máximo 22,5° do rumo para onde a criatura olha,
+## então sempre há um dos 8 rumos de frente para ele.
+func _test_facing() -> void:
+	var pos := Vector2(10, 10)
+	_check(Caminheiro.is_facing(pos, pos + Vector2(0, -5), Compass.forward(0)), "beacon ao norte, olhando ao norte: de frente")
+	_check(Caminheiro.is_facing(pos, pos + Vector2(1, -5), Compass.forward(0)), "beacon 11° a leste do norte: de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(3, -5), Compass.forward(0)), "beacon 31° a leste do norte: fora de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(0, 5), Compass.forward(0)), "beacon atrás: fora de frente")
+	_check(not Caminheiro.is_facing(pos, pos + Vector2(0, -5), Vector2.ZERO), "sem direção: nunca de frente")
+	for k in 72:
+		var target := pos + Vector2.from_angle(k * TAU / 72.0) * 6.0
+		var facing := 0
+		for heading in Compass.STEPS:
+			if Caminheiro.is_facing(pos, target, Compass.forward(heading)):
+				facing += 1
+		_check(facing >= 1 and facing <= 2, "algum rumo dos 8 deveria ficar de frente (ângulo %d)" % (k * 5))
