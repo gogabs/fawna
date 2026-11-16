@@ -17,6 +17,7 @@ func _init() -> void:
 	_test_save()
 	_test_world_state()
 	_test_narrator()
+	_test_stones_and_sizes()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -188,6 +189,77 @@ func _test_world_state() -> void:
 	_check(got["ok"] and state.inventories["Lua"]["bambu"] == 3, "3 bambus na bolsa (%s)" % got)
 	state._last_strike[1] = -100000
 	_check(state.strike(1, spot[1] + Vector2i(6, 6))["reason"] == "longe", "golpe tem alcance")
+
+
+## Pedras: nascem pelo mundo, mais na beira da água; cada peça recolhida
+## sai de um tamanho (1/3 cada longe da água, mais pequenas perto dela). A
+## lenha dos arbustos é só média e pequena. Tudo entra na bolsa por tamanho.
+func _test_stones_and_sizes() -> void:
+	var world := WorldGen.new(42)
+	var dry := WorldGen.NO_CELL
+	var wet := WorldGen.NO_CELL
+	var stones := 0
+	var waterside_stones := 0
+	for y in range(-SEARCH, SEARCH):
+		for x in range(-SEARCH, SEARCH):
+			var cell := WorldGen.center() + Vector2i(x, y)
+			if world.thing_at(cell) != WorldGen.Thing.PEDRAS:
+				continue
+			stones += 1
+			if world.is_waterside(cell):
+				waterside_stones += 1
+				wet = cell
+			else:
+				dry = cell
+	_check(stones > 0 and dry != WorldGen.NO_CELL and wet != WorldGen.NO_CELL,
+		"há pedras longe e perto da água (%d, %d na beira)" % [stones, waterside_stones])
+	_check(Harvest.item_of(WorldGen.Thing.PEDRAS) == "pedra", "pedras dão pedra")
+	var harvest := Harvest.new(world)
+	harvest.rng.seed = 7
+	var dry_count := {}
+	var wet_count := {}
+	for i in 600:
+		var got: Dictionary = harvest._roll_parts(dry, "pedra", 1)
+		for k in got:
+			dry_count[k] = int(dry_count.get(k, 0)) + 1
+		got = harvest._roll_parts(wet, "pedra", 1)
+		for k in got:
+			wet_count[k] = int(wet_count.get(k, 0)) + 1
+	for size: String in Economy.SIZE_ORDER:
+		var n := int(dry_count.get(Economy.sized("pedra", size), 0))
+		_check(n > 150 and n < 250, "longe da água, pedra %s sai 1/3 das vezes (%d de 600)" % [size, n])
+	var small := int(wet_count.get("pedra_pequena", 0))
+	var big := int(wet_count.get("pedra_grande", 0))
+	_check(small > 300 and big < 140, "perto da água, mais pedras pequenas (%d pequenas, %d grandes)" % [small, big])
+	var taken := harvest.take(dry, 100.0)
+	var parts: Dictionary = taken["parts"]
+	var sum := 0
+	for k in parts:
+		_check(Economy.base_of(k) == "pedra", "peça é pedra: " + k)
+		sum += int(parts[k])
+	_check(taken["ok"] and sum == int(taken["amount"]), "as peças somam o que foi recolhido")
+	_check(not harvest.is_available(dry, 101.0), "pedras recolhidas somem até voltar")
+	var bush := _find(world, WorldGen.Thing.ARBUSTO)
+	var wood := {}
+	for i in 40:
+		var rolled: Dictionary = harvest._roll_parts(bush[1], "lenha", 2)
+		for k in rolled:
+			wood[k] = true
+	_check(wood.has("lenha_media") and wood.has("lenha_pequena") and not wood.has("lenha_grande"),
+		"arbusto dá lenha média e pequena, nunca grande: %s" % [wood.keys()])
+	# Na bolsa e na fala.
+	var bag := {"pedra_grande": 3, "pedra_pequena": 1, "argila": 2}
+	_check(Bag.entry_label("pedra", Bag.count(bag, "pedra"), bag) == "Pedra, 3 grandes, 1 pequena",
+		"bolsa agrupa os tamanhos: " + Bag.entry_label("pedra", 4, bag))
+	_check(Bag.entry_label("argila", 2, bag) == "Argila, 2", "sem tamanho continua igual")
+	_check(Bag.entries(bag) == [["argila", 2], ["pedra", 4]], "entradas agrupadas: %s" % [Bag.entries(bag)])
+	_check(Bag.entry_label("lenha", 3, {"lenha_media": 1, "lenha_pequena": 2}) == "Lenha, 1 média, 2 pequenas", "lenha com tamanhos")
+	_check(Economy.collected_text("pedra", 3, {"pedra_grande": 1, "pedra_pequena": 2}) == "3 pedras: 1 grande e 2 pequenas",
+		Economy.collected_text("pedra", 3, {"pedra_grande": 1, "pedra_pequena": 2}))
+	_check(Economy.collected_text("lenha", 2, {"lenha_media": 2}) == "2 lenhas médias", "um tamanho só")
+	# Save antigo: "lenha" sem tamanho vira lenha média.
+	var state := WorldState.from_save({"seed": 42, "inventories": {"Lua": {"lenha": 4, "lenha_pequena": 1}}})
+	_check(state.inventories["Lua"] == {"lenha_media": 4, "lenha_pequena": 1}, "lenha antiga vira média: %s" % [state.inventories["Lua"]])
 
 
 func _test_narrator() -> void:
