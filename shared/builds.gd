@@ -21,11 +21,14 @@ extends RefCounted
 const SPACING := 1
 ## Distância mínima do ponto de chegada da Origem, para não fechar a entrada.
 const ORIGIN_CLEARANCE := 2.5
+## Tamanho máximo do nome de um marco (o nome aparece em Locais, no Caminheiro).
+const MAX_NAME := 32
 
 var world: WorldGen
 ## id -> { "id", "kind", "cell": Vector2i, "region": Vector2i, "stage": int,
 ## "deposited": {item: qtd}, "work": int, "done": bool, "fuel": s guardados
-## (apagada), "burn_until": hora Unix em que apaga (0 = apagada), "sparks": int }
+## (apagada), "burn_until": hora Unix em que apaga (0 = apagada), "sparks": int,
+## "name": nome dado pela criatura (marcos) }
 var _builds := {}
 var _by_cell := {}  # Vector2i -> id
 var _next_id := 1
@@ -126,15 +129,30 @@ func refusal(kind: String, cell: Vector2i) -> String:
 	return ""
 
 
-## Começa uma construção (vazia, na primeira etapa). Devolve { ok, reason, id }.
-func start(kind: String, cell: Vector2i) -> Dictionary:
+## Nome limpo para um marco: sem quebras de linha nem espaços sobrando, até
+## MAX_NAME letras. Vazio vira "Marco N".
+func clean_name(text: String) -> String:
+	var clean := " ".join(text.replace("\n", " ").replace("\t", " ").split(" ", false)).left(MAX_NAME).strip_edges()
+	if clean.is_empty():
+		var count := 1
+		for build: Dictionary in _builds.values():
+			if build["kind"] == "marco":
+				count += 1
+		clean = "Marco %d" % count
+	return clean
+
+
+## Começa uma construção (vazia, na primeira etapa). Os marcos levam um nome.
+## Devolve { ok, reason, id }.
+func start(kind: String, cell: Vector2i, build_name := "") -> Dictionary:
 	var reason := refusal(kind, cell)
 	if not reason.is_empty():
 		return {"ok": false, "reason": reason}
 	var id := _next_id
 	_next_id += 1
 	_add({"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
-		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0})
+		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0,
+		"name": clean_name(build_name) if kind == "marco" else ""})
 	return {"ok": true, "reason": "", "id": id}
 
 
@@ -252,7 +270,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 	return {
 		"id": id, "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 		"stage": build["stage"], "deposited": build["deposited"].duplicate(), "work": build["work"],
-		"done": build["done"], "fuel": build["fuel"], "sparks": build["sparks"],
+		"done": build["done"], "fuel": build["fuel"], "sparks": build["sparks"], "name": build["name"],
 		"burn_left": maxf(0.0, float(build["burn_until"]) - at_time) if float(build["burn_until"]) > 0.0 else 0.0,
 	}
 
@@ -269,7 +287,8 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 	_add({"id": int(data["id"]), "kind": str(data["kind"]), "cell": cell, "region": world.region_of(cell),
 		"stage": int(data.get("stage", 0)), "deposited": deposited, "work": int(data.get("work", 0)),
 		"done": bool(data.get("done", false)), "fuel": float(data.get("fuel", 0.0)),
-		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0))})
+		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0)),
+		"name": str(data.get("name", ""))})
 
 
 func snapshot(at_time := -1.0) -> Array:
@@ -298,7 +317,7 @@ func to_save() -> Dictionary:
 			"id": build["id"], "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 			"stage": build["stage"], "deposited": build["deposited"], "work": build["work"],
 			"done": build["done"], "fuel": build["fuel"], "burn_until": build["burn_until"],
-			"sparks": build["sparks"],
+			"sparks": build["sparks"], "name": build["name"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -315,7 +334,8 @@ func load_save(data: Dictionary) -> void:
 		_add({"id": int(entry["id"]), "kind": str(entry["kind"]), "cell": cell, "region": world.region_of(cell),
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
-			"burn_until": float(entry.get("burn_until", 0.0)), "sparks": int(entry.get("sparks", 0))})
+			"burn_until": float(entry.get("burn_until", 0.0)), "sparks": int(entry.get("sparks", 0)),
+			"name": str(entry.get("name", ""))})
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
 	burn_out()
 
@@ -338,6 +358,8 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 	if build.is_empty():
 		return ""
 	var text := Crafting.build_name(build["kind"])
+	if not str(build.get("name", "")).is_empty():
+		text += " " + build["name"]
 	if not build["done"]:
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
@@ -345,12 +367,23 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 	return text
 
 
+## "Marco Casa da Lua", "Fogueira": o tipo com maiúscula e o nome, se houver.
+func title_of(id: int) -> String:
+	var build := get_build(id)
+	if build.is_empty():
+		return ""
+	var title := Crafting.build_title(build["kind"])
+	if not str(build.get("name", "")).is_empty():
+		title += " " + build["name"]
+	return title
+
+
 ## O que dizer ao chegar perto ou ao perguntar: a etapa e o que falta.
 func status_text(id: int, at_time := -1.0) -> String:
 	var build := get_build(id)
 	if build.is_empty():
 		return ""
-	var title := Crafting.build_title(build["kind"])
+	var title := title_of(id)
 	if not build["done"]:
 		var stages: Array = Crafting.BUILDS[build["kind"]]["stages"]
 		var stage: Dictionary = stages[build["stage"]]

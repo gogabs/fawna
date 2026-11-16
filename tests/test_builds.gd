@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_save_round_trip()
 	_test_network_mirror()
 	_test_texts()
+	_test_marco_names()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -212,3 +213,26 @@ func _test_network_mirror() -> void:
 func _test_texts() -> void:
 	_check(Crafting.materials_text({"pedra_pequena": 1, "pedra_grande": 3}) == "3 pedras grandes e 1 pedra pequena", "materiais falados em ordem")
 	_check(Crafting.build_summary("marco").begins_with("3 etapas. A base, 3 pedras grandes"), "resumo do marco: " + Crafting.build_summary("marco"))
+
+
+func _test_marco_names() -> void:
+	var probe := WorldGen.new(173)
+	var builds := Builds.new(WorldGen.new(173))
+	var first := builds.start("marco", _free_cell(probe), "  Casa\nda   Lua  ")
+	_check(builds.get_build(first["id"])["name"] == "Casa da Lua", "nome do marco limpo: " + builds.get_build(first["id"])["name"])
+	_check(builds.spoken_name(first["id"]) == "marco Casa da Lua em obra", "o nome entra na fala")
+	_check(builds.title_of(first["id"]) == "Marco Casa da Lua", "e no título")
+	var long_name := "x".repeat(80)
+	var cell2 := _free_cell(probe, 40)
+	if probe.region_of(cell2) != probe.region_of(builds.get_build(first["id"])["cell"]):
+		var second := builds.start("marco", cell2, "")
+		_check(builds.get_build(second["id"])["name"] == "Marco 2", "sem nome vira Marco 2")
+	_check(builds.clean_name(long_name).length() == Builds.MAX_NAME, "nome cortado no máximo")
+	var fire := builds.start("fogueira", _free_cell(probe, 80), "Não usa")
+	_check(builds.get_build(fire["id"])["name"] == "", "fogueira não tem nome")
+	var mirror := Builds.new(WorldGen.new(173))
+	mirror.apply_snapshot(builds.snapshot())
+	_check(mirror.get_build(first["id"])["name"] == "Casa da Lua", "o nome chega ao cliente")
+	var saved := Builds.new(WorldGen.new(173))
+	saved.load_save(JSON.parse_string(JSON.stringify(builds.to_save())))
+	_check(saved.get_build(first["id"])["name"] == "Casa da Lua", "e fica salvo")

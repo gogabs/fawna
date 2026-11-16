@@ -125,7 +125,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 
 
 ## Recolhe o recurso de uma casa ao alcance (gravetos ou frutas de um arbusto,
-## argila, ou um bambu já derrubado). A fonte se esgota e rebrota com o tempo
+## argila, pedras, ou um bambu já derrubado). Lenha e pedra entram na bolsa
+## por tamanho (Harvest.take devolve "parts"). A fonte se esgota e rebrota com o tempo
 ## (Harvest).
 ## Devolve { ok, item, amount, reason, hits_left }. reason: "longe", "nada",
 ## "devagar", "colhido" (já recolhido, ainda não voltou), "golpear" (bambu de
@@ -145,12 +146,17 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	_last_collect[id] = now
 	var item := Harvest.item_of(thing)
 	var inv := inventory_of(id)
-	if int(inv.get(item, 0)) >= MAX_STACK:
+	if Bag.count(inv, item) >= MAX_STACK:
 		return {"ok": false, "reason": "cheio", "item": item}
 	var result := harvest.take(cell)
 	if not result["ok"]:
 		return result
-	inv[item] = mini(MAX_STACK, int(inv.get(item, 0)) + int(result["amount"]))
+	var parts: Dictionary = result.get("parts", {})
+	if parts.is_empty():
+		inv[item] = mini(MAX_STACK, int(inv.get(item, 0)) + int(result["amount"]))
+	else:
+		for part: String in parts:
+			inv[part] = mini(MAX_STACK, int(inv.get(part, 0)) + int(parts[part]))
 	return result
 
 
@@ -174,7 +180,7 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 ## Começa uma construção na casa "cell" (a que está à frente da criatura,
 ## escolhida pelo cliente; o servidor confere se está ao alcance, livre e
 ## sem ninguém em cima). Devolve { ok, reason, id }.
-func start_build(id: int, kind: String, cell: Vector2i) -> Dictionary:
+func start_build(id: int, kind: String, cell: Vector2i, build_name := "") -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
 	var pos: Vector2 = players[id]["pos"]
@@ -184,7 +190,7 @@ func start_build(id: int, kind: String, cell: Vector2i) -> Dictionary:
 		var other: Vector2 = players[other_id]["pos"]
 		if WorldGen.cell_of(other) == cell or other.distance_to(WorldGen.cell_center(cell)) < 0.5 + WorldGen.PLAYER_RADIUS:
 			return {"ok": false, "reason": "ocupado"}
-	return builds.start(kind, cell)
+	return builds.start(kind, cell, build_name)
 
 
 ## Um Espaço numa construção ao alcance: deposita materiais, bate, acende
@@ -248,10 +254,14 @@ static func from_save(data: Dictionary) -> WorldState:
 	for player_name in data.get("inventories", {}):
 		var inv := {}
 		var saved: Dictionary = data["inventories"][player_name]
-		for item in saved:
+		for item: String in saved:
+			var key := item
+			# Lenha de antes dos tamanhos vira lenha média.
+			if Economy.has_sizes(item):
+				key = Economy.sized(item, "media")
 			# Itens que não existem mais no jogo ficam para trás.
-			if Economy.ITEM_NAMES.has(item) or Bag.NAMES.has(item):
-				inv[item] = int(saved[item])
+			if Economy.is_item(key) or Bag.NAMES.has(key):
+				inv[key] = int(inv.get(key, 0)) + int(saved[item])
 		state.inventories[player_name] = inv
 	for player_name in data.get("equipment", {}):
 		state.equipment[player_name] = str(data["equipment"][player_name])

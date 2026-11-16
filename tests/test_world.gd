@@ -236,7 +236,8 @@ func _test_collect() -> void:
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")
 	_check(state.collect(1, spot[1])["ok"], "deveria coletar os gravetos ao lado")
 	_check(not state.collect(1, spot[1])["ok"], "deveria haver uma pausa entre coletas")
-	_check(state.inventories["Lua"]["lenha"] == 2, "2 lenhas na bolsa")
+	_check(Bag.count(state.inventories["Lua"], "lenha") == 2, "2 lenhas na bolsa")
+	_check(int(state.inventories["Lua"].get("lenha_grande", 0)) == 0, "arbusto não dá lenha grande")
 
 func _test_save_roundtrip() -> void:
 	var state := WorldState.new(99)

@@ -50,7 +50,8 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | O que há na bolsa e nas mãos | I |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Ouvir os arredores | Tab |
+| Ouvir os arredores | Tab (toque curto) |
+| Escutar com atenção: vento, fundo e música baixam, recursos sobem | segurar Tab |
 | Onde estou | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
@@ -75,12 +76,20 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta. As opções são o
-**Caminheiro** (o único destino, por enquanto, é a Origem), a **Bolsa** e o
-**Equipamento**.
+**Caminheiro**, a **Bolsa** e o **Equipamento**.
+
+O Caminheiro tem dois submenus: **Locais** (por enquanto, só a Origem; mais
+tarde, só os lugares com um marco construído) e **Recursos** (Bambu, Lenha,
+Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
+daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
+está: "Você chegou às pedras, atrás e à direita, 2 metros."
 
 ### Bolsa e Equipamento
 
-A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Itens sem
+A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Lenha e
+pedra têm tamanhos (grande, média, pequena), guardados como itens separados
+(`pedra_grande`, `lenha_pequena`...) e falados juntos, só com os tamanhos que
+a criatura tem: "Pedra, 3 grandes, 1 pequena". Itens sem
 ação só repetem o nome. Alguns itens têm ação: o **machado** (toda criatura
 chega ao mundo com um) tem **Empunhar**, que o tira da bolsa e o põe nas mãos.
 O **Equipamento** mostra o que está nas mãos ("mãos livres" se nada), com o
@@ -105,11 +114,12 @@ novo; "Apagar o cristal" aparece no menu enquanto ele está aceso.
 
 1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu e as frutas têm um som baixinho e próprio, em 3D:
    - **Touceira de bambu** (bosque e lagoa; rara na pradaria): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos.
-   - **Arbusto com gravetos**: quase todo arbusto dá gravetos para lenha (2 lenhas). Não tem som próprio: soa como os outros arbustos.
+   - **Arbusto com gravetos**: quase todo arbusto dá gravetos para lenha (2 lenhas, cada uma média ou pequena; lenha grande só virá das árvores). Não tem som próprio: soa como os outros arbustos.
    - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
+   - **Pedras** soltas, pelo mundo todo e bem mais comuns na beira dos riachos e lagoas. Dão 3 pedras, cada uma grande, média ou pequena (1/3 de chance cada); na beira da água saem mais pequenas (60% pequenas, 25% médias, 15% grandes). Não têm som próprio.
    - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.
 
-   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
+   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, pedras em 10, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
 2. A Origem, no centro do mundo, é o ponto de partida. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.

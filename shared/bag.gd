@@ -4,7 +4,9 @@ extends RefCounted
 ## clientes usam as mesmas regras.
 ##
 ## A bolsa é o mesmo dicionário de sempre (item -> quantidade), agrupado:
-## "Argila, 2". O equipamento é o que a criatura tem nas mãos: um item só,
+## "Argila, 2". Recursos com tamanho (Economy.SIZES) ficam um item por tamanho
+## ("pedra_grande", "pedra_pequena") e aparecem juntos: "Pedra, 3 grandes,
+## 1 pequena", só com os tamanhos que a criatura tem. O equipamento é o que a criatura tem nas mãos: um item só,
 ## ou "" com as mãos livres. Empunhar tira o item da bolsa e o põe nas mãos;
 ## guardar faz o caminho de volta.
 ##
@@ -41,29 +43,51 @@ static func with_article(item: String) -> String:
 
 ## Nome do item com a primeira letra maiúscula, no singular: "Argila".
 static func display_name(item: String) -> String:
-	var names: Array = Economy.ITEM_NAMES.get(item, NAMES.get(item, [item]))
+	var names: Array = Economy.names_of(item) if Economy.is_item(item) else NAMES.get(item, [item])
 	var text: String = names[0]
 	return text.left(1).to_upper() + text.substr(1)
 
 
 ## Nome falado em frases: "o machado".
 static func spoken_name(item: String) -> String:
-	var names: Array = Economy.ITEM_NAMES.get(item, NAMES.get(item, [item]))
+	var names: Array = Economy.names_of(item) if Economy.is_item(item) else NAMES.get(item, [item])
 	return names[0]
 
 
-## Itens da bolsa com quantidade, em ordem alfabética: [[item, quantidade], ...].
+## Itens da bolsa agrupados, em ordem alfabética: [[item, quantidade], ...].
+## Os tamanhos de um recurso viram uma entrada só, com o nome do recurso e a
+## soma ("pedra", 4).
 static func entries(bag: Dictionary) -> Array:
-	var list := []
+	var totals := {}
 	for item: String in bag:
 		if int(bag[item]) > 0:
-			list.append([item, int(bag[item])])
+			var base := Economy.base_of(item)
+			totals[base] = int(totals.get(base, 0)) + int(bag[item])
+	var list := []
+	for item: String in totals:
+		list.append([item, totals[item]])
 	list.sort_custom(func(a, b): return display_name(a[0]).naturalnocasecmp_to(display_name(b[0])) < 0)
 	return list
 
 
-## "Argila, 2".
-static func entry_label(item: String, amount: int) -> String:
+## Quanto há de um recurso, somando os tamanhos: count(bag, "pedra").
+## Com a chave de um tamanho ("pedra_grande"), só aquele tamanho.
+static func count(bag: Dictionary, item: String) -> int:
+	if Economy.base_of(item) != item:
+		return int(bag.get(item, 0))
+	var total := int(bag.get(item, 0))
+	if Economy.has_sizes(item):
+		for size: String in Economy.SIZE_ORDER:
+			total += int(bag.get(Economy.sized(item, size), 0))
+	return total
+
+
+## "Argila, 2"; com tamanhos, "Pedra, 3 grandes, 1 pequena".
+static func entry_label(item: String, amount: int, bag := {}) -> String:
+	if Economy.has_sizes(item):
+		var sizes := Economy.sizes_text(item, bag)
+		if not sizes.is_empty():
+			return "%s, %s" % [display_name(item), sizes]
 	return "%s, %d" % [display_name(item), amount]
 
 

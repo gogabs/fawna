@@ -395,6 +395,8 @@ static func _mix(a: AudioStreamWAV, b: AudioStreamWAV) -> AudioStreamWAV:
 ## Recolheu um recurso: cada um com seu toque (só se faltarem os arquivos).
 ## A argila é um "chape" úmido; o resto usa o toque genérico.
 static func pickup_of(item: String) -> AudioStreamWAV:
+	if item == "pedra":
+		return stone_pickup()
 	if item != "argila":
 		return pickup()
 	if not _cache.has("coleta_argila"):
@@ -410,6 +412,29 @@ static func pickup_of(item: String) -> AudioStreamWAV:
 			samples[i] = (low * 1.6 * exp(-t * 18.0) + squelch * 0.5) * 0.6
 		_cache["coleta_argila"] = _to_wav(samples)
 	return _cache["coleta_argila"]
+
+
+## Pedras recolhidas: três toques secos de pedra contra pedra, enquanto não
+## houver gravação (assets/sounds/recursos/coleta_pedra_N.ogg).
+static func stone_pickup() -> AudioStreamWAV:
+	if not _cache.has("coleta_pedra"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 707
+		var count := int(0.36 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		for hit in [[0.0, 1.0, 1900.0], [0.11, 0.7, 2300.0], [0.2, 0.85, 1600.0]]:
+			var start := int(float(hit[0]) * RATE)
+			var low := 0.0
+			for i in range(start, count):
+				var t := float(i - start) / RATE
+				if t > 0.08:
+					break
+				low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.55)
+				var ring := sin(TAU * float(hit[2]) * t) * exp(-t * 90.0)
+				samples[i] += (low * exp(-t * 160.0) * 0.9 + ring * 0.5) * float(hit[1]) * 0.55
+		_cache["coleta_pedra"] = _to_wav(samples)
+	return _cache["coleta_pedra"]
 
 
 ## Som contínuo de cada recurso coletável, gerado por código enquanto não
