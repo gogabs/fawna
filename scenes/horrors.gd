@@ -4,8 +4,8 @@ extends Node
 ##
 ## No servidor, roda a simulação (Horrors) e manda a cada jogador onde estão
 ## os horrores perto dele. No cliente, cuida do som: quanto mais perto o
-## Calado, mais o mundo inteiro fica abafado e baixo; segurando o Tab, dá
-## para ouvir a respiração dele, no lugar onde ele está, e ela se cala
+## Calado, mais o mundo inteiro fica abafado e baixo; segurando o Tab, a
+## respiração dele soa no lugar onde ele está, e ela se cala
 ## quando a criatura vira de frente para ele.
 
 const STEP_SECONDS := 0.25  # passo da simulação no servidor
@@ -28,6 +28,7 @@ var _step := 0.0
 var _audio: SpatialAudio
 var _known := {}  # id -> { pos: Vector2, shown: Vector2, mode, seen: s }
 var _clock := 0.0
+var _caught := false
 var _presence := 0.0  # 0 (longe) a 1 (ao lado)
 var _breath: AudioStreamPlayer3D
 var _filter: AudioEffectLowPassFilter
@@ -95,8 +96,31 @@ func _server_step() -> void:
 				horror_at.rpc_id(peer, args[0], args[1], args[2])
 			"gone":
 				horror_gone.rpc_id(peer, args[0])
+			"caught":
+				_catch(peer)
 	if game.birds.aviary != null:
 		game.birds.aviary.hush = horrors.points()
+
+
+## O Calado alcançou o jogador: ele perde os recursos e reaparece no ponto
+## seguro mais próximo (fogueira acesa, povoado ou a Origem).
+func _catch(peer: int) -> void:
+	var game := get_parent()
+	var state: WorldState = game.state
+	if not state.players.has(peer):
+		return
+	var shelters := _lit_fires(state.builds)
+	for settlement: Dictionary in state.builds.settlements():
+		shelters.append(WorldGen.cell_center(settlement["cell"]))
+	var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
+	var from: Vector2 = state.players[peer]["pos"]
+	var spot := Horrors.landing_spot(state.world, Horrors.nearest_shelter(from, shelters), blocked)
+	var lost := state.strip_resources(peer)
+	state.teleport(peer, spot)
+	game.inventory_changed.rpc_id(peer, state.inventory_of(peer), "", "")
+	game.player_moved.rpc(peer, spot)
+	horror_caught.rpc_id(peer, spot, not lost.is_empty())
+	print("[servidor] Calado alcançou %s: levado a %s, perdeu %s" % [state.players[peer]["name"], spot, lost])
 
 
 func _lit_fires(builds: Builds) -> Array:
@@ -129,6 +153,30 @@ func horror_at(id: int, pos: Vector2, mode: int) -> void:
 @rpc("authority", "call_local", "reliable")
 func horror_gone(id: int) -> void:
 	_known.erase(id)
+
+
+## O Calado alcançou esta criatura: o som se fecha, ela é levada e reaparece
+## no ponto seguro. Ao voltar a si, uma fala curta.
+@rpc("authority", "call_local", "reliable")
+func horror_caught(spot: Vector2, _lost_something: bool) -> void:
+	var game := get_parent()
+	if game.world == null or _caught:
+		return
+	_caught = true
+	_known.clear()
+	game._play(HorrorSounds.caught())
+	await get_tree().create_timer(HorrorSounds.CAUGHT_SECONDS).timeout
+	game._set_pos(spot)
+	game._last_sent = spot
+	game._play(HorrorSounds.relief())
+	await get_tree().create_timer(HorrorSounds.RELIEF_SECONDS).timeout
+	_caught = false
+	Speech.say("Você acorda em outro lugar, sem lembrança do que aconteceu.")
+
+
+## Levada pelo Calado: a criatura não anda até reaparecer.
+func is_caught() -> bool:
+	return _caught
 
 
 # --- Som -----------------------------------------------------------------------
@@ -186,8 +234,8 @@ func _apply_hush() -> void:
 		AudioServer.set_bus_volume_db(_master(), Music.MASTER_DB + HUSHED_DB * _presence)
 
 
-## A respiração só existe para quem escuta com atenção, e some quando a
-## criatura encara o Calado: é assim que se descobre onde ele está.
+## A respiração soa no silêncio que o próprio Calado causa, sem o Tab, e some
+## quando a criatura o encara: é assim que se descobre onde ele está.
 func _update_breath(nearest: Dictionary, delta: float) -> void:
 	if _breath == null:
 		return
@@ -199,7 +247,7 @@ func _update_breath(nearest: Dictionary, delta: float) -> void:
 		_breath.position = Aviary.to_3d(pos, BREATH_HEIGHT)
 		if Horrors.is_facing(game._pos, game._heading, pos):
 			rate = BREATH_CUT
-		elif game._focus:
+		else:
 			# Compensa o que o próprio abafamento tira dela.
 			target = BREATH_DB - HUSHED_DB * _presence + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
 	_breath.volume_db = move_toward(_breath.volume_db, target, rate * delta)
