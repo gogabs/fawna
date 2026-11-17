@@ -118,6 +118,28 @@ func stow(id: int) -> Dictionary:
 	return {"ok": true, "item": item}
 
 
+## O que o Calado faz com quem alcança: a bolsa perde todos os recursos
+## (Economy.is_item, menos o que se empunha, como o machado); armas e o que
+## está nas mãos ficam.
+## Devolve o que foi perdido (item -> quantidade).
+func strip_resources(id: int) -> Dictionary:
+	var lost := {}
+	var inv := inventory_of(id)
+	for item: String in inv.keys():
+		if Economy.is_item(item) and not Bag.WIELDABLE.has(item):
+			lost[item] = inv[item]
+			inv.erase(item)
+	return lost
+
+
+## Leva o jogador a outro ponto sem a conferência de velocidade (ex.: o
+## Calado o alcançou).
+func teleport(id: int, pos: Vector2) -> void:
+	if players.has(id):
+		players[id]["pos"] = pos
+		_last_move[id] = Time.get_ticks_msec()
+
+
 ## Aceita a nova posição de um jogador se ela é possível: perto o bastante
 ## da anterior (pela velocidade máxima) e sem atravessar nada. Devolve
 ## { ok, pos }; se recusar, "pos" é onde o servidor acha que ele está.
