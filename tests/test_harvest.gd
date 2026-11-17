@@ -120,7 +120,9 @@ func _test_edges_and_water() -> void:
 					bamboo += 1
 					_check(_water_within(world, cell, 7), "bambu fora do bambuzal deveria estar na beira da água, em %s (semente %d)" % [cell, world_seed])
 		print("[lugares] semente %d: %d de %d arbustos na orla, %d bambus na água, bambuzal %s" % [world_seed, edge_bushes, bushes, bamboo, grove])
-		_check(edge_bushes > bushes * 0.7, "a maioria dos arbustos deveria estar na orla da mata (%d de %d)" % [edge_bushes, bushes])
+		# 0,6 e não 0,7: no bosque as árvores (72% das casas) ocupam o lugar de parte dos
+		# arbustos da orla, e sobram proporcionalmente mais arbustos perdidos.
+		_check(edge_bushes > bushes * 0.6, "a maioria dos arbustos deveria estar na orla da mata (%d de %d)" % [edge_bushes, bushes])
 		_check(bamboo > 0, "deveria haver bambu na beira da água (semente %d)" % world_seed)
 		_check(grove["orla"] > 0 and grove["miolo"] > 0, "o bambuzal deveria ter bambu na orla e no miolo (semente %d)" % world_seed)
 		# Fechado: no bambuzal só há chão livre perto de trilha ou de água.

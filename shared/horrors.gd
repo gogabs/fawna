@@ -4,7 +4,7 @@ extends RefCounted
 ## recebem onde cada um está e cuidam do som.
 ##
 ## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Surge
-## atrás de quem anda sozinho pelo bosque, fora das trilhas e longe do fogo,
+## atrás de quem anda sozinho em qualquer bioma (menos o mar), fora das trilhas e longe do fogo,
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
 ## ele recua. Fogueira acesa ou outra criatura por perto também o espantam.
@@ -31,7 +31,7 @@ const RESTALK_MAX := 70.0  # mais longe que isso (um salto), ele desiste de vez
 const GONE_DISTANCE := 30.0  # recuando, some quando fica longe assim de todos
 const RETREAT_MAX := 20.0  # ou depois desse tempo
 const HEARING := 30.0  # até onde um jogador fica sabendo dele
-## Quanto tempo exposto (sozinho no bosque, fora da trilha, sem fogo) até
+## Quanto tempo exposto (sozinho, fora da trilha, sem fogo, em qualquer bioma menos o mar) até
 ## ele aparecer, e o sossego depois de uma visita.
 const EXPOSURE := [90.0, 240.0]
 const COOLDOWN := [240.0, 480.0]
@@ -163,9 +163,9 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 	var distance := pos.distance_to(target)
 	if distance > GIVE_UP_DISTANCE:
 		# Ele é mais lento que a criatura: quem anda sem parar o deixa para trás.
-		# Se ela segue exposta no bosque, ele ressurge atrás dela, em vez de
+		# Se ela segue exposta, ele ressurge atrás dela, em vez de
 		# sumir e só voltar depois do sossego. Só desiste de um salto muito
-		# grande, ou se a criatura saiu do bosque.
+		# grande, ou se a criatura ficou a salvo (trilha, mar, fogueira).
 		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
 			var behind := -Compass.forward(int(players[peer].get("heading", 0)))
 			horror["pos"] = target + behind * SPAWN_DISTANCE
@@ -221,7 +221,7 @@ func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary,
 func _exposed(peer: int, players: Dictionary, fires: Array) -> bool:
 	var pos: Vector2 = players[peer]["pos"]
 	var cell := WorldGen.cell_of(pos)
-	if world.biome_at(cell) != WorldGen.Biome.BOSQUE or world.is_trail(cell):
+	if world.biome_at(cell) == WorldGen.Biome.MAR or world.is_trail(cell):
 		return false
 	if pos.distance_to(WorldGen.origin_point()) < ORIGIN_SAFE:
 		return false

@@ -106,16 +106,25 @@ func _test_safe_places() -> void:
 	var home := Horrors.new(world)
 	_run(home, {1: _player(WorldGen.origin_point() + Vector2(0, 1.5))}, [], 0, long)
 	_check(home.horrors.is_empty(), "na Origem o Calado não deveria aparecer")
-	# Fora do bosque.
+	# Em qualquer bioma, menos no mar: na pradaria ele aparece.
 	for r in range(1, 40):
 		var region := Vector2i(r, 0)
 		if world.region_biome(region) == WorldGen.Biome.PRADARIA:
 			var meadow := world.region_landmark(region) + Vector2(6.5, 6.5)
-			if world.biome_at(WorldGen.cell_of(meadow)) != WorldGen.Biome.PRADARIA:
+			if world.biome_at(WorldGen.cell_of(meadow)) != WorldGen.Biome.PRADARIA \
+					or world.is_trail(WorldGen.cell_of(meadow)):
 				continue
 			var open := Horrors.new(world)
 			_run(open, {1: _player(meadow)}, [], 0, long)
-			_check(open.horrors.is_empty(), "na pradaria o Calado não deveria aparecer")
+			_check(not open.horrors.is_empty(), "na pradaria o Calado também deveria aparecer")
+			break
+	# No mar não.
+	for r in range(1, 40):
+		var sea := Vector2i(0, r)
+		if world.region_biome(sea) == WorldGen.Biome.MAR:
+			var swim := Horrors.new(world)
+			_run(swim, {1: _player(world.region_landmark(sea))}, [], 0, long)
+			_check(swim.horrors.is_empty(), "no mar o Calado não deveria aparecer")
 			break
 
 
@@ -288,7 +297,19 @@ func _test_birds_hush() -> void:
 	_check(not landed.is_empty(), "deveria haver pássaros pousados")
 	if landed.is_empty():
 		return
-	var dread: Vector2 = landed[0]["pos"]
+	# O horror fica em cima do líder de um bando que tenha para onde fugir (um
+	# bando sem outro poleiro por perto não tem o que fazer a não ser ficar).
+	var dread := Vector2.INF
+	for group: Dictionary in aviary.groups.values():
+		var leader: Dictionary = aviary.birds[group["members"][0]]
+		if not leader["flying"] and aviary._pick_target(group, leader["pos"], leader["pos"] + Vector2(1, 0)) != WorldGen.NO_CELL:
+			dread = leader["pos"]
+			break
+	_check(dread != Vector2.INF, "deveria haver um bando com outro poleiro por perto")
+	if dread == Vector2.INF:
+		return
+	# Quem ouve as mensagens tem de estar perto dos pássaros.
+	players[1] = dread + Vector2(4, 0)
 	aviary.hush = [dread]
 	var hushed_sings := 0
 	var scared := 0
