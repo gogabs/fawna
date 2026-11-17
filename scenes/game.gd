@@ -72,7 +72,9 @@ const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
 const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1,9)
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
 const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
-const REGION_CHANGE_DB := -14.0  # o sopro baixinho ao passar de uma região para outra
+const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
+## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
+const BUMP_SLIDE_MIN := 0.5
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
 const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
@@ -973,12 +975,14 @@ func _walk(motion: Vector2) -> void:
 	if world.is_free(target):
 		_set_pos(target)
 		return
-	var moved := false
+	var slid := Vector2.ZERO
 	for part in [Vector2(motion.x, 0.0), Vector2(0.0, motion.y)]:
 		if part != Vector2.ZERO and world.is_free(_pos + part):
 			_set_pos(_pos + part)
-			moved = true
-	if not moved:
+			slid += part
+	# Quase de frente contra o obstáculo, o deslize é só um raspão: conta como
+	# esbarrão (som e fala), senão a criatura emperra em silêncio.
+	if slid.length() < motion.length() * BUMP_SLIDE_MIN:
 		_bump(target)
 
 

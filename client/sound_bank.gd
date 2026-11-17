@@ -668,7 +668,7 @@ static func bamboo_fall() -> AudioStreamWAV:
 				last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.2)
 				samples[start + i] += last * pow(1.0 - i / 260.0, 2.0) * 0.5
 			at += gap
-			gap *= 0.75
+			gap = maxf(gap * 0.75, 0.04)
 		var rip_start := int(0.7 * RATE)  # rasgo das fibras e folhas
 		var rip_len := int(0.5 * RATE)
 		var low := 0.0
@@ -731,7 +731,7 @@ static func tree_fall() -> AudioStreamWAV:
 		while at < 1.3:  # estalos cada vez mais juntos
 			_add_crackles(samples, rng, at, at + 0.02, 1, 0.7)
 			at += gap
-			gap *= 0.72
+			gap = maxf(gap * 0.72, 0.04)  # sem piso, "at" nunca chegaria a 1,3
 		var rush_start := int(1.2 * RATE)  # a copa descendo
 		var rush_len := int(1.1 * RATE)
 		var low := 0.0
