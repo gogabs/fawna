@@ -95,6 +95,27 @@ O **Equipamento** mostra o que está nas mãos ("mãos livres" se nada), com o
 botão **Guardar**, que devolve o item à bolsa. Com o machado empunhado, **J**
 golpeia.
 
+#### Carga e itens no chão
+
+A criatura aguenta uma **carga** limitada (`Bag.CAPACITY`, 24), e cada item
+pesa o seu tanto (`Bag.WEIGHTS`): fruta e lenha pequena 1, lenha média, bambu e
+argila 2, pedra média 3, pedra grande 6, machado 3. Contam a bolsa e o que está
+nas mãos. Dá para levar uma fogueira inteira (23), mas um marco (25) exige mais
+de uma viagem, e quem sai carregado de pedras grandes só traz quatro. Para
+deixar mais fácil ou difícil, mude só essas duas tabelas.
+
+No fim da Bolsa há a linha "Carga, 18 de 24". Cada item abre **Jogar 1** e
+**Jogar tudo** (e Empunhar, nas armas); lenha e pedra abrem antes a lista de
+tamanhos. O que se joga cai na casa da criatura e vira um **monte no chão**, que
+qualquer criatura pode pegar com **Espaço** (leva o que couber, do mais pesado
+ao mais leve). Ao coletar com a carga quase cheia, o que não cabe também fica no
+chão ("Carga no limite: 1 pedra grande ficou no chão") e o recurso é gasto; com
+a carga lotada, a coleta é recusada e o recurso fica. Os montes não somem, ficam
+salvos no `mundo.json` (`ground`), soam com um tique baixinho em 3D (até uns 13
+m), aparecem no Tab ("itens no chão, à esquerda, 3 metros"), são anunciados ao
+pisar neles e o Caminheiro leva até o mais próximo em **Itens no chão**.
+Regras em `shared/bag.gd` e `shared/ground.gd`; testes em `tests/test_ground.gd`.
+
 Quem decide é o servidor: o cliente pede para empunhar ou guardar, e o
 servidor confere, muda a bolsa e as mãos e responde. A bolsa e o que está nas
 mãos ficam salvos no mundo, pelo nome da criatura, e sobrevivem a reconexões.

@@ -62,7 +62,7 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 ## se não estiver numa trilha, onde fica a trilha mais próxima.
 ## Recursos já colhidos (harvest) ficam de fora, ou viram só "arbusto"; um
 ## bambu já derrubado é anunciado como tal.
-static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array, harvest: Harvest = null) -> String:
+static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Array, harvest: Harvest = null, ground: Ground = null) -> String:
 	var found := []
 	var here := WorldGen.cell_of(pos)
 	var r := SURROUNDINGS_RADIUS
@@ -76,6 +76,11 @@ static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Ar
 			if thing_name.is_empty():
 				continue
 			found.append({"name": thing_name, "offset": WorldGen.cell_center(cell) - pos})
+	if ground != null:
+		for pile_cell: Vector2i in ground.cells():
+			var pile_offset := WorldGen.cell_center(pile_cell) - pos
+			if pile_offset.length() <= r:
+				found.append({"name": "itens no chão", "offset": pile_offset})
 	for other in others:
 		var offset: Vector2 = other["pos"] - pos
 		if offset.length() <= r:

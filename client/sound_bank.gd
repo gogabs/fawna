@@ -220,6 +220,40 @@ static func stow() -> AudioStreamWAV:
 	return _cache["guardar"]
 
 
+## Item largado no chão: um baque surdo e curto, com um pouco de poeira.
+static func drop_item() -> AudioStreamWAV:
+	if not _cache.has("largar"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 3303
+		var count := int(0.3 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var low := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var thud := sin(TAU * (130.0 - 50.0 * t) * t) * exp(-t * 22.0)
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.7)
+			samples[i] = (thud * 0.7 + low * exp(-t * 20.0) * 0.4) * 0.6
+		_cache["largar"] = _to_wav(samples)
+	return _cache["largar"]
+
+
+## Monte de itens no chão: um tique macio e baixo, de tempos em tempos, para
+## achá-lo de ouvido (em loop de 3 s; só se faltar o arquivo).
+static func pile_loop() -> AudioStreamWAV:
+	if not _cache.has("monte"):
+		var count := int(3.0 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		for tick in [[0.4, 520.0, 0.5], [1.3, 410.0, 0.4], [2.2, 620.0, 0.45]]:
+			var start := int(float(tick[0]) * RATE)
+			for i in int(0.18 * RATE):
+				var t := float(i) / RATE
+				samples[start + i] += sin(TAU * float(tick[1]) * t) * exp(-t * 28.0) * float(tick[2]) * 0.5
+		_cache["monte"] = _to_wav(samples, true)
+	return _cache["monte"]
+
+
 ## --- Construções e fogo ---------------------------------------------------------
 
 ## Pedra batendo em pedra: um "clac" curto e brilhante, com um corpo médio.

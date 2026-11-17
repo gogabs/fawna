@@ -11,7 +11,8 @@ const MAX_SPEED := 2.2  # casas por segundo (a criatura anda a 1,5)
 const MOVE_SLACK := 0.4  # folga para atrasos da rede
 const REACH := 1.6  # até onde dá para coletar ou golpear (do centro da criatura ao centro da casa)
 const ORIGIN_REACH := 1.2
-const MAX_STACK := 99
+const MAX_STACK := 99  # só para armas fabricadas; a bolsa se limita pela carga (Bag.CAPACITY)
+const DROP_COOLDOWN_MS := 250  # largar e pegar do chão mais rápido que isso não conta
 const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
 const BUILD_REACH := 1.9  # a obra ocupa a casa toda: dá para trabalhar de um pouco mais longe
 
@@ -20,6 +21,8 @@ var world: WorldGen
 var harvest: Harvest
 ## Construções (marcos, fogueiras). Ver Builds e Crafting.
 var builds: Builds
+## Itens soltos no chão. Ver Ground.
+var ground: Ground
 ## id do peer -> { "name": String, "pos": Vector2 }
 var players := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
@@ -31,12 +34,14 @@ var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
 var _last_strike := {}  # id -> Time.get_ticks_msec()
 var _last_build := {}  # id -> Time.get_ticks_msec()
+var _last_drop := {}  # id -> Time.get_ticks_msec()
 
 
 func _init(world_seed: int) -> void:
 	world = WorldGen.new(world_seed)
 	harvest = Harvest.new(world)
 	builds = Builds.new(world)
+	ground = Ground.new()
 
 
 func add_player(id: int, player_name: String) -> Vector2:
@@ -59,6 +64,7 @@ func remove_player(id: int) -> void:
 	_last_move.erase(id)
 	_last_strike.erase(id)
 	_last_build.erase(id)
+	_last_drop.erase(id)
 
 
 func inventory_of(id: int) -> Dictionary:
@@ -128,7 +134,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 ## argila, pedras, ou um bambu já derrubado). Lenha e pedra entram na bolsa
 ## por tamanho (Harvest.take devolve "parts"). A fonte se esgota e rebrota com o tempo
 ## (Harvest).
-## Devolve { ok, item, amount, reason, hits_left }. reason: "longe", "nada",
+## O que não cabe na carga (Bag.CAPACITY) fica no chão, na casa da criatura.
+## Devolve { ok, item, amount, reason, hits_left, kept, left_over }. reason: "longe", "nada",
 ## "devagar", "colhido" (já recolhido, ainda não voltou), "golpear" (bambu de
 ## pé: falta cortar com o machado) ou "cheio".
 func collect(id: int, cell: Vector2i) -> Dictionary:
@@ -146,18 +153,69 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	_last_collect[id] = now
 	var item := Harvest.item_of(thing)
 	var inv := inventory_of(id)
-	if Bag.count(inv, item) >= MAX_STACK:
+	var carrying := wielding(id)
+	if Bag.free_space(inv, carrying) <= 0:
 		return {"ok": false, "reason": "cheio", "item": item}
 	var result := harvest.take(cell)
 	if not result["ok"]:
 		return result
 	var parts: Dictionary = result.get("parts", {})
-	if parts.is_empty():
-		inv[item] = mini(MAX_STACK, int(inv.get(item, 0)) + int(result["amount"]))
-	else:
-		for part: String in parts:
-			inv[part] = mini(MAX_STACK, int(inv.get(part, 0)) + int(parts[part]))
+	var got: Dictionary = parts if not parts.is_empty() else {item: int(result["amount"])}
+	# O que não cabe na carga fica no chão, onde a criatura está.
+	var split := Bag.split_to_fit(inv, carrying, got)
+	for key: String in split[0]:
+		inv[key] = int(inv.get(key, 0)) + int(split[0][key])
+	if not split[1].is_empty():
+		ground.add_items(WorldGen.cell_of(pos), split[1])
+	result["kept"] = split[0]
+	result["left_over"] = split[1]
+	result["pile_cell"] = WorldGen.cell_of(pos)
 	return result
+
+
+## Larga itens da bolsa no chão, na casa da criatura. Devolve { ok, reason,
+## cell, item, amount }. reason: "nao_tem" (não há isso na bolsa), "devagar".
+func drop(id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var inv := inventory_of(id)
+	var have := int(inv.get(item, 0))
+	if have <= 0 or amount <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_drop[id] = now
+	var moved := mini(amount, have)
+	inv[item] = have - moved
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	var cell := WorldGen.cell_of(players[id]["pos"])
+	ground.add(cell, item, moved)
+	return {"ok": true, "cell": cell, "item": item, "amount": moved}
+
+
+## Pega do chão o que couber na carga, do mais pesado ao mais leve. Devolve
+## { ok, reason, cell, taken, left }. reason: "longe", "nada", "cheio", "devagar".
+func pick_up(id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if players[id]["pos"].distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var pile := ground.items_at(cell)
+	if pile.is_empty():
+		return {"ok": false, "reason": "nada"}
+	var inv := inventory_of(id)
+	var split := Bag.split_to_fit(inv, wielding(id), pile)
+	if split[0].is_empty():
+		return {"ok": false, "reason": "cheio"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_drop[id] = now
+	for key: String in split[0]:
+		inv[key] = int(inv.get(key, 0)) + ground.remove(cell, key, int(split[0][key]))
+	return {"ok": true, "cell": cell, "taken": split[0], "left": split[1]}
 
 
 ## Um golpe de machado numa touceira de bambu ao alcance. Não confere a
@@ -246,6 +304,7 @@ func to_save() -> Dictionary:
 		"equipment": equipment,
 		"harvest": harvest.to_save(),
 		"builds": builds.to_save(),
+		"ground": ground.to_save(),
 	}
 
 
@@ -268,6 +327,9 @@ static func from_save(data: Dictionary) -> WorldState:
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
+	var dropped = data.get("ground", [])
+	if typeof(dropped) == TYPE_ARRAY:
+		state.ground.load_save(dropped)
 	var built = data.get("builds", {})
 	if typeof(built) == TYPE_DICTIONARY:
 		state.builds.load_save(built)

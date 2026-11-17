@@ -16,6 +16,31 @@ extends RefCounted
 ## O que toda criatura carrega desde que chega ao mundo.
 const STARTER := {"machado": 1}
 
+## Carga: quanto peso a criatura aguenta levar, somando a bolsa e o que está
+## nas mãos (empunhar e guardar não mudam a carga). Para deixar o jogo mais
+## fácil ou mais difícil, mude só CAPACITY e WEIGHTS.
+##
+## A medida é o peso de uma fruta (1). Com 24, um marco inteiro (3 pedras
+## grandes, 2 médias e 1 pequena = 25) não cabe numa viagem só, e uma
+## fogueira (23) só cabe se o machado (3) ficar no chão.
+const CAPACITY := 24
+## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
+const WEIGHTS := {
+	"frutas": 1,
+	"lenha_pequena": 1,
+	"lenha_media": 2,
+	"lenha_grande": 4,
+	"pedra_pequena": 1,
+	"pedra_media": 3,
+	"pedra_grande": 6,
+	"bambu": 2,
+	"argila": 2,
+	"machado": 3,
+	"lanca": 2,
+	"clava": 4,
+}
+const DEFAULT_WEIGHT := 1
+
 ## Itens que podem ser empunhados (vão para o Equipamento) e a dica falada
 ## ao empunhar.
 const WIELDABLE := {
@@ -101,3 +126,69 @@ static func give_starter(bag: Dictionary, wielded: String) -> void:
 	for item: String in STARTER:
 		if int(bag.get(item, 0)) <= 0 and wielded != item:
 			bag[item] = int(STARTER[item])
+
+
+static func weight_of(item: String) -> int:
+	return int(WEIGHTS.get(item, DEFAULT_WEIGHT))
+
+
+## Peso de um punhado de itens (item -> quantidade).
+static func weight_of_items(items: Dictionary) -> int:
+	var total := 0
+	for item: String in items:
+		total += weight_of(item) * maxi(0, int(items[item]))
+	return total
+
+
+## Carga atual: a bolsa mais o que está nas mãos.
+static func load_of(bag: Dictionary, wielded := "") -> int:
+	return weight_of_items(bag) + (0 if wielded.is_empty() else weight_of(wielded))
+
+
+## Quanto peso ainda cabe (0 se a criatura já está no limite ou acima dele,
+## como quem vem de um mundo salvo antes do limite existir).
+static func free_space(bag: Dictionary, wielded := "") -> int:
+	return maxi(0, CAPACITY - load_of(bag, wielded))
+
+
+## Quantas unidades de "item" ainda cabem.
+static func room_for(bag: Dictionary, wielded: String, item: String) -> int:
+	return free_space(bag, wielded) / maxi(1, weight_of(item))
+
+
+## Separa o que cabe do que não cabe, pondo primeiro o mais pesado (o que
+## sobra de fora é o miúdo). Devolve [cabe, não cabe], cada um item -> quantidade.
+static func split_to_fit(bag: Dictionary, wielded: String, items: Dictionary) -> Array:
+	var free := free_space(bag, wielded)
+	var keys := items.keys()
+	keys.sort_custom(func(a, b):
+		return weight_of(a) > weight_of(b) if weight_of(a) != weight_of(b) else str(a) < str(b))
+	var fit := {}
+	var rest := {}
+	for item: String in keys:
+		var amount := maxi(0, int(items[item]))
+		var take := mini(amount, free / maxi(1, weight_of(item)))
+		free -= take * weight_of(item)
+		if take > 0:
+			fit[item] = take
+		if amount - take > 0:
+			rest[item] = amount - take
+	return [fit, rest]
+
+
+## As chaves da bolsa que formam um item agrupado, do maior tamanho ao menor:
+## "pedra" -> ["pedra_grande", "pedra_pequena"] (só as que a criatura tem).
+static func keys_of(bag: Dictionary, base: String) -> Array:
+	var keys := []
+	if int(bag.get(base, 0)) > 0:
+		keys.append(base)
+	if Economy.has_sizes(base):
+		for size: String in Economy.SIZE_ORDER:
+			if int(bag.get(Economy.sized(base, size), 0)) > 0:
+				keys.append(Economy.sized(base, size))
+	return keys
+
+
+## "Carga, 18 de 24".
+static func load_label(bag: Dictionary, wielded := "") -> String:
+	return "Carga, %d de %d" % [load_of(bag, wielded), CAPACITY]

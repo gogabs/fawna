@@ -87,6 +87,10 @@ const MANIFEST := {
 	"fogo_lenha": ["obras/lenha_1.ogg", "obras/lenha_2.ogg"],
 	"fogo_apagar": ["obras/apagar.ogg"],
 	"fogo_crepitar": ["obras/crepitar.ogg"],
+	# Itens no chão: o baque de largar e o tique baixinho do monte. Sem
+	# arquivos, gerados por código (SoundBank).
+	"largar": ["ferramentas/largar_1.ogg", "ferramentas/largar_2.ogg", "ferramentas/largar_3.ogg"],
+	"amb_monte": ["recursos/amb_monte.ogg"],
 	"bolsa_fechar": ["ferramentas/bolsa_fechar.ogg", "ferramentas/bolsa_fechar_1.ogg", "ferramentas/bolsa_fechar_2.ogg", "ferramentas/bolsa_fechar_3.ogg", "ferramentas/bolsa_fechar_4.ogg"],
 }
 
@@ -287,6 +291,19 @@ static func bag_close() -> AudioStream:
 ## Mexer nos itens da bolsa (passar de um para outro).
 static func bag_rummage() -> AudioStream:
 	return _pick_variant("bolsa_mexer", ui_move)
+
+
+## Largar um item no chão.
+static func drop_item() -> AudioStream:
+	return _pick_variant("largar", SoundBank.drop_item)
+
+
+## Tique baixinho de um monte de itens no chão (em loop, nas fontes fixas).
+static func pile_loop() -> AudioStream:
+	var stream := _pick_variant("amb_monte", SoundBank.pile_loop)
+	if stream != null:
+		_make_loop(stream)
+	return stream
 
 
 ## Construções: pedras e materiais entrando na obra, uma batida de

@@ -96,6 +96,7 @@ var _swing_cooldown := 0.0
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
 var _harvest_timer := 0.0
 var builds: Builds  # espelho das construções (o servidor manda)
+var ground: Ground  # espelho dos itens soltos no chão (o servidor manda)
 var _burn_timer := 0.0  # servidor: fogueiras que apagaram
 var _name_prompt: NamePrompt  # caixinha para dar nome ao marco
 var _pending_build := {}  # obra esperando o nome: {"kind", "cell"}
@@ -259,6 +260,7 @@ func request_join(player_name: String) -> void:
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	harvest_snapshot.rpc_id(id, state.harvest.snapshot())
 	build_snapshot.rpc_id(id, state.builds.snapshot())
+	ground_snapshot.rpc_id(id, state.ground.snapshot())
 	for other_id in state.players:
 		if other_id != id:
 			player_joined.rpc_id(other_id, id, accepted_name, pos)
@@ -284,7 +286,11 @@ func request_collect(cell: Vector2i) -> void:
 	var result := state.collect(id, cell)
 	if result["ok"]:
 		_dirty = true
-		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]), result.get("parts", {}))
+		var kept: Dictionary = result.get("kept", {})
+		var left_over: Dictionary = result.get("left_over", {})
+		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]), result.get("parts", {}), kept, left_over)
+		if not left_over.is_empty():
+			ground_changed.rpc(result["pile_cell"], state.ground.items_at(result["pile_cell"]), "sobrou", id, left_over)
 		resource_changed.rpc(cell, state.harvest.info(cell), "coleta", id)
 		for other_id in state.players:
 			if other_id != id:
@@ -292,6 +298,38 @@ func request_collect(cell: Vector2i) -> void:
 	elif state.players.has(id):
 		var detail := str(result.get("hits_left", "")) if result["reason"] == "golpear" else str(result.get("item", ""))
 		action_failed.rpc_id(id, result["reason"], detail)
+
+
+## Bolsa > item > Jogar: larga itens da bolsa no chão, onde a criatura está.
+@rpc("any_peer", "call_local", "reliable")
+func request_drop(item: String, amount: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.drop(id, item, amount)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] == "nao_tem":
+			action_failed.rpc_id(id, "nao_tem", item)
+		return
+	_dirty = true
+	inventory_changed.rpc_id(id, state.inventory_of(id), "", "")
+	ground_changed.rpc(result["cell"], state.ground.items_at(result["cell"]), "largou", id, {item: int(result["amount"])})
+
+
+## Espaço perto de um monte no chão: pega o que couber na carga.
+@rpc("any_peer", "call_local", "reliable")
+func request_pick_up(cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.pick_up(id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] == "cheio":
+			action_failed.rpc_id(id, "cheio", "")
+		return
+	_dirty = true
+	inventory_changed.rpc_id(id, state.inventory_of(id), "", "")
+	ground_changed.rpc(cell, state.ground.items_at(cell), "pegou", id, result["taken"])
 
 
 ## Um golpe de machado num bambu (tecla J, com o machado empunhado). Quem
@@ -451,6 +489,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	_cell = WorldGen.cell_of(_pos)
 	harvest = Harvest.new(world)
 	builds = Builds.new(world)
+	ground = Ground.new()
 	view.setup(world, players, my_id)
 	view.heading = _heading
 	audio.setup(world, harvest)
@@ -478,6 +517,48 @@ func harvest_snapshot(data: Dictionary) -> void:
 		return
 	harvest.apply_snapshot(data)
 	audio.refresh_resources()
+
+
+## Os itens que já estão no chão, para quem acabou de entrar.
+@rpc("authority", "call_local", "reliable")
+func ground_snapshot(data: Dictionary) -> void:
+	if world == null:
+		return
+	ground.apply_snapshot(data)
+	audio.set_piles(ground.cells())
+
+
+## O monte de uma casa mudou. event: "largou" e "pegou" (alguém mexeu no
+## monte) ou "sobrou" (não coube na carga ao coletar). O som sai do monte;
+## quem agiu ouve também a fala. "moved" é o que mudou de lugar.
+@rpc("authority", "call_local", "reliable")
+func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int, moved: Dictionary) -> void:
+	if world == null:
+		return
+	ground.apply_pile(cell, items)
+	audio.set_piles(ground.cells())
+	var where := WorldGen.cell_center(cell)
+	var near := where.distance_to(_pos) <= HEARING_RADIUS
+	if near and event != "pegou":
+		audio.play_at_point(where, Sounds.drop_item(), 0.0, true, true)
+	elif near and by_id != my_id:
+		audio.play_at_point(where, Sounds.stow(), 0.0, true, true)
+	if by_id != my_id:
+		return
+	match event:
+		"largou":
+			Speech.say("Você largou %s no chão. %s." % [Economy.items_text(moved), Bag.load_label(inventory, wielded)])
+		"pegou":
+			_play(Sounds.pickup(Economy.base_of(moved.keys()[0])))
+			var rest := "" if items.is_empty() else " Ficou %s no chão: a carga não aguenta." % Economy.items_text(items)
+			Speech.say("Você pegou %s. %s.%s" % [Economy.items_text(moved), Bag.load_label(inventory, wielded), rest])
+		"sobrou":
+			pass  # quem coletou já ouviu o que ficou no chão (inventory_changed)
+
+
+## O que há no monte desta casa, para a fala.
+func _pile_text(cell: Vector2i) -> String:
+	return Economy.items_text(ground.items_at(cell))
 
 
 ## Um recurso mudou: golpe num bambu, bambu derrubado ou algo recolhido. O
@@ -587,7 +668,7 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}) -> void:
+func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}, kept := {}, left_over := {}) -> void:
 	if world == null:
 		return
 	inventory = new_inventory
@@ -595,8 +676,13 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String, am
 		return
 	_play(Sounds.pickup(item))
 	var total := Bag.count(inventory, item)
-	var what := "Você %s %s." % [verb, Economy.collected_text(item, amount, parts)]
-	Speech.say("%s Agora tem %d." % [what, total])
+	if left_over.is_empty():
+		Speech.say("Você %s %s. Agora tem %d." % [verb, Economy.collected_text(item, amount, parts), total])
+	elif kept.is_empty():
+		Speech.say("Sua carga está no limite: %s ficou no chão." % Economy.items_text(left_over))
+	else:
+		Speech.say("Você %s %s. Agora tem %d. Carga no limite: %s ficou no chão." % [
+			verb, Economy.items_text(kept), total, Economy.items_text(left_over)])
 
 
 ## A bolsa e as mãos mudaram. verb: "empunhou", "guardou" ou "" (só
@@ -634,7 +720,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"golpear":
 			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
-			Speech.say("Você já carrega o máximo de %s." % Economy.names_of(detail)[1])
+			Speech.say("Sua carga está no limite, %d de %d. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded), Bag.CAPACITY])
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -968,6 +1054,8 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 		_last_trail_notice = now
 	elif thing != WorldGen.Thing.NADA and not harvest.spoken_name(cell).is_empty():
 		Speech.say(harvest.spoken_name(cell), false)
+	if ground.has_pile(cell):
+		Speech.say("No chão: %s. Espaço pega." % _pile_text(cell), false)
 
 
 ## Espaço: coleta o que estiver ao alcance, dando preferência ao que está à
@@ -975,12 +1063,16 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 func _interact() -> void:
 	var target := _collect_target()
 	var build := _build_target()
-	if not build.is_empty():
-		var build_distance := _pos.distance_to(WorldGen.cell_center(build["cell"]))
-		if target == WorldGen.NO_CELL or build_distance <= _pos.distance_to(WorldGen.cell_center(target)):
-			request_build_work.rpc_id(1, int(build["id"]))
-			return
-	if target != WorldGen.NO_CELL:
+	var pile := ground.nearest(_pos, COLLECT_REACH)
+	# O que está mais perto vence; empate: obra, depois monte, depois recurso.
+	var build_distance := INF if build.is_empty() else _pos.distance_to(WorldGen.cell_center(build["cell"]))
+	var pile_distance := INF if pile == WorldGen.NO_CELL else _pos.distance_to(WorldGen.cell_center(pile))
+	var target_distance := INF if target == WorldGen.NO_CELL else _pos.distance_to(WorldGen.cell_center(target))
+	if build_distance <= pile_distance and build_distance <= target_distance and not build.is_empty():
+		request_build_work.rpc_id(1, int(build["id"]))
+	elif pile_distance <= target_distance and pile != WorldGen.NO_CELL:
+		request_pick_up.rpc_id(1, pile)
+	elif target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
 
 
@@ -1087,7 +1179,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1130,7 +1222,7 @@ func _say_surroundings() -> void:
 	for id in players:
 		if id != my_id:
 			others.append(players[id])
-	Speech.say(Narrator.surroundings(world, _pos, _heading, others, harvest))
+	Speech.say(Narrator.surroundings(world, _pos, _heading, others, harvest, ground))
 
 
 func _say_who() -> void:
@@ -1275,29 +1367,55 @@ func _setup_caminheiro() -> void:
 func _menu_root() -> Array:
 	return [
 		{"label": "Caminheiro", "open": _caminheiro_items},
-		{"label": "Bolsa", "open": _bag_items, "empty": "vazia",
+		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, capacidade %d" % Bag.CAPACITY,
 			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
 	]
 
 
-## Itens da bolsa, agrupados ("Argila, 2"; "Pedra, 3 grandes, 1 pequena"). Os que têm ação abrem um
-## submenu (o machado: Empunhar); os outros só repetem o nome.
+## Itens da bolsa, agrupados ("Argila, 2"; "Pedra, 3 grandes, 1 pequena"), e no
+## fim a carga. Cada item abre um submenu: com tamanhos, um item por tamanho;
+## cada um com Jogar 1, Jogar tudo e, nas ferramentas e armas, Empunhar.
 func _bag_items() -> Array:
 	var items := []
 	for entry: Array in Bag.entries(inventory):
 		var item: String = entry[0]
 		var label := Bag.entry_label(item, entry[1], inventory)
-		if Bag.can_wield(item):
+		var keys := Bag.keys_of(inventory, item)
+		if keys.size() == 1 and keys[0] == item:
 			items.append({"label": label, "open": _bag_item_actions.bind(item)})
 		else:
-			items.append({"label": label, "info": label})
+			items.append({"label": label, "open": _bag_sizes.bind(item)})
+	if not items.is_empty():
+		items.append({"label": Bag.load_label(inventory, wielded),
+			"info": "%s. Cabem mais %d de peso." % [Bag.load_label(inventory, wielded), Bag.free_space(inventory, wielded)]})
+	return items
+
+
+## Os tamanhos de um item da bolsa ("Pedra grande, 3"), cada um com suas ações.
+func _bag_sizes(base: String) -> Array:
+	var items := []
+	for key: String in Bag.keys_of(inventory, base):
+		items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _bag_item_actions.bind(key)})
 	return items
 
 
 func _bag_item_actions(item: String) -> Array:
-	return [{"label": "Empunhar", "run": _equip.bind(item)}]
+	var amount := int(inventory.get(item, 0))
+	var actions := []
+	if Bag.can_wield(item):
+		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
+	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
+	if amount > 1:
+		actions.append({"label": "Jogar tudo, %d" % amount, "run": _drop.bind(item, amount)})
+	return actions
+
+
+## Jogar passa pelo servidor; a resposta (ground_changed) é que fala e toca.
+func _drop(item: String, amount: int) -> String:
+	request_drop.rpc_id(1, item, amount)
+	return ""
 
 
 ## O que está nas mãos, com o botão Guardar.
@@ -1345,6 +1463,7 @@ func _caminheiro_items() -> Array:
 		{"label": "Locais", "open": _caminheiro_places},
 		{"label": "Recursos", "open": _caminheiro_resources},
 		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma em obra"},
+		{"label": "Itens no chão", "run": _track_pile, "stay": true},
 	]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
@@ -1363,6 +1482,14 @@ func _caminheiro_places() -> Array:
 		items.append({"label": "%s, %s" % [build["name"], meters],
 			"run": _track.bind(_approach_point(build["cell"]), "o marco " + build["name"]), "stay": true})
 	return items
+
+
+## Acende o cristal rumo ao monte de itens mais próximo.
+func _track_pile() -> String:
+	var cell := ground.nearest(_pos, float(RESOURCE_SEARCH_RADIUS))
+	if cell == WorldGen.NO_CELL:
+		return "Não há itens no chão por perto."
+	return _track(WorldGen.cell_center(cell), "os itens no chão", cell)
 
 
 func _caminheiro_resources() -> Array:
@@ -1675,6 +1802,10 @@ func _run_auto_commands() -> void:
 				for i in 12:
 					_interact()
 					await get_tree().create_timer(0.35).timeout
+			"JOGAR":  # testes: larga uma pedra grande (do KIT) no chão
+				_drop("pedra_grande", 1)
+			"JOGAR_TUDO":
+				_drop("pedra_grande", 99)
 			"LANCA", "CLAVA":
 				_craft(command.to_lower())
 			"SAIR":
