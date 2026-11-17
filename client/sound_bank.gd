@@ -649,6 +649,87 @@ static func bamboo_fall() -> AudioStreamWAV:
 	return _cache["bambu_queda"]
 
 
+## Golpe de machado no tronco: uma pancada grave e seca, de madeira maciça.
+static func tree_knock() -> AudioStreamWAV:
+	if not _cache.has("arvore_golpe"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1313
+		var count := int(0.35 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		_hollow_knock(samples, 0, 135.0, 0.8)
+		_hollow_knock(samples, 0, 210.0, 0.35)
+		var last := 0.0
+		for i in 500:  # lascas
+			last = lerpf(rng.randf_range(-1.0, 1.0), last, 0.35)
+			samples[i] += last * pow(1.0 - i / 500.0, 2.0) * 0.7
+		_cache["arvore_golpe"] = _to_wav(samples)
+	return _cache["arvore_golpe"]
+
+
+## O tronco rangendo: toca junto com os últimos golpes, avisando que a
+## árvore está para cair.
+static func tree_creak() -> AudioStreamWAV:
+	if not _cache.has("arvore_rangido"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1414
+		var count := int(0.9 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		_add_creak(samples, 0, count, 70.0, 0.3)
+		_add_crackles(samples, rng, 0.1, 0.7, 5, 0.25)
+		_cache["arvore_rangido"] = _to_wav(samples)
+	return _cache["arvore_rangido"]
+
+
+## A árvore caindo: o tronco range e estala, a copa desce rasgando o ar e
+## tudo bate no chão, com galhos quebrando.
+static func tree_fall() -> AudioStreamWAV:
+	if not _cache.has("arvore_queda"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1515
+		var count := int(3.6 * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		_add_creak(samples, 0, int(1.3 * RATE), 60.0, 0.35)
+		var at := 0.15
+		var gap := 0.3
+		while at < 1.3:  # estalos cada vez mais juntos
+			_add_crackles(samples, rng, at, at + 0.02, 1, 0.7)
+			at += gap
+			gap *= 0.72
+		var rush_start := int(1.2 * RATE)  # a copa descendo
+		var rush_len := int(1.1 * RATE)
+		var low := 0.0
+		for i in rush_len:
+			var k := float(i) / rush_len
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.55 - 0.3 * k)
+			samples[rush_start + i] += low * k * k * 0.5
+		var thud_start := int(2.3 * RATE)  # o tronco no chão
+		var thud_len := int(0.9 * RATE)
+		for i in thud_len:
+			var t := float(i) / RATE
+			samples[thud_start + i] += sin(TAU * (62.0 - 20.0 * t) * t) * exp(-t * 6.0) * 0.9
+			low = lerpf(rng.randf_range(-1.0, 1.0), low, 0.8)
+			samples[thud_start + i] += low * exp(-t * 5.0) * 0.6
+		_hollow_knock(samples, thud_start, 110.0, 0.6)
+		_add_crackles(samples, rng, 2.3, 3.2, 14, 0.45)  # galhos quebrando
+		_cache["arvore_queda"] = _to_wav(samples)
+	return _cache["arvore_queda"]
+
+
+## Rangido de madeira: um tom grave e áspero que oscila.
+static func _add_creak(samples: PackedFloat32Array, start: int, length: int, base: float, volume: float) -> void:
+	var phase := 0.0
+	for i in length:
+		if start + i >= samples.size():
+			break
+		var k := float(i) / length
+		phase += TAU * (base + base * 0.3 * sin(TAU * 1.7 * k) + base * 0.4 * k) / RATE
+		var grit := 1.0 if fmod(phase, TAU) < 0.6 else 0.0
+		samples[start + i] += (grit - 0.2) * sin(PI * k) * volume
+
+
 static func _filtered_noise(count: int, smooth: float, volume: float, rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var samples := PackedFloat32Array()
 	samples.resize(count)

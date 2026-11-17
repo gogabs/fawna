@@ -11,8 +11,8 @@ extends RefCounted
 ## ajudar em qualquer obra.
 ##
 ## Os materiais usam os subtipos da bolsa: pedra_grande, pedra_media,
-## pedra_pequena, lenha_media, lenha_pequena (lenha_grande só virá das
-## árvores).
+## pedra_pequena, lenha_media, lenha_pequena (lenha_grande só vem das
+## árvores, junto com a madeira).
 
 ## Nome falado de cada material: [singular, plural].
 const MATERIAL_NAMES := {
@@ -23,6 +23,7 @@ const MATERIAL_NAMES := {
 	"lenha_media": ["lenha média", "lenhas médias"],
 	"lenha_pequena": ["lenha pequena", "lenhas pequenas"],
 	"bambu": ["bambu", "bambus"],
+	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
 }

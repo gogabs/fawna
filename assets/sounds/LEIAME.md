@@ -103,3 +103,13 @@ filtrados e nivelados; publicados com autorização dele. Todos CC0 1.0.
 - `recursos/coleta_frutas_1..3.ogg`: "Rustling foliage" ([DDT197, 445788](https://freesound.org/s/445788/)) com o estalo de "pencil snap..." ([kyles, 637746](https://freesound.org/s/637746/)).
 - `recursos/amb_bambu.ogg` e `recursos/amb_frutas.ogg`: gerados por código para o projeto (`tools/sons_recursos.py`): madeira oca batendo, e farfalhar baixinho com gotinhas ascendentes (a frutinha).
 - Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos gravetos (eles saem dos arbustos, que já soam).
+
+## Árvores
+
+Ainda sem gravações: o golpe no tronco, o rangido dos últimos golpes e a
+queda são gerados por código (`SoundBank.tree_knock`, `tree_creak`,
+`tree_fall`), e a madeira recolhida usa os `coleta_bambu_*`. Esbarrar numa
+árvore toca `world/walltree.ogg`. Quando houver gravações escolhidas, basta
+pôr em `recursos/` com os nomes `arvore_golpe_1..4.ogg`,
+`arvore_rangido_1..3.ogg`, `arvore_queda_1..3.ogg` e `coleta_madeira_1..4.ogg`:
+o jogo passa a usá-las sozinho.

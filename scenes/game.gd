@@ -50,6 +50,7 @@ const BUMP_SPEECH_COOLDOWN := 1.5
 const COLLECT_REACH := 1.4  # casas, do centro da criatura ao centro da coisa
 ## O bambu bloqueia a passagem, então o centro dele fica um pouco mais longe.
 const STRIKE_REACH := 1.5
+const TREE_FALL_REACH := 3.0  # a queda de uma árvore se ouve a 3x HEARING_RADIUS
 const HARVEST_CHECK := 2.0  # segundos entre conferências do que rebrotou
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
@@ -307,7 +308,7 @@ func request_collect(cell: Vector2i) -> void:
 	var result := state.collect(id, cell)
 	if result["ok"]:
 		_dirty = true
-		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]), result.get("parts", {}))
+		inventory_changed.rpc_id(id, state.inventory_of(id), "coletou", result["item"], int(result["amount"]), result.get("parts", {}), result.get("extras", {}))
 		resource_changed.rpc(cell, state.harvest.info(cell), "coleta", id)
 		for other_id in state.players:
 			if other_id != id:
@@ -536,12 +537,17 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 		"golpe":
 			if near:
 				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
+				# Nos últimos golpes o tronco range: avisa que falta pouco.
+				if tree and harvest.hits_left(cell) <= Harvest.CREAK_HITS:
+					audio.play_at_point(where, Sounds.tree_creak(), 0.0, true, true)
 		"queda":
-			if near:
+			# A queda de uma árvore se ouve de mais longe.
+			var reach := HEARING_RADIUS * (TREE_FALL_REACH if tree else 1.0)
+			if where.distance_to(_pos) <= reach:
 				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
 				audio.play_at_point(where, Sounds.tree_fall() if tree else Sounds.bamboo_fall())
 			if by_id == my_id:
-				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a lenha." if tree \
+				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
 
@@ -635,7 +641,7 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}) -> void:
+func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}, extras := {}) -> void:
 	if world == null:
 		return
 	inventory = new_inventory
@@ -643,8 +649,10 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String, am
 		return
 	_play(Sounds.pickup(item))
 	var total := Bag.count(inventory, item)
-	var what := "Você %s %s." % [verb, Economy.collected_text(item, amount, parts)]
-	Speech.say("%s Agora tem %d." % [what, total])
+	var what := "Você %s %s." % [verb, Economy.haul_text(item, amount, parts, extras)]
+	# Com dois tipos de item (madeira e lenha da árvore), o total de um só
+	# confundiria: a Bolsa diz quanto há de cada.
+	Speech.say(what if not extras.is_empty() else "%s Agora tem %d." % [what, total])
 
 
 ## A bolsa e as mãos mudaram. verb: "empunhou", "guardou" ou "" (só
@@ -1428,6 +1436,7 @@ func _stow() -> String:
 const CAMINHEIRO_RESOURCES := [
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
 	["Lenha", [WorldGen.Thing.ARBUSTO], "a lenha"],
+	["Madeira", [WorldGen.Thing.ARVORE], "a árvore"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
 	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
@@ -1753,7 +1762,7 @@ func _run_auto_commands() -> void:
 			"KIT":  # testes, só quem hospeda: materiais para construir e fabricar
 				if state != null:
 					var inv := state.inventory_of(my_id)
-					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu"]:
+					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira"]:
 						inv[item] = int(inv.get(item, 0)) + 10
 					equipment_changed(inv, state.wielding(my_id), "", "")
 			"LIVRE":  # testes: vai até um chão livre e fica de frente para ele (norte)

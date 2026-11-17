@@ -249,13 +249,13 @@ func _test_save_roundtrip() -> void:
 	var state := WorldState.new(99)
 	state.add_player(1, "Lua")
 	state.inventories["Lua"] = {"bambu": 3}
-	state.inventories["Tico"] = {"madeira": 2, "argila": 1}
+	state.inventories["Tico"] = {"sementes": 2, "argila": 1}
 	var path := "user://teste_mundo.json"
 	_check(WorldSave.save_state(state, path), "deveria salvar")
 	var loaded := WorldSave.load_state(path)
 	_check(loaded != null and loaded.world.world_seed == 99, "semente salva")
 	_check(loaded.inventories["Lua"]["bambu"] == 3, "inventário salvo")
-	_check(loaded.inventories["Tico"] == {"argila": 1}, "itens que não existem mais (madeira) ficam para trás")
+	_check(loaded.inventories["Tico"] == {"argila": 1}, "itens que não existem mais (sementes) ficam para trás")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 

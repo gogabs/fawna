@@ -31,6 +31,12 @@ const MANIFEST := {
 	"amb_frutas": ["recursos/amb_frutas.ogg"],
 	"bambu_golpe": ["recursos/bambu_golpe_1.ogg", "recursos/bambu_golpe_2.ogg", "recursos/bambu_golpe_3.ogg", "recursos/bambu_golpe_4.ogg"],
 	"bambu_queda": ["recursos/bambu_queda_1.ogg", "recursos/bambu_queda_2.ogg", "recursos/bambu_queda_3.ogg"],
+	"arvore_golpe": ["recursos/arvore_golpe_1.ogg", "recursos/arvore_golpe_2.ogg", "recursos/arvore_golpe_3.ogg", "recursos/arvore_golpe_4.ogg"],
+	"arvore_rangido": ["recursos/arvore_rangido_1.ogg", "recursos/arvore_rangido_2.ogg", "recursos/arvore_rangido_3.ogg"],
+	"arvore_queda": ["recursos/arvore_queda_1.ogg", "recursos/arvore_queda_2.ogg", "recursos/arvore_queda_3.ogg"],
+	"rec_coleta_madeira": ["recursos/coleta_madeira_1.ogg", "recursos/coleta_madeira_2.ogg", "recursos/coleta_madeira_3.ogg", "recursos/coleta_madeira_4.ogg"],
+	"coleta_madeira": ["recursos/coleta_bambu_1.ogg", "recursos/coleta_bambu_2.ogg", "recursos/coleta_bambu_3.ogg", "recursos/coleta_bambu_4.ogg"],
+	"colisao_arvore": ["world/walltree.ogg"],
 	"chegada": ["world/notify.ogg"],
 	"ui_mover": ["menu/menu_navegar.ogg", "world/menuclick.ogg"],
 	"ui_confirmar": ["world/menuenter.ogg"],
@@ -169,14 +175,19 @@ static func bamboo_knock() -> AudioStream:
 	return _pick_existing(["bambu_golpe"], SoundBank.bamboo_knock)
 
 
-## Machado no tronco e a árvore caindo. Sem arquivos próprios (arvore_golpe,
-## arvore_queda), usam os sons do bambu, que são os que existem.
+## Machado no tronco, o rangido dos últimos golpes e a árvore caindo. Com
+## arquivos em recursos/ (arvore_golpe_N, arvore_rangido_N, arvore_queda_N,
+## coleta_madeira_N) eles valem; sem eles, são gerados por código.
 static func tree_knock() -> AudioStream:
-	return _pick_existing(["arvore_golpe"], SoundBank.bamboo_knock)
+	return _pick_existing(["arvore_golpe"], SoundBank.tree_knock)
+
+
+static func tree_creak() -> AudioStream:
+	return _pick_existing(["arvore_rangido"], SoundBank.tree_creak)
 
 
 static func tree_fall() -> AudioStream:
-	return _pick_existing(["arvore_queda"], SoundBank.bamboo_fall)
+	return _pick_existing(["arvore_queda"], SoundBank.tree_fall)
 
 
 ## A touceira estalando e caindo, no último golpe.

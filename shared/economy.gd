@@ -13,6 +13,7 @@ extends RefCounted
 const ITEM_NAMES := {
 	"bambu": ["bambu", "bambus"],
 	"lenha": ["lenha", "lenhas"],
+	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
 	"pedra": ["pedra", "pedras"],
@@ -28,8 +29,8 @@ const SIZE_NAMES := {
 	"pequena": ["pequena", "pequenas"],
 }
 
-## Que tamanhos cada recurso pode ter. Lenha grande só virá das árvores, que
-## ainda não existem; os arbustos dão lenha média e pequena.
+## Que tamanhos cada recurso pode ter. Lenha grande só vem das árvores; os
+## arbustos dão lenha média e pequena.
 const SIZES := {
 	"lenha": ["grande", "media", "pequena"],
 	"pedra": ["grande", "media", "pequena"],
@@ -107,6 +108,15 @@ static func collected_text(base: String, amount: int, parts: Dictionary) -> Stri
 	var cut := detail.rfind(", ")
 	detail = detail.left(cut) + " e " + detail.substr(cut + 2)
 	return "%s: %s" % [item_text(base, amount), detail]
+
+
+## Tudo o que uma coleta rendeu: o item principal (com seus tamanhos) e os
+## extras: "2 madeiras e 2 lenhas grandes".
+static func haul_text(base: String, amount: int, parts: Dictionary, extras: Dictionary) -> String:
+	var main := collected_text(base, amount, parts)
+	if extras.is_empty():
+		return main
+	return "%s e %s" % [main, items_text(extras)]
 
 
 ## Ex.: {"bambu": 3, "argila": 1} -> "3 bambus e 1 argila"

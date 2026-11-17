@@ -163,6 +163,9 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	else:
 		for part: String in parts:
 			inv[part] = mini(MAX_STACK, int(inv.get(part, 0)) + int(parts[part]))
+	var extras: Dictionary = result.get("extras", {})
+	for extra: String in extras:
+		inv[extra] = mini(MAX_STACK, int(inv.get(extra, 0)) + int(extras[extra]))
 	return result
 
 

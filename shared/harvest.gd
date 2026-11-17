@@ -27,9 +27,13 @@ const NEVER := 1.0e15
 ##   hits: golpes de machado até poder recolher (0: recolhe direto, com a mão);
 ##   extra_hits: até quantos golpes a mais uma fonte pode pedir (varia por lugar);
 ##   regrow: segundos até voltar depois de recolhida;
+##   extras: itens que vêm junto, com quantidade fixa (item -> quanto). A árvore
+##   dá madeira (para construir) e lenha grande (para o fogo), separadas; para
+##   voltar a ser tudo lenha, troque a linha dela por "item": "lenha" e tire
+##   extras (TREE_SIZE_CHANCES já faz a lenha sair grande);
 ##   opens: derrubada (ou recolhida), a casa deixa de bloquear (world.cleared).
 const SOURCES := {
-	WorldGen.Thing.ARVORE: {"item": "lenha", "amount": 3, "hits": 6, "extra_hits": 3, "tool": "machado", "regrow": NEVER, "opens": true},
+	WorldGen.Thing.ARVORE: {"item": "madeira", "amount": 2, "extras": {"lenha_grande": 2}, "hits": 6, "extra_hits": 3, "tool": "machado", "regrow": NEVER, "opens": true},
 	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0, "opens": true},
 	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
@@ -45,8 +49,11 @@ const SIZE_CHANCES := {
 	"lenha": {"media": 0.5, "pequena": 0.5},
 	"pedra": {"grande": 1.0 / 3.0, "media": 1.0 / 3.0, "pequena": 1.0 / 3.0},
 }
-## Árvore dá só lenha grande.
+## Árvore dá só lenha grande (usado se a árvore voltar a dar lenha como item principal).
 const TREE_SIZE_CHANCES := {"grande": 1.0}
+
+## Nos últimos golpes o tronco range: o aviso de que falta pouco é o som, não a fala.
+const CREAK_HITS := 2
 const WATERSIDE_STONE_CHANCES := {"grande": 0.15, "media": 0.25, "pequena": 0.6}
 
 ## Como se fala de uma fonte já colhida que continua no lugar. Quem não está
@@ -188,7 +195,7 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 ## Chance de cada tamanho para o que esta casa dá ({} se o item não tem
 ## tamanho).
 func size_chances(cell: Vector2i) -> Dictionary:
-	if world.thing_at(cell) == WorldGen.Thing.ARVORE:
+	if world.thing_at(cell) == WorldGen.Thing.ARVORE and item_of(WorldGen.Thing.ARVORE) == "lenha":
 		return TREE_SIZE_CHANCES
 	var item := item_of(world.thing_at(cell))
 	if item == "pedra" and world.is_waterside(cell):
@@ -236,7 +243,8 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	_sync(cell, at)
 	var amount := int(source["amount"])
 	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
-		"parts": _roll_parts(cell, source["item"], amount)}
+		"parts": _roll_parts(cell, source["item"], amount),
+		"extras": (source.get("extras", {}) as Dictionary).duplicate()}
 
 
 ## Estado de uma casa para mandar pela rede: tempos relativos, porque o
