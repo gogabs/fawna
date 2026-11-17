@@ -1,7 +1,6 @@
 extends SceneTree
-## Testes do Calado: aparece atrás de quem anda sozinho pelo bosque, chega
-## devagar pelas costas, para quando é encarado e recua do olhar, do fogo e
-## da companhia; e os pássaros se calam e fogem perto dele.
+## Testes do Calado: aparece atrás de quem fica exposto, em trilha ou não,, chega
+## devagar pelas costas, para quando é encarado e recua do olhar e do fogo; e os pássaros se calam e fogem perto dele.
 ## Rodar: godot --headless --path . --script res://tests/test_horrors.gd
 ## Com "-- --exportar=PASTA", também salva a respiração em .wav para ouvir.
 
@@ -14,8 +13,8 @@ func _init() -> void:
 	_test_stalks_from_behind()
 	_test_caught_consequences()
 	_test_stare_holds_and_repels()
-	_test_fire_and_company_repel()
-	_test_trail_holds()
+	_test_fire_repels()
+	_test_trail_and_company_do_not_protect()
 	_test_gives_up_and_rests()
 	_test_watchers()
 	_test_birds_hush()
@@ -107,10 +106,6 @@ func _test_safe_places() -> void:
 	var by_fire := Horrors.new(world)
 	_run(by_fire, {1: _player(spot)}, [spot + Vector2(3, 0)], 0, long)
 	_check(by_fire.horrors.is_empty(), "perto de uma fogueira acesa o Calado não deveria aparecer")
-	# Com companhia.
-	var together := Horrors.new(world)
-	_run(together, {1: _player(spot), 2: _player(spot + Vector2(2, 0))}, [], 0, long)
-	_check(together.horrors.is_empty(), "com outra criatura ao lado o Calado não deveria aparecer")
 	# Na Origem.
 	var home := Horrors.new(world)
 	_run(home, {1: _player(WorldGen.origin_point() + Vector2(0, 1.5))}, [], 0, long)
@@ -236,7 +231,7 @@ func _test_stare_holds_and_repels() -> void:
 		_check(seen, "alguma das 8 direções deveria encarar um ponto a %d graus" % degrees)
 
 
-func _test_fire_and_company_repel() -> void:
+func _test_fire_repels() -> void:
 	var world := WorldGen.new(42)
 	var spot := _forest_spot(world)
 	var by_fire := Horrors.new(world)
@@ -250,19 +245,10 @@ func _test_fire_and_company_repel() -> void:
 	_check((by_fire.horrors[id]["pos"] as Vector2).distance_to(spot) > before, "recuando, o Calado deveria se afastar")
 	_check(not Horrors.fire_near(spot, [spot + Vector2(Horrors.FIRE_SAFE + 1.0, 0)]), "fogueira longe demais não protege")
 
-	var together := Horrors.new(world)
-	players = {1: _player(spot)}
-	id = together.summon(1, players)
-	_run(together, players, [], 0, 3.0)
-	players[2] = _player(spot + Vector2(3, 0))
-	_run(together, players, [], 3000, 1.0)
-	_check(together.horrors[id]["mode"] == Horrors.Mode.RETREAT, "outra criatura ao lado do alvo deveria fazer o Calado recuar")
 
-
-func _test_trail_holds() -> void:
+func _test_trail_and_company_do_not_protect() -> void:
 	var world := WorldGen.new(42)
 	var spot := _forest_spot(world)
-	# Uma casa de trilha perto dali.
 	var trail := Vector2.INF
 	var here := WorldGen.cell_of(spot)
 	for r in range(1, 60):
@@ -274,14 +260,13 @@ func _test_trail_holds() -> void:
 			break
 	_check(trail != Vector2.INF, "deveria haver uma trilha perto do bosque")
 	var horrors := Horrors.new(world)
-	var players := {1: _player(trail)}
-	var id := horrors.summon(1, players)
-	var before: Vector2 = horrors.horrors[id]["pos"]
-	_run(horrors, players, [], 0, 5.0)
-	_check(horrors.horrors[id]["mode"] == Horrors.Mode.HELD, "com o alvo na trilha, o Calado deveria esperar")
-	_check((horrors.horrors[id]["pos"] as Vector2).is_equal_approx(before), "com o alvo na trilha, o Calado não deveria avançar")
-	_run(horrors, players, [], 5000, Horrors.TRAIL_PATIENCE)
-	_check(not horrors.horrors.has(id) or horrors.horrors[id]["mode"] == Horrors.Mode.RETREAT, "esperando demais, o Calado deveria desistir")
+	_run_until_appears(horrors, {1: _player(trail)}, 0, Horrors.EXPOSURE[1] + 10.0)
+	_check(not horrors.horrors.is_empty(), "parado na trilha, o Calado deveria aparecer do mesmo jeito")
+	var id: int = horrors.horrors.keys()[0] if not horrors.horrors.is_empty() else -1
+	var players := {1: _player(trail), 2: _player(trail + Vector2(2, 0))}
+	var messages := _run(horrors, players, [], 0, 60.0)
+	_check(messages.any(func(m): return m[1] == "caught"), "na trilha e com companhia, o Calado ainda deveria alcançar o alvo")
+	_check(id > 0, "o Calado deveria existir")
 
 
 func _test_gives_up_and_rests() -> void:

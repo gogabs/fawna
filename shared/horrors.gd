@@ -4,10 +4,10 @@ extends RefCounted
 ## recebem onde cada um está e cuidam do som.
 ##
 ## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Surge
-## atrás de quem anda sozinho em qualquer bioma (menos o mar), fora das trilhas e longe do fogo,
+## atrás de quem fica exposto em qualquer bioma (menos o mar), em trilha ou não, longe do fogo,
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
-## ele recua. Fogueira acesa ou outra criatura por perto também o espantam.
+## ele recua. Só a chama de uma fogueira acesa o espanta (um dia, a tocha); trilha e companhia não protegem.
 ## Quem ele alcança é levado ao ponto seguro mais próximo (fogueira acesa,
 ## povoado ou a Origem) e perde o que carregava na bolsa de recursos; o
 ## equipamento fica. Armas não o afetam (as tochas virão depois).
@@ -24,18 +24,16 @@ const SIGHT := 22.0  # até onde encarar o segura
 ## então 30° para cada lado garantem que sempre há uma direção que serve.
 const FACING_COS := 0.866
 const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
-const TRAIL_PATIENCE := 30.0  # parado esperando o alvo sair da trilha
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
-const COMPANY := 6.0  # outra criatura a até 9 m do alvo o espanta
-const ORIGIN_SAFE := 24.0  # perto da Origem ele não aparece
+const ORIGIN_SAFE := 6.0  # onde se reaparece depois de levado: ele não nasce ali
 const GIVE_UP_DISTANCE := 45.0
 const RESTALK_MAX := 70.0  # mais longe que isso (um salto), ele desiste de vez
 const GONE_DISTANCE := 30.0  # recuando, some quando fica longe assim de todos
 const RETREAT_MAX := 20.0  # ou depois desse tempo
 const HEARING := 30.0  # até onde um jogador fica sabendo dele
-## Quanto tempo exposto (sozinho, fora da trilha, sem fogo, em qualquer bioma menos o mar) até
+## Quanto tempo exposto (sem fogueira acesa por perto, em qualquer bioma menos o mar) até
 ## ele aparecer, e o sossego depois de uma visita.
-const EXPOSURE := [90.0, 240.0]
+const EXPOSURE := [60.0, 150.0]
 const COOLDOWN := [240.0, 480.0]
 ## Abafamento do mundo: começa a PRESENCE_FAR casas e é total a PRESENCE_NEAR.
 const PRESENCE_FAR := 18.0
@@ -189,7 +187,7 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		# Ele é mais lento que a criatura: quem anda sem parar o deixa para trás.
 		# Se ela segue exposta, ele ressurge atrás dela, em vez de
 		# sumir e só voltar depois do sossego. Só desiste de um salto muito
-		# grande, ou se a criatura ficou a salvo (trilha, mar, fogueira).
+		# grande, ou se a criatura ficou a salvo (mar, fogueira).
 		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
 			var behind := -Compass.forward(int(players[peer].get("heading", 0)))
 			horror["pos"] = target + behind * SPAWN_DISTANCE
@@ -198,19 +196,16 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 			return
 		_remove(horror, now_ms, out)
 		return
-	if fire_near(target, fires) or fire_near(pos, fires) or _has_company(peer, players):
+	if fire_near(target, fires) or fire_near(pos, fires):
 		horror["mode"] = Mode.RETREAT
 		return
 	var watched := distance <= SIGHT and is_facing(target, int(players[peer].get("heading", 0)), pos)
-	var on_trail := world.is_trail(WorldGen.cell_of(target))
 	if watched:
 		horror["stare"] = float(horror["stare"]) + delta
-	if on_trail and not watched:
-		horror["wait"] = float(horror["wait"]) + delta
-	if float(horror["stare"]) >= STARE_SECONDS or float(horror["wait"]) >= TRAIL_PATIENCE:
+	if float(horror["stare"]) >= STARE_SECONDS:
 		horror["mode"] = Mode.RETREAT
 		return
-	if watched or on_trail:
+	if watched:
 		horror["mode"] = Mode.HELD
 		return
 	horror["mode"] = Mode.STALK
@@ -247,19 +242,11 @@ func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary,
 func _exposed(peer: int, players: Dictionary, fires: Array) -> bool:
 	var pos: Vector2 = players[peer]["pos"]
 	var cell := WorldGen.cell_of(pos)
-	if world.biome_at(cell) == WorldGen.Biome.MAR or world.is_trail(cell):
+	if world.biome_at(cell) == WorldGen.Biome.MAR:
 		return false
 	if pos.distance_to(WorldGen.origin_point()) < ORIGIN_SAFE:
 		return false
-	return not fire_near(pos, fires) and not _has_company(peer, players)
-
-
-func _has_company(peer: int, players: Dictionary) -> bool:
-	var pos: Vector2 = players[peer]["pos"]
-	for other in players:
-		if other != peer and (players[other]["pos"] as Vector2).distance_to(pos) <= COMPANY:
-			return true
-	return false
+	return not fire_near(pos, fires)
 
 
 func _nearest_player(point: Vector2, players: Dictionary) -> float:
