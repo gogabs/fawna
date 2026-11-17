@@ -1,7 +1,7 @@
 """Prévias de áudio do Caminheiro para ouvir antes de decidir (estéreo
 simples, sem HRTF: só um pan, então serve para comparar timbres, não o 3D).
 
-    python3 tools/previa_caminheiro.py SAIDA_DIR
+    python3 tools/previa_caminheiro.py SAIDA_DIR [forma] [corte_hz]
 
 Gera, para cada variante da camada de cristal, um arquivo com a batida
 girando de trás para a frente: 180°, 135°, 90°, 45° e 0° (3 batidas em cada).
@@ -20,7 +20,11 @@ import som_caminheiro as s  # noqa: E402
 RATE = s.RATE
 
 
-def camada_variante(forma, corte):
+## Notas da camada: (início em s, razão sobre o tom base, volume). O padrão é o atual.
+NOTAS_ATUAIS = [(0.0, 1.0, 1.0), (0.24, 0.75, 0.6)]
+
+
+def camada_variante(forma, corte, notas=NOTAS_ATUAIS):
     rng = np.random.default_rng(1618)
     n = int(RATE * 0.8)
     t = np.arange(n) / RATE
@@ -47,7 +51,7 @@ def camada_variante(forma, corte):
         som[inicio:] = onda * env * np.minimum(u / 0.012, 1.0) * volume
         return som
 
-    som = toque(0, 1.0, s.CAMADA_TOM_HZ) + toque(int(RATE * 0.24), 0.6, s.CAMADA_TOM_HZ * 0.75)
+    som = sum(toque(int(RATE * inicio), vol, s.CAMADA_TOM_HZ * razao) for inicio, razao, vol in notas)
     som = s.passa_baixa(som, corte, 2)
     fim = int(RATE * 0.12)
     som[-fim:] *= np.linspace(1.0, 0.0, fim) ** 2
@@ -90,18 +94,31 @@ def ab_db(abertura_valor):
     return (1.0 - abertura_valor) * -7.0
 
 
+NOTAS = {
+    "atual_sol_re": NOTAS_ATUAIS,
+    "quinta_sobe": [(0.0, 0.75, 1.0), (0.22, 1.125, 0.8)],  # re -> la
+    "oitava_sobe": [(0.0, 1.0, 1.0), (0.22, 2.0, 0.6)],  # sol -> sol agudo
+    "terca_maior": [(0.0, 1.0, 1.0), (0.22, 1.26, 0.8)],  # sol -> si
+    "arpejo_3": [(0.0, 1.0, 1.0), (0.17, 1.26, 0.8), (0.34, 1.5, 0.7)],  # sol si re
+    "arpejo_menor": [(0.0, 1.0, 1.0), (0.17, 1.19, 0.8), (0.34, 1.5, 0.7)],  # sol sib re: sombrio
+    "quarta_sobe": [(0.0, 0.75, 1.0), (0.22, 1.0, 0.8)],  # re -> sol
+    "mesma_nota": [(0.0, 1.0, 1.0), (0.22, 1.0, 0.6)],  # sol sol
+    "trito_tenso": [(0.0, 1.0, 1.0), (0.22, 1.414, 0.7)],  # sol -> reb: tenso
+    "grave_oitava_abaixo": [(0.0, 0.5, 1.0), (0.24, 0.375, 0.6)],  # tudo uma oitava abaixo
+}
+
+
 def main():
     destino = sys.argv[1]
     os.makedirs(destino, exist_ok=True)
-    variantes = [("sino_900", "sino", 900.0), ("sino_1600", "sino", 1600.0), ("triangulo_900", "triangulo", 900.0),
-                 ("triangulo_1500", "triangulo", 1500.0), ("serra_700", "serra", 700.0), ("serra_1200", "serra", 1200.0),
-                 ("quadrada_600", "quadrada", 600.0), ("fm_1100", "fm", 1100.0), ("fm_2000", "fm", 2000.0)]
-    for nome, forma, corte in variantes:
-        som = montar(camada_variante(forma, corte))
+    forma = sys.argv[2] if len(sys.argv) > 2 else "quadrada"
+    corte = float(sys.argv[3]) if len(sys.argv) > 3 else 600.0
+    for nome, notas in NOTAS.items():
+        som = montar(camada_variante(forma, corte, notas))
         raw = os.path.join(destino, nome + ".f32")
         som.tofile(raw)
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(RATE), "-ac", "2", "-i", raw,
-                        "-c:a", "libvorbis", "-q:a", "5", os.path.join(destino, "camada_" + nome + ".ogg")], check=True)
+                        "-c:a", "libvorbis", "-q:a", "5", os.path.join(destino, "notas_" + nome + ".ogg")], check=True)
         os.remove(raw)
         print("ok", nome)
 
