@@ -816,7 +816,7 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 	var recipe := Crafting.recipe(weapon)
 	var done_text := "Você fabricou %s %s. Está na bolsa: empunhe pela Bolsa, no menu das setas." % [
 		"uma" if recipe["article"] == "a" else "um", Crafting.weapon_name(weapon)]
-	if not Crafting.is_tool(weapon):
+	if not Crafting.is_tool_recipe(weapon):
 		for i in CRAFT_KNOCKS:
 			get_tree().create_timer(0.3 * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
 		get_tree().create_timer(0.3 * CRAFT_KNOCKS).timeout.connect(_play.bind(Sounds.build_stage()))
@@ -2260,7 +2260,7 @@ func _run_auto_commands() -> void:
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":
 				_drop("pedra_grande", 99)
-			"LANCA", "CLAVA":
+			"LANCA", "CLAVA", "ENXADA":
 				_craft(command.to_lower())
 			"POVOADO":  # testes, só quem hospeda: um marco com nome e uma fogueira prontos aqui perto
 				_test_settlement()

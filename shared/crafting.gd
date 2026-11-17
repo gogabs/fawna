@@ -197,7 +197,7 @@ static func recipe(kind: String) -> Dictionary:
 	return TOOLS.get(kind, {})
 
 
-static func is_tool(kind: String) -> bool:
+static func is_tool_recipe(kind: String) -> bool:
 	return TOOLS.has(kind)
 
 

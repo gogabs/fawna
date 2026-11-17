@@ -375,6 +375,7 @@ func _test_server_and_tools() -> void:
 	_check(crafted["ok"] and int(inv.get("enxada", 0)) == 1 and not inv.has("bambu"), "fabrica a enxada")
 	_check(Bag.can_wield("enxada") and state.equip(2, "enxada")["ok"] and state.wielding(2) == "enxada", "e empunha")
 	_check(state.craft(2, "lanca")["reason"] == "faltam", "armas continuam como antes")
+	_check(Crafting.is_tool_recipe("enxada") and not Crafting.is_tool_recipe("lanca"), "enxada é ferramenta, lança é arma")
 	var steps := 0
 	for step: Dictionary in Crafting.TOOLS["enxada"]["steps"]:
 		steps += int(step["knocks"])
