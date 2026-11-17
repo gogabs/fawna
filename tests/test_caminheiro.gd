@@ -8,6 +8,7 @@ var _failures := 0
 
 func _ready() -> void:
 	_test_routes_reach_origin()
+	_test_prefers_direct()
 	_test_off_trail_goes_to_nearest_trail_first()
 	_test_walk_following_beacons()
 	_test_replan_when_lost()
@@ -47,7 +48,7 @@ func _test_routes_reach_origin() -> void:
 		for k in 4:
 			var from := _free_point(world, Vector2(rng.randf_range(-120, 120), rng.randf_range(-120, 120)))
 			var finder := Wayfinder.new(world)
-			_check(finder.plan(from, WorldGen.origin_point()), "deveria achar rota de %s (semente %d)" % [from, world_seed])
+			_check(finder._plan_trails(from, WorldGen.origin_point()), "deveria achar rota de %s (semente %d)" % [from, world_seed])
 			var route := finder.full_route()
 			_check(not route.is_empty() and route[-1] == WorldGen.origin_point(), "a rota deveria terminar na Origem (de %s)" % from)
 			var previous := from
@@ -61,6 +62,49 @@ func _test_routes_reach_origin() -> void:
 			# Quase todos os beacons (60%) ficam em cima de trilha (o resto é a
 			# chegada até a trilha e a clareira da Origem).
 			_check(route.size() < 5 or on_trail >= route.size() * 0.6, "a rota deveria seguir as trilhas (%d de %d beacons) de %s semente %d bioma %s" % [on_trail, route.size(), from, world_seed, world.biome_at(WorldGen.cell_of(from))])
+
+
+## Com caminho direto livre e bem mais curto, o Caminheiro vai direto; a
+## rota nunca fica mais de 10% (ou 6 casas) acima da trilha, e toda rota
+## continua livre de obstáculos de beacon em beacon.
+func _test_prefers_direct() -> void:
+	var direct_used := 0
+	var trail_used := 0
+	for world_seed in range(5):
+		var world := WorldGen.new(world_seed)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 100 + world_seed
+		for k in 6:
+			var from := _free_point(world, Vector2(rng.randf_range(-120, 120), rng.randf_range(-120, 120)))
+			var to := _free_point(world, from + Vector2(rng.randf_range(-70, 70), rng.randf_range(-70, 70)))
+			var finder := Wayfinder.new(world)
+			if not finder.plan(from, to):
+				continue
+			var route := finder.full_route()
+			_check(not route.is_empty() and route[-1].distance_to(to) < 6.0, "a rota deveria chegar ao destino")
+			var previous := from
+			for point in route:
+				_check(finder._line_is_clear(previous, point), "trecho %s -> %s deveria ser livre" % [previous, point])
+				previous = point
+			var trails := Wayfinder.new(world)
+			if trails._plan_trails(from, to):
+				var trail_length := Wayfinder._length(from, trails.full_route())
+				var length := Wayfinder._length(from, route)
+				_check(length <= trail_length + 0.01, "a rota escolhida não pode ser mais longa que a das trilhas (%f > %f)" % [length, trail_length])
+				if absf(length - trail_length) < 0.01:
+					trail_used += 1
+				else:
+					direct_used += 1
+	_check(direct_used > 0, "algumas rotas deveriam ir direto, sem trilha")
+	# Em campo aberto e a poucos passos, vai em linha reta.
+	var open_world := WorldGen.new(3)
+	var start := _free_point(open_world, Vector2(10, 10))
+	var finder2 := Wayfinder.new(open_world)
+	var goal := start + Vector2(8, 0)
+	if open_world.is_free(goal) and finder2._line_is_clear(start, goal):
+		finder2.plan(start, goal)
+		var route2 := finder2.full_route()
+		_check(route2.size() == 1 and route2[0] == goal, "rota curta e livre vai direto")
 
 
 func _test_off_trail_goes_to_nearest_trail_first() -> void:
@@ -79,7 +123,7 @@ func _test_off_trail_goes_to_nearest_trail_first() -> void:
 	var finder := Wayfinder.new(world)
 	var path := finder.nearest_trail_path(from)
 	_check(not path.is_empty() and world.is_trail(path[-1]), "deveria achar o caminho até uma trilha")
-	finder.plan(from, WorldGen.origin_point())
+	finder._plan_trails(from, WorldGen.origin_point())
 	var entry := WorldGen.cell_center(path[-1])
 	_check(finder.full_route().has(entry), "a rota deveria passar pela entrada da trilha mais próxima")
 
