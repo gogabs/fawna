@@ -30,6 +30,11 @@ const RESOURCE_VOLUME_DB := -14.0
 const FIRE_SOURCES := 4
 const FIRE_RADIUS := 14  # casas (uns 21 m)
 const FIRE_VOLUME_DB := -6.0
+## Itens no chão: um tique baixo em cada monte, em fontes fixas e reaproveitadas
+## (como os recursos), para achá-los de ouvido.
+const PILE_SOURCES := 4
+const PILE_RADIUS := 9  # casas
+const PILE_VOLUME_DB := -12.0
 const MAX_SIMULATION_SOURCES := 128  # limite do Steam Audio (o máximo do addon)
 
 var using_hrtf := false
@@ -41,6 +46,9 @@ var _resource_cells := {}  # Vector2i -> AudioStreamPlayer3D tocando ali
 var _fire_players: Array[AudioStreamPlayer3D] = []
 var _fire_cells := {}  # Vector2i -> AudioStreamPlayer3D crepitando ali
 var _lit_fires: Array = []  # casas das fogueiras acesas (o jogo manda)
+var _pile_players: Array[AudioStreamPlayer3D] = []
+var _pile_cells := {}  # Vector2i -> AudioStreamPlayer3D tocando ali
+var _piles: Array = []  # casas com itens no chão (o jogo manda)
 var _camera: Camera3D
 var _player_config: Resource  # ResonancePlayerConfig, quando houver
 ## Passa-baixa da distância: quanto mais longe, mais perto desse corte.
@@ -80,6 +88,10 @@ func _ready() -> void:
 		var player := make_far_voice(FIRE_RADIUS + 1)
 		player.name = "Fogueira_%d" % i
 		_fire_players.append(player)
+	for i in PILE_SOURCES:
+		var player := make_far_voice(PILE_RADIUS + 1)
+		player.name = "Monte_%d" % i
+		_pile_players.append(player)
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
 
 
@@ -109,6 +121,7 @@ func move_listener(pos: Vector2) -> void:
 		_refresh_ambient(cell)
 		refresh_resources()
 		_refresh_fires()
+		_refresh_piles()
 
 
 ## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
@@ -330,6 +343,42 @@ func _refresh_fires() -> void:
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
 		_fire_cells[cell] = player
+
+
+## Os montes de itens no chão mudaram (largou, pegou, entrou no mundo).
+func set_piles(cells: Array) -> void:
+	_piles = cells.duplicate()
+	_refresh_piles()
+
+
+## Põe o tique dos montes mais próximos nas fontes fixas.
+func _refresh_piles() -> void:
+	if _camera == null or _listener_cell == WorldGen.NO_CELL:
+		return
+	var wanted := []
+	for cell: Vector2i in _piles:
+		if (cell - _listener_cell).length_squared() <= PILE_RADIUS * PILE_RADIUS:
+			wanted.append(cell)
+	wanted.sort_custom(func(a, b): return (a - _listener_cell).length_squared() < (b - _listener_cell).length_squared())
+	wanted = wanted.slice(0, PILE_SOURCES)
+	var free: Array[AudioStreamPlayer3D] = _pile_players.duplicate()
+	for cell in _pile_cells.keys():
+		var player: AudioStreamPlayer3D = _pile_cells[cell]
+		if wanted.has(cell):
+			free.erase(player)
+		else:
+			player.stop()
+			_pile_cells.erase(cell)
+	for cell: Vector2i in wanted:
+		if _pile_cells.has(cell) or free.is_empty():
+			continue
+		var stream := Sounds.pile_loop()
+		var player: AudioStreamPlayer3D = free.pop_back()
+		player.stream = stream
+		player.volume_db = PILE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
+		player.position = cell_to_3d(cell)
+		player.play(randf() * stream.get_length())
+		_pile_cells[cell] = player
 
 
 func _nearest_resources(center: Vector2i) -> Array:
