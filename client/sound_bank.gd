@@ -103,11 +103,24 @@ static func chime() -> AudioStreamWAV:
 	return _cache["chime"]
 
 
-## Limite do menu flutuante (Baixo já na raiz): um toque curto e suave de
+## Limite do menu flutuante (Baixo já na raiz): notinha descendente rápida de
 ## interface, sem nada de colisão.
 static func ui_limit() -> AudioStreamWAV:
 	if not _cache.has("ui_limit"):
-		_cache["ui_limit"] = _tone([330.0], 0.09, 0.3)
+		# Notinha descendente de uns 70 ms: a altura cai de 330 para 150 Hz, com
+		# ataque grave forte (um golpe de 90 Hz que morre em 20 ms) e cauda curta.
+		var seconds := 0.07
+		var count := int(seconds * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var phase := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			phase += TAU * lerpf(330.0, 150.0, t / seconds) / RATE
+			var body := sin(phase) * exp(-5.0 * t / seconds) * minf(t / 0.002, 1.0)
+			var thump := sin(TAU * 90.0 * t) * exp(-t / 0.012)
+			samples[i] = (body * 0.5 + thump * 0.45) * minf((seconds - t) / 0.01, 1.0)
+		_cache["ui_limit"] = _to_wav(samples)
 	return _cache["ui_limit"]
 
 
