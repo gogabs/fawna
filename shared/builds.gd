@@ -4,6 +4,10 @@ extends RefCounted
 ## já foi depositado e, nas fogueiras, se estão acesas e quanta lenha têm.
 ## As receitas ficam em Crafting.
 ##
+## Povoado: um marco e uma fogueira prontos na mesma região. Só então o marco
+## pode receber um nome (um substantivo e um adjetivo, ver SettlementNames),
+## e é com o nome que o povoado aparece em Locais, no Caminheiro.
+##
 ## O servidor tem a cópia que vale (dentro do WorldState, salva em
 ## mundo.json como "builds"); cada cliente guarda um espelho, atualizado pelo
 ## servidor, para saber o que soa, o que a fala diz e para onde o Caminheiro
@@ -21,14 +25,11 @@ extends RefCounted
 const SPACING := 1
 ## Distância mínima do ponto de chegada da Origem, para não fechar a entrada.
 const ORIGIN_CLEARANCE := 2.5
-## Tamanho máximo do nome de um marco (o nome aparece em Locais, no Caminheiro).
-const MAX_NAME := 32
-
 var world: WorldGen
 ## id -> { "id", "kind", "cell": Vector2i, "region": Vector2i, "stage": int,
 ## "deposited": {item: qtd}, "work": int, "done": bool, "fuel": s guardados
 ## (apagada), "burn_until": hora Unix em que apaga (0 = apagada), "sparks": int,
-## "name": nome dado pela criatura (marcos) }
+## "name": nome do povoado (marcos; vazio até alguém nomear) }
 var _builds := {}
 var _by_cell := {}  # Vector2i -> id
 var _next_id := 1
@@ -55,13 +56,84 @@ func at(cell: Vector2i) -> Dictionary:
 	return _builds.get(_by_cell.get(cell, -1), {})
 
 
-## Regiões que têm um marco pronto: são os "locais" do Caminheiro.
+## As construções de uma região.
+func in_region(region: Vector2i) -> Array:
+	return _builds.values().filter(func(build: Dictionary): return build["region"] == region)
+
+
+## Os povoados: marcos prontos que já receberam nome. São os "locais" do
+## Caminheiro.
+func settlements() -> Array:
+	return _builds.values().filter(func(build: Dictionary):
+		return build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty())
+
+
+## Regiões que são povoados.
 func marked_regions() -> Array:
-	var regions := []
+	return settlements().map(func(build: Dictionary): return build["region"])
+
+
+## A região tem uma fogueira pronta (acesa ou não)?
+func has_fire(region: Vector2i) -> bool:
 	for build: Dictionary in _builds.values():
-		if build["kind"] == "marco" and build["done"]:
-			regions.append(build["region"])
-	return regions
+		if build["region"] == region and build["done"] and Crafting.BUILDS[build["kind"]].get("fire", false):
+			return true
+	return false
+
+
+## A região tem um marco pronto que ainda não recebeu nome?
+func has_unnamed_marco(region: Vector2i) -> bool:
+	for build: Dictionary in _builds.values():
+		if build["region"] == region and build["kind"] == "marco" and build["done"] and str(build["name"]).is_empty():
+			return true
+	return false
+
+
+## Por que este marco não pode receber um nome agora ("" = pode).
+## "nao_marco", "em_obra", "ja_tem_nome", "sem_fogueira" (falta uma fogueira
+## pronta na mesma região).
+func naming_refusal(id: int) -> String:
+	var build := get_build(id)
+	if build.is_empty() or build["kind"] != "marco":
+		return "nao_marco"
+	if not build["done"]:
+		return "em_obra"
+	if not str(build["name"]).is_empty():
+		return "ja_tem_nome"
+	if not has_fire(build["region"]):
+		return "sem_fogueira"
+	return ""
+
+
+func can_name(id: int) -> bool:
+	return naming_refusal(id).is_empty()
+
+
+## Já existe um povoado com este nome?
+func name_taken(settlement_name: String) -> bool:
+	for build: Dictionary in _builds.values():
+		if str(build["name"]).to_lower() == settlement_name.to_lower():
+			return true
+	return false
+
+
+## Dá nome ao povoado deste marco: um substantivo e um adjetivo, pelos
+## índices, que precisam estar entre as opções sorteadas para ele
+## (SettlementNames.options). Devolve { ok, reason, name }. Recusas: as de
+## naming_refusal, "opcao" (fora das opções) e "repetido" (já há um povoado
+## com esse nome; vem com "name").
+func name_settlement(id: int, noun_index: int, adjective_index: int) -> Dictionary:
+	var reason := naming_refusal(id)
+	if not reason.is_empty():
+		return {"ok": false, "reason": reason}
+	var offered := SettlementNames.options(world.world_seed, id)
+	if not offered["nouns"].has(noun_index) or not offered["adjectives"].has(adjective_index):
+		return {"ok": false, "reason": "opcao"}
+	var settlement_name := SettlementNames.compose(noun_index, adjective_index)
+	if name_taken(settlement_name):
+		return {"ok": false, "reason": "repetido", "name": settlement_name}
+	_builds[id]["name"] = settlement_name
+	return {"ok": true, "reason": "", "name": settlement_name}
 
 
 func is_lit(id: int, at_time := -1.0) -> bool:
@@ -129,22 +201,8 @@ func refusal(kind: String, cell: Vector2i) -> String:
 	return ""
 
 
-## Nome limpo para um marco: sem quebras de linha nem espaços sobrando, até
-## MAX_NAME letras. Vazio vira "Marco N".
-func clean_name(text: String) -> String:
-	var clean := " ".join(text.replace("\n", " ").replace("\t", " ").split(" ", false)).left(MAX_NAME).strip_edges()
-	if clean.is_empty():
-		var count := 1
-		for build: Dictionary in _builds.values():
-			if build["kind"] == "marco":
-				count += 1
-		clean = "Marco %d" % count
-	return clean
-
-
-## Começa uma construção (vazia, na primeira etapa). Os marcos levam um nome.
-## Devolve { ok, reason, id }.
-func start(kind: String, cell: Vector2i, build_name := "") -> Dictionary:
+## Começa uma construção (vazia, na primeira etapa). Devolve { ok, reason, id }.
+func start(kind: String, cell: Vector2i) -> Dictionary:
 	var reason := refusal(kind, cell)
 	if not reason.is_empty():
 		return {"ok": false, "reason": reason}
@@ -152,7 +210,7 @@ func start(kind: String, cell: Vector2i, build_name := "") -> Dictionary:
 	_next_id += 1
 	_add({"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0,
-		"name": clean_name(build_name) if kind == "marco" else ""})
+		"name": ""})
 	return {"ok": true, "reason": "", "id": id}
 
 
@@ -335,7 +393,8 @@ func load_save(data: Dictionary) -> void:
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
 			"burn_until": float(entry.get("burn_until", 0.0)), "sparks": int(entry.get("sparks", 0)),
-			"name": str(entry.get("name", ""))})
+			# Mundos antigos davam o nome ao começar o marco: em obra, ele some.
+			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""})
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
 	burn_out()
 
@@ -400,4 +459,10 @@ func status_text(id: int, at_time := -1.0) -> String:
 		if float(build["fuel"]) > 0.0:
 			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
 		return "%s apagada e sem lenha. Espaço põe uma lenha." % title
+	if build["kind"] == "marco":
+		if not str(build["name"]).is_empty():
+			return "Marco do povoado %s." % build["name"]
+		if has_fire(build["region"]):
+			return "Marco pronto. Espaço para dar nome ao povoado."
+		return "Marco pronto. Com uma fogueira nesta região, o lugar vira um povoado."
 	return "%s pronto." % title if Crafting.BUILDS[build["kind"]]["article"] == "o" else "%s pronta." % title

@@ -15,6 +15,8 @@ func _ready() -> void:
 	_test_resources()
 	_test_contract()
 	_test_menu_stay()
+	_test_menu_open_at()
+	_test_region_change()
 	_test_facing()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
@@ -234,3 +236,41 @@ func _test_facing() -> void:
 			if Caminheiro.is_facing(pos, target, Compass.forward(heading)):
 				facing += 1
 		_check(facing >= 1 and facing <= 2, "algum rumo dos 8 deveria ficar de frente (ângulo %d)" % (k * 5))
+
+
+## O Espaço num marco abre o menu direto na escolha do nome: duas listas.
+func _test_menu_open_at() -> void:
+	var chosen := [""]
+	var adjectives := func(noun: String) -> Array:
+		return [{"label": noun + " Sombrio", "run": func(): chosen[0] = noun + " Sombrio"; return ""},
+			{"label": noun + " Antigo", "run": func(): chosen[0] = noun + " Antigo"; return ""}]
+	var nouns := func() -> Array:
+		return [{"label": "Vale", "open": adjectives.bind("Vale")}, {"label": "Refúgio", "open": adjectives.bind("Refúgio")}]
+	var menu := FloatingMenu.new(func() -> Array: return [{"label": "Caminheiro", "info": "x"}, {"label": "Bolsa", "info": "y"}])
+	menu.press("direita")
+	_check(menu.open_at("Nome do povoado, primeira palavra", nouns) == "Nome do povoado, primeira palavra. Vale, 1 de 2", "abre na lista de substantivos")
+	_check(menu.press("direita") == "Refúgio, 2 de 2", "esquerda e direita passam pelos substantivos")
+	_check(menu.press("cima") == "Refúgio. Refúgio Sombrio, 1 de 2", "confirmar mostra os adjetivos já com o substantivo")
+	_check(menu.press("baixo") == "Refúgio, 2 de 2", "baixo volta aos substantivos")
+	menu.press("cima")
+	menu.press("direita")
+	menu.press("cima")
+	_check(chosen[0] == "Refúgio Antigo" and menu.depth() == 1, "confirmar o adjetivo escolhe o nome e fecha o menu")
+	menu.open_at("Nome do povoado, primeira palavra", nouns)
+	_check(menu.press("baixo") == "Caminheiro, 1 de 2", "baixo na primeira lista desiste e volta ao menu das setas")
+
+
+## Mudança de região: só conta uma casa para dentro da região nova, para o
+## som não repetir em quem anda em cima da divisa.
+func _test_region_change() -> void:
+	var GameScript: GDScript = load("res://scenes/game.gd")
+	var world := WorldGen.new(173)
+	var cell := WorldGen.cell_of(WorldGen.origin_point())
+	var region := world.region_of(cell)
+	var border := cell
+	while world.region_of(border + Vector2i(1, 0)) == region:
+		border += Vector2i(1, 0)
+	_check(not GameScript.region_changed(world, region, border), "na última casa da região, nada muda")
+	_check(not GameScript.region_changed(world, region, border + Vector2i(1, 0)), "a primeira casa da vizinha ainda não conta")
+	_check(GameScript.region_changed(world, region, border + Vector2i(2, 0)), "a segunda, sim")
+	_check(SoundBank.region_change().get_length() > 0.5, "o som de mudança de região existe")

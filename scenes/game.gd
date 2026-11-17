@@ -71,6 +71,7 @@ const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
 const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1,9)
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
 const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
+const REGION_CHANGE_DB := -14.0  # o sopro baixinho ao passar de uma região para outra
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
@@ -97,11 +98,10 @@ var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor m
 var _harvest_timer := 0.0
 var builds: Builds  # espelho das construções (o servidor manda)
 var _burn_timer := 0.0  # servidor: fogueiras que apagaram
-var _name_prompt: NamePrompt  # caixinha para dar nome ao marco
-var _pending_build := {}  # obra esperando o nome: {"kind", "cell"}
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
+var _region := Vector2i.ZERO  # região em que a criatura está (para o som de mudança)
 var _step_clock := STEP_INTERVAL  # segundos desde o último passo
 var _walking := false
 var _walk_time := 0.0  # segundos andando sem parar
@@ -199,8 +199,6 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _name_prompt != null and _name_prompt.is_open():
-		return  # escrevendo um nome: o jogo não usa as teclas
 	if world != null and event.is_action("ouvir_arredores") and not event.is_echo():
 		_on_listen_key(event.is_pressed())
 		get_viewport().set_input_as_handled()
@@ -357,11 +355,11 @@ func request_swing() -> void:
 ## Fabricar > Construções > Iniciar à frente: começa uma obra na casa à
 ## frente da criatura.
 @rpc("any_peer", "call_local", "reliable")
-func request_build_start(kind: String, cell: Vector2i, build_name: String) -> void:
+func request_build_start(kind: String, cell: Vector2i) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	var result := state.start_build(id, kind, cell, build_name)
+	var result := state.start_build(id, kind, cell)
 	if not result["ok"]:
 		if state.players.has(id):
 			action_failed.rpc_id(id, "obra_" + result["reason"], "")
@@ -395,6 +393,23 @@ func request_build_work(build_id: int) -> void:
 		if result.has(key):
 			extra[key] = result[key]
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
+
+
+## Espaço num marco pronto, com uma fogueira na mesma região: o nome do
+## povoado, escolhido nas duas listas (índices em SettlementNames).
+@rpc("any_peer", "call_local", "reliable")
+func request_name_settlement(build_id: int, noun_index: int, adjective_index: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.name_settlement(id, build_id, noun_index, adjective_index)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, "nome_" + result["reason"], str(result.get("name", "")))
+		return
+	_dirty = true
+	print("[servidor] %s fundou o povoado %s" % [state.players[id]["name"], result["name"]])
+	build_changed.rpc(state.builds.info(build_id), "nomeado", id, {})
 
 
 ## Fabricar > Armas: faz uma arma com o que está na bolsa.
@@ -449,6 +464,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	_pos = players[my_id]["pos"]
 	_heading = 0
 	_cell = WorldGen.cell_of(_pos)
+	_region = world.region_of(_cell)
 	harvest = Harvest.new(world)
 	builds = Builds.new(world)
 	view.setup(world, players, my_id)
@@ -528,7 +544,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"iniciada": Sounds.build_deposit(), "deposito": Sounds.build_deposit(), "trabalho": Sounds.build_knock(),
 		"etapa": Sounds.build_stage(), "pronta": Sounds.build_done(), "faisca": Sounds.fire_spark(),
 		"acesa": Sounds.fire_ignite(), "abasteceu": Sounds.fire_feed(), "alimentou": Sounds.fire_feed(),
-		"apagou": Sounds.fire_out(),
+		"apagou": Sounds.fire_out(), "nomeado": Sounds.build_done(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito"])
@@ -541,8 +557,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		return
 	match event:
 		"iniciada":
-			var what := ("o " + builds.spoken_name(build_id).trim_suffix(" em obra")) if build["kind"] == "marco" else \
-				(("um " if Crafting.BUILDS[build["kind"]]["article"] == "o" else "uma ") + Crafting.build_name(build["kind"]))
+			var what := ("um " if Crafting.BUILDS[build["kind"]]["article"] == "o" else "uma ") + Crafting.build_name(build["kind"])
 			Speech.say("Você começou %s à frente. %s Espaço perto da obra deposita o que você tiver na bolsa. O Caminheiro sabe voltar aqui, em Construções." % [
 				what, builds.status_text(build_id).trim_prefix(title + " em obra. ")])
 		"deposito":
@@ -559,11 +574,16 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 				Crafting.missing_text(missing) if not missing.is_empty() else "Espaço para trabalhar"])
 		"pronta":
 			if build["kind"] == "marco":
-				Speech.say("O %s está pronto. Ele agora aparece em Locais, no Caminheiro." % builds.spoken_name(build_id))
+				Speech.say("O marco está pronto. %s" % (
+					"Espaço nele para dar nome ao povoado." if builds.can_name(build_id) else
+					"Com uma fogueira nesta região, o lugar vira um povoado."))
 			else:
 				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
-				Speech.say("A fogueira está pronta, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [
-					minutes, "" if minutes == 1 else "s"])
+				Speech.say("A fogueira está pronta, com lenha para uns %d minuto%s. Espaço bate as pedras para acender.%s" % [
+					minutes, "" if minutes == 1 else "s",
+					" Com o marco desta região, o lugar já pode virar um povoado: Espaço no marco para dar o nome." if builds.has_unnamed_marco(build["region"]) else ""])
+		"nomeado":
+			Speech.say("Este povoado agora se chama %s. Ele aparece em Locais, no Caminheiro." % build["name"])
 		"acesa":
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 			Speech.say("A fogueira pegou fogo, com lenha para uns %d minuto%s. Espaço põe mais lenha." % [minutes, "" if minutes == 1 else "s"])
@@ -659,6 +679,14 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Não há lenha na sua bolsa para pôr no fogo.")
 		"obra_cheia":
 			Speech.say("A fogueira já está cheia de lenha.")
+		"nome_repetido":
+			Speech.say("Já existe um povoado chamado %s. Escolha outro nome." % detail)
+		"nome_longe":
+			Speech.say("Você se afastou do marco.")
+		"nome_ja_tem_nome":
+			Speech.say("Este povoado já tem nome.")
+		"nome_sem_fogueira":
+			Speech.say("Falta uma fogueira pronta nesta região.")
 		"arma_faltam":
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
@@ -796,8 +824,6 @@ func _back_to_menu() -> void:
 
 ## Para onde as teclas mandam andar agora (em casas por segundo, no mundo).
 func _wanted_motion() -> Vector2:
-	if _name_prompt != null and _name_prompt.is_open():
-		return Vector2.ZERO
 	if _auto_target != null:
 		var to_target: Vector2 = _auto_target - _pos
 		if to_target.length() < 0.1:
@@ -911,9 +937,31 @@ func _set_pos(new_pos: Vector2) -> void:
 	if cell != _cell:
 		var old_cell := _cell
 		_cell = cell
+		_notice_region(cell)
 		_announce_arrival(old_cell, cell)
 		_update_biome_bed()
 		_update_wind()
+
+
+## Mudou de região: um sopro baixinho, sem fala. Só conta quando a criatura
+## já está uma casa para dentro da região nova, para não repetir o som em
+## quem anda bem em cima da divisa.
+func _notice_region(cell: Vector2i) -> void:
+	if not region_changed(world, _region, cell):
+		return
+	_region = world.region_of(cell)
+	_play(Sounds.region_change(), false, REGION_CHANGE_DB)
+
+
+## A casa está em outra região que não "region", e nenhuma das quatro casas
+## coladas nela ainda é de "region"?
+static func region_changed(the_world: WorldGen, region: Vector2i, cell: Vector2i) -> bool:
+	if the_world.region_of(cell) == region:
+		return false
+	for offset: Vector2i in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0)]:
+		if the_world.region_of(cell + offset) == region:
+			return false
+	return true
 
 
 ## Esbarrou: o som vem de onde está o obstáculo, e a fala diz o que é.
@@ -978,7 +1026,11 @@ func _interact() -> void:
 	if not build.is_empty():
 		var build_distance := _pos.distance_to(WorldGen.cell_center(build["cell"]))
 		if target == WorldGen.NO_CELL or build_distance <= _pos.distance_to(WorldGen.cell_center(target)):
-			request_build_work.rpc_id(1, int(build["id"]))
+			if builds.can_name(int(build["id"])):
+				# Marco pronto com fogueira na região: abre a escolha do nome.
+				Speech.say(_menu.open_at("Nome do povoado, primeira palavra", _name_nouns.bind(int(build["id"]))))
+			else:
+				request_build_work.rpc_id(1, int(build["id"]))
 			return
 	if target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
@@ -1087,7 +1139,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Construções, no Caminheiro, mostra as da região em que você está. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1344,24 +1396,24 @@ func _caminheiro_items() -> Array:
 	var items := [
 		{"label": "Locais", "open": _caminheiro_places},
 		{"label": "Recursos", "open": _caminheiro_resources},
-		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma em obra"},
+		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma nesta região"},
 	]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
 	return items
 
 
-## Lugares do mapa: a Origem e os marcos prontos, pelo nome que cada um
-## recebeu, do mais perto ao mais longe ("Casa da Lua, 40 metros"). Um lugar
-## só vira local quando tem um marco construído.
+## Lugares do mapa: a Origem e os povoados, pelo nome que cada um recebeu,
+## do mais perto ao mais longe ("Clareira Esquecida, 40 metros"). Um lugar só
+## vira local quando é um povoado com nome (marco e fogueira na mesma região).
 func _caminheiro_places() -> Array:
 	var items := [{"label": "Origem", "run": _track.bind(WorldGen.origin_point(), "a Origem"), "stay": true}]
-	var marcos := builds.all().filter(func(b): return b["kind"] == "marco" and b["done"])
+	var marcos := builds.settlements()
 	marcos.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a["cell"])) < _pos.distance_squared_to(WorldGen.cell_center(b["cell"])))
 	for build: Dictionary in marcos:
 		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(build["cell"])))
 		items.append({"label": "%s, %s" % [build["name"], meters],
-			"run": _track.bind(_approach_point(build["cell"]), "o marco " + build["name"]), "stay": true})
+			"run": _track.bind(_approach_point(build["cell"]), "o povoado " + build["name"]), "stay": true})
 	return items
 
 
@@ -1456,10 +1508,10 @@ func _on_caminheiro_arrived(place: String) -> void:
 
 
 ## Construções no Caminheiro, da mais perto à mais longe: "Fogueira acesa,
-## 20 metros". Só as obras em andamento e as fogueiras (os marcos prontos
-## ficam em Locais). O cristal leva até uma casa livre colada na obra.
+## 20 metros". Só as da região em que a criatura está (marcos, fogueiras e
+## obras em andamento). O cristal leva até uma casa livre colada na obra.
 func _caminheiro_builds() -> Array:
-	var list := builds.all().filter(func(b): return not b["done"] or Crafting.BUILDS[b["kind"]].get("fire", false))
+	var list := builds.in_region(world.region_of(WorldGen.cell_of(_pos)))
 	list.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a["cell"])) < _pos.distance_squared_to(WorldGen.cell_center(b["cell"])))
 	var items := []
 	for build: Dictionary in list:
@@ -1509,30 +1561,33 @@ func _build_actions(kind: String) -> Array:
 	]
 
 
-## O marco pede um nome antes (a caixinha de edição); o lugar é o que estava
-## à frente quando a criatura escolheu Iniciar.
+## O lugar é a casa que está à frente quando a criatura escolhe Iniciar.
 func _start_build(kind: String) -> String:
-	if kind != "marco":
-		request_build_start.rpc_id(1, kind, _front_cell(), "")
-		return ""
-	_pending_build = {"kind": kind, "cell": _front_cell()}
-	if _name_prompt == null:
-		_name_prompt = NamePrompt.new()
-		_name_prompt.name = "NomeDoMarco"
-		add_child(_name_prompt)
-		_name_prompt.submitted.connect(_on_build_named)
-		_name_prompt.cancelled.connect(func():
-			_pending_build = {}
-			Speech.say("Marco cancelado."))
-	_name_prompt.ask.call_deferred("Nome do marco")
+	request_build_start.rpc_id(1, kind, _front_cell())
 	return ""
 
 
-func _on_build_named(text: String) -> void:
-	if _pending_build.is_empty():
-		return
-	request_build_start.rpc_id(1, _pending_build["kind"], _pending_build["cell"], text)
-	_pending_build = {}
+## Nome do povoado, primeira lista: os substantivos sorteados para este marco.
+func _name_nouns(build_id: int) -> Array:
+	var items := []
+	for noun: int in SettlementNames.options(world.world_seed, build_id)["nouns"]:
+		items.append({"label": SettlementNames.noun(noun), "open": _name_adjectives.bind(build_id, noun)})
+	return items
+
+
+## Segunda lista: os adjetivos, já junto do substantivo escolhido ("Clareira
+## Esquecida"). Confirmar manda o nome ao servidor.
+func _name_adjectives(build_id: int, noun: int) -> Array:
+	var items := []
+	for adjective: int in SettlementNames.options(world.world_seed, build_id)["adjectives"]:
+		items.append({"label": SettlementNames.compose(noun, adjective),
+			"run": _name_settlement.bind(build_id, noun, adjective)})
+	return items
+
+
+func _name_settlement(build_id: int, noun: int, adjective: int) -> String:
+	request_name_settlement.rpc_id(1, build_id, noun, adjective)
+	return ""
 
 
 func _weapon_kinds() -> Array:
@@ -1667,10 +1722,6 @@ func _run_auto_commands() -> void:
 						_turn(1)
 			"MARCO", "FOGUEIRA":
 				_start_build(command.to_lower())
-				if command == "MARCO":
-					await get_tree().process_frame
-					_on_build_named("Casa da Lua")
-					_name_prompt.cancel_silently()
 			"OBRA":  # Espaço várias vezes, devagar
 				for i in 12:
 					_interact()

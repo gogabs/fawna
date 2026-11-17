@@ -220,6 +220,31 @@ static func stow() -> AudioStreamWAV:
 	return _cache["guardar"]
 
 
+## Mudança de região: um sopro de ar grave que sobe e some, com duas notas
+## ocas e distantes (uma quinta sem terça: nem alegre, nem triste).
+static func region_change() -> AudioStreamWAV:
+	if not _cache.has("regiao"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 4801
+		var seconds := 1.4
+		var count := int(seconds * RATE)
+		var samples := PackedFloat32Array()
+		samples.resize(count)
+		var air := 0.0
+		var air2 := 0.0
+		for i in count:
+			var t := float(i) / RATE
+			var swell := sin(PI * minf(t / seconds, 1.0)) ** 2.0
+			air = lerpf(rng.randf_range(-1.0, 1.0), air, 0.985)
+			air2 = lerpf(air, air2, 0.9)
+			var first := sin(TAU * 98.0 * t) * exp(-t * 3.2) * minf(t / 0.05, 1.0)
+			var later := maxf(t - 0.32, 0.0)
+			var second := sin(TAU * 146.83 * later) * exp(-later * 3.6) * minf(later / 0.05, 1.0) if later > 0.0 else 0.0
+			samples[i] = air2 * swell * 4.0 + first * 0.4 + second * 0.3
+		_cache["regiao"] = _to_wav(samples)
+	return _cache["regiao"]
+
+
 ## --- Construções e fogo ---------------------------------------------------------
 
 ## Pedra batendo em pedra: um "clac" curto e brilhante, com um corpo médio.

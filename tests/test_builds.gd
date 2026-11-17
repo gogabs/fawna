@@ -13,7 +13,9 @@ func _init() -> void:
 	_test_save_round_trip()
 	_test_network_mirror()
 	_test_texts()
-	_test_marco_names()
+	_test_settlements()
+	_test_name_lists()
+	_test_region_lists()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -91,7 +93,7 @@ func _test_marco_stages() -> void:
 	_work(state, id)
 	result = _work(state, id)
 	_check(result["event"] == "pronta", "o topo termina e o marco fica pronto")
-	_check(state.builds.marked_regions() == [state.world.region_of(cell)], "a região do marco vira um local")
+	_check(state.builds.marked_regions().is_empty(), "marco pronto sem nome ainda não é um local")
 	result = _work(state, id)
 	_check(not result["ok"] and result["reason"] == "pronta", "marco pronto não pede mais nada")
 	_check(Crafting.total_materials("marco") == {"pedra_grande": 3, "pedra_media": 2, "pedra_pequena": 1}, "marco custa 3 grandes, 2 médias e 1 pequena")
@@ -215,24 +217,121 @@ func _test_texts() -> void:
 	_check(Crafting.build_summary("marco").begins_with("3 etapas. A base, 3 pedras grandes"), "resumo do marco: " + Crafting.build_summary("marco"))
 
 
-func _test_marco_names() -> void:
+## Constrói até o fim, com a bolsa cheia do que for preciso.
+func _finish(state: WorldState, id: int) -> void:
+	var inv := state.inventory_of(2)
+	for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena"]:
+		inv[item] = 20
+	for i in 40:
+		if state.builds.get_build(id)["done"]:
+			return
+		_work(state, id)
+
+
+## Uma casa livre na mesma região de "cell", longe o bastante para não colar.
+func _free_cell_in_region(world: WorldGen, cell: Vector2i) -> Vector2i:
+	for skip in range(1, 200):
+		var other := _free_cell(world, skip)
+		if other == WorldGen.NO_CELL:
+			break
+		if world.region_of(other) == world.region_of(cell) and maxi(absi(other.x - cell.x), absi(other.y - cell.y)) > 2:
+			return other
+	return WorldGen.NO_CELL
+
+
+func _test_settlements() -> void:
 	var probe := WorldGen.new(173)
-	var builds := Builds.new(WorldGen.new(173))
-	var first := builds.start("marco", _free_cell(probe), "  Casa\nda   Lua  ")
-	_check(builds.get_build(first["id"])["name"] == "Casa da Lua", "nome do marco limpo: " + builds.get_build(first["id"])["name"])
-	_check(builds.spoken_name(first["id"]) == "marco Casa da Lua em obra", "o nome entra na fala")
-	_check(builds.title_of(first["id"]) == "Marco Casa da Lua", "e no título")
-	var long_name := "x".repeat(80)
-	var cell2 := _free_cell(probe, 40)
-	if probe.region_of(cell2) != probe.region_of(builds.get_build(first["id"])["cell"]):
-		var second := builds.start("marco", cell2, "")
-		_check(builds.get_build(second["id"])["name"] == "Marco 2", "sem nome vira Marco 2")
-	_check(builds.clean_name(long_name).length() == Builds.MAX_NAME, "nome cortado no máximo")
-	var fire := builds.start("fogueira", _free_cell(probe, 80), "Não usa")
-	_check(builds.get_build(fire["id"])["name"] == "", "fogueira não tem nome")
+	var cell := _free_cell(probe)
+	var fire_cell := _free_cell_in_region(probe, cell)
+	_check(fire_cell != WorldGen.NO_CELL, "há lugar para a fogueira na mesma região")
+	var state := _state_with_player(cell)
+	var marco: int = state.start_build(2, "marco", cell)["id"]
+	_check(state.builds.get_build(marco)["name"] == "", "o marco começa sem nome")
+	_check(state.builds.spoken_name(marco) == "marco em obra", "e a fala não inventa um")
+	var offered := SettlementNames.options(state.world.world_seed, marco)
+	var noun: int = offered["nouns"][0]
+	var adjective: int = offered["adjectives"][0]
+	_check(state.name_settlement(2, marco, noun, adjective)["reason"] == "em_obra", "marco em obra não recebe nome")
+	_finish(state, marco)
+	_check(state.builds.get_build(marco)["done"], "o marco fica pronto")
+	_check(state.builds.naming_refusal(marco) == "sem_fogueira", "sem fogueira na região, não dá para nomear")
+	_check(state.builds.status_text(marco).contains("fogueira"), "e a fala explica: " + state.builds.status_text(marco))
+	_check(state.builds.settlements().is_empty(), "marco sem nome não é povoado")
+	var fire: int = state.builds.start("fogueira", fire_cell)["id"]
+	_check(not state.builds.can_name(marco), "fogueira em obra ainda não conta")
+	_check(not state.builds.has_fire(state.world.region_of(cell)), "nem para a região")
+	state.players[2]["pos"] = WorldGen.cell_center(fire_cell) + Vector2(0, 1.1)
+	_finish(state, fire)
+	_check(state.builds.can_name(marco), "marco e fogueira prontos na mesma região: dá para nomear")
+	_check(state.builds.has_unnamed_marco(state.world.region_of(cell)), "a região tem um marco esperando nome")
+	_check(state.builds.status_text(marco).contains("Espaço"), "a fala convida a nomear: " + state.builds.status_text(marco))
+	_check(state.name_settlement(2, marco, noun, adjective)["reason"] == "longe", "de longe, não nomeia")
+	state.players[2]["pos"] = WorldGen.cell_center(cell) + Vector2(0, 1.1)
+	var outside := 0
+	while offered["nouns"].has(outside):
+		outside += 1
+	_check(state.name_settlement(2, marco, outside, adjective)["reason"] == "opcao", "só vale palavra que foi oferecida")
+	var named := state.name_settlement(2, marco, noun, adjective)
+	_check(named["ok"] and named["name"] == SettlementNames.compose(noun, adjective), "o nome é o substantivo com o adjetivo")
+	_check(state.builds.settlements().size() == 1 and state.builds.marked_regions() == [state.world.region_of(cell)], "agora é um povoado")
+	_check(state.builds.title_of(marco) == "Marco " + named["name"], "o nome entra no título")
+	_check(state.name_settlement(2, marco, noun, offered["adjectives"][1])["reason"] == "ja_tem_nome", "não dá para nomear de novo")
+	_check(state.builds.name_taken(named["name"].to_upper()), "o nome fica ocupado")
 	var mirror := Builds.new(WorldGen.new(173))
-	mirror.apply_snapshot(builds.snapshot())
-	_check(mirror.get_build(first["id"])["name"] == "Casa da Lua", "o nome chega ao cliente")
-	var saved := Builds.new(WorldGen.new(173))
-	saved.load_save(JSON.parse_string(JSON.stringify(builds.to_save())))
-	_check(saved.get_build(first["id"])["name"] == "Casa da Lua", "e fica salvo")
+	mirror.apply_snapshot(state.builds.snapshot())
+	_check(mirror.get_build(marco)["name"] == named["name"] and mirror.settlements().size() == 1, "o nome chega ao cliente")
+	var loaded := WorldState.from_save(JSON.parse_string(JSON.stringify(state.to_save())))
+	_check(loaded.builds.get_build(marco)["name"] == named["name"], "e fica salvo")
+	# Mundo antigo: o nome vinha ao começar o marco.
+	var old := Builds.new(WorldGen.new(173))
+	old.load_save({"next_id": 3, "list": [
+		{"id": 1, "kind": "marco", "x": cell.x, "y": cell.y, "done": false, "name": "Casa da Lua"},
+		{"id": 2, "kind": "marco", "x": fire_cell.x, "y": fire_cell.y, "stage": 3, "done": true, "name": "Casa do Sol"}]})
+	_check(old.get_build(1)["name"] == "" and old.get_build(2)["name"] == "Casa do Sol", "mundo antigo: marco pronto guarda o nome, em obra perde")
+
+
+func _test_name_lists() -> void:
+	var seen_nouns := {}
+	for entry: Array in SettlementNames.NOUNS:
+		_check(entry.size() == 2 and entry[1] in ["m", "f"], "substantivo com gênero: %s" % [entry])
+		_check(not seen_nouns.has(entry[0]), "substantivo repetido: " + entry[0])
+		seen_nouns[entry[0]] = true
+	var seen_adjectives := {}
+	for entry: Array in SettlementNames.ADJECTIVES:
+		_check(entry.size() == 2, "adjetivo com as duas formas: %s" % [entry])
+		_check(not seen_adjectives.has(entry[0]) and not seen_nouns.has(entry[0]), "adjetivo repetido: " + entry[0])
+		seen_adjectives[entry[0]] = true
+	var first := SettlementNames.options(42, 7)
+	_check(first == SettlementNames.options(42, 7), "as opções de um marco são sempre as mesmas")
+	_check(first != SettlementNames.options(42, 8), "e mudam de um marco para outro")
+	for key: String in ["nouns", "adjectives"]:
+		var unique := {}
+		for index: int in first[key]:
+			unique[index] = true
+		_check(first[key].size() == SettlementNames.OPTIONS and unique.size() == SettlementNames.OPTIONS, "%d opções diferentes em %s" % [SettlementNames.OPTIONS, key])
+	var clareira := 0
+	var vale := 0
+	for i in SettlementNames.NOUNS.size():
+		if SettlementNames.NOUNS[i][0] == "Clareira":
+			clareira = i
+		elif SettlementNames.NOUNS[i][0] == "Vale":
+			vale = i
+	_check(SettlementNames.compose(clareira, 2) == "Clareira Esquecida", "o adjetivo concorda no feminino")
+	_check(SettlementNames.compose(vale, 2) == "Vale Esquecido", "e no masculino")
+	_check(SettlementNames.compose(-1, 2) == "" and SettlementNames.compose(vale, 999) == "", "índice que não existe não vira nome")
+
+
+func _test_region_lists() -> void:
+	var probe := WorldGen.new(173)
+	var cell := _free_cell(probe)
+	var builds := Builds.new(WorldGen.new(173))
+	var here: int = builds.start("fogueira", cell)["id"]
+	var far := cell + Vector2i(WorldGen.REGION_SIZE * 2, 0)
+	for step in 40:
+		if builds.refusal("fogueira", far).is_empty():
+			break
+		far += Vector2i(1, 1)
+	var there: int = builds.start("fogueira", far)["id"]
+	var ids := builds.in_region(probe.region_of(cell)).map(func(b): return int(b["id"]))
+	_check(ids == [here], "só as construções da região: %s" % [ids])
+	_check(builds.in_region(probe.region_of(far)).map(func(b): return int(b["id"])) == [there], "e a outra região tem a dela")
