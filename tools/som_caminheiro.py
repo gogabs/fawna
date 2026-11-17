@@ -28,7 +28,11 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(RAIZ, "assets", "sounds", "caminheiro")
 RATE = 44100
 
-CORTE_HZ = 110.0  # passa-baixa: só o grave
+CORTE_HZ = 110.0  # passa-baixa: só o grave (batida.ogg, o timbre padrão, de frente)
+## Batidas abafadas para quando o cristal está fora de frente: quanto mais
+## atrás, menor o corte do passa-baixa. O jogo escolhe uma pelo ângulo.
+## Índice 0 = bem atrás (mais abafada); o último nível é a batida.ogg normal.
+CORTES_ABAFADOS_HZ = [52.0, 65.0, 84.0]
 REVERB_SEGUNDOS = 0.6  # cauda curta, para caber entre as batidas
 REVERB_MISTURA = 0.18  # pouco reverb: no grave, reverb demais embola
 
@@ -120,13 +124,13 @@ def camada():
     return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)
 
 
-def batida():
+def batida(corte=CORTE_HZ):
     rng = np.random.default_rng(2718)
     n = int(RATE * 0.7)
     som = pancada(n, 0, 1.0, rng) + pancada(n, int(RATE * 0.24), 0.75, rng)
-    som = passa_baixa(som, CORTE_HZ)
+    som = passa_baixa(som, corte)
     som = reverb(som, REVERB_SEGUNDOS, rng)
-    som = passa_baixa(som, CORTE_HZ * 1.6, 1)  # tira o que o reverb clareou
+    som = passa_baixa(som, corte * 1.6, 1)  # tira o que o reverb clareou
     fim = int(RATE * 0.02)
     som[-fim:] *= np.linspace(1.0, 0.0, fim)
     return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)  # folga contra distorção
@@ -135,7 +139,10 @@ def batida():
 def main():
     os.makedirs(DIR, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        for nome, gerar in [("batida", batida), ("camada", camada)]:
+        sons = [("batida", batida), ("camada", camada)]
+        for i, corte in enumerate(CORTES_ABAFADOS_HZ):
+            sons.append(("batida_abafada_%d" % i, lambda corte=corte: batida(corte)))
+        for nome, gerar in sons:
             raw = os.path.join(tmp, nome + ".f32")
             gerar().tofile(raw)
             ogg = os.path.join(DIR, nome + ".ogg")

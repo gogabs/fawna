@@ -23,8 +23,18 @@ const OFF_ROUTE_DISTANCE := 9.0  # casas longe da rota: traça de novo
 const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com a distância), na direção do beacon
 const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
 const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
-const BEAT_AWAY_DB := -3.0  # fora de frente, a batida cai de leve
+const BEAT_BEHIND_DB := -7.0  # bem atrás, a batida cai e fica abafada; abre até o normal conforme vira para a frente
 const LAYER_DB := -17.0  # camada de cristal, bem baixinha: só uma cor por cima da batida, de frente
+const LAYER_FADE_DB := -9.0  # a camada entra mais baixa na borda da zona de frente
+const LAYER_ZONE_DEG := 45.0  # a camada começa a surgir a partir daqui e chega ao volume cheio em FACING_TOLERANCE_DEG
+## Abertura da batida: de frente (até FACING_TOLERANCE_DEG) é o timbre e o
+## volume normais; daí até CLOSED_DEG, vai abafando e baixando; além, fica no
+## mais abafado.
+const CLOSED_DEG := 135.0
+const BEAT_LEVELS := 4  # arquivos de batida do mais abafado ao normal
+## Alarga o estéreo: o ângulo do som em relação ao rumo da criatura é
+## ampliado até ~30% perto do centro (a rota em si não muda).
+const STEREO_WIDEN := 0.15
 ## De frente: o beacon está a no máximo isto do rumo para onde a criatura
 ## olha. A criatura gira de 45 em 45 graus, então metade do giro (22,5°) é a
 ## menor tolerância que sempre deixa um rumo de frente: é o rumo certo dos 8.
@@ -187,19 +197,40 @@ func _beat(pos: Vector2, beacon: Vector2) -> void:
 	var index := _next_beat
 	_next_beat = (_next_beat + 1) % _beat_players.size()
 	var direction := (beacon - pos).normalized()
+	var openness := 1.0
+	var off := 0.0
+	if _forward != Vector2.ZERO:
+		off = absf(rad_to_deg(_forward.angle_to(direction)))
+		openness = openness_at(off)
+		direction = widen_direction(_forward, direction)
 	var where := SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
-	var facing := is_facing(pos, beacon, _forward)
 	var player := _beat_players[index]
 	player.position = where
-	player.volume_db = BEAT_DB + _gain() + (0.0 if facing or _forward == Vector2.ZERO else BEAT_AWAY_DB)
+	player.stream = Sounds.heartbeat_level(roundi(openness * (BEAT_LEVELS - 1)))
+	player.volume_db = BEAT_DB + _gain() + (1.0 - openness) * BEAT_BEHIND_DB
 	player.stop()
 	player.play()
-	if facing and index < _layer_players.size():
+	if _forward != Vector2.ZERO and off <= LAYER_ZONE_DEG and index < _layer_players.size():
 		var layer := _layer_players[index]
 		layer.position = where
-		layer.volume_db = LAYER_DB + _gain()
+		var near := 1.0 - clampf((off - FACING_TOLERANCE_DEG) / (LAYER_ZONE_DEG - FACING_TOLERANCE_DEG), 0.0, 1.0)
+		layer.volume_db = LAYER_DB + _gain() + (1.0 - near) * LAYER_FADE_DB
 		layer.stop()
 		layer.play()
+
+
+## Quão aberta soa a batida (0 = bem atrás, abafada; 1 = de frente, normal),
+## para um desvio de "off" graus do rumo da criatura.
+static func openness_at(off: float) -> float:
+	var t := clampf((off - FACING_TOLERANCE_DEG) / (CLOSED_DEG - FACING_TOLERANCE_DEG), 0.0, 1.0)
+	return 1.0 - t * t * (3.0 - 2.0 * t)
+
+
+## Direção do som com o ângulo em relação a "forward" ampliado (mais estéreo):
+## ângulo + STEREO_WIDEN * sen(2 * ângulo), que não muda a frente nem o atrás.
+static func widen_direction(forward: Vector2, direction: Vector2) -> Vector2:
+	var angle := forward.angle_to(direction)
+	return forward.rotated(angle + STEREO_WIDEN * sin(2.0 * angle))
 
 
 ## A criatura, olhando para forward, está de frente para o beacon?

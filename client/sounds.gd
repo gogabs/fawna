@@ -82,6 +82,10 @@ const MANIFEST := {
 	"mov_tornozeleira": ["foley/tornozeleira_concha.ogg", "foley/tornozeleira_1.ogg", "foley/tornozeleira_2.ogg", "foley/tornozeleira_3.ogg", "foley/tornozeleira_4.ogg", "foley/tornozeleira_5.ogg", "foley/tornozeleira_6.ogg", "foley/tornozeleira_7.ogg", "foley/tornozeleira_8.ogg", "foley/tornozeleira_9.ogg", "foley/tornozeleira_10.ogg"],
 	"caminheiro_batida": ["caminheiro/batida.ogg"],
 	"caminheiro_camada": ["caminheiro/camada.ogg"],
+	# Batida abafada por trás: do mais abafado (0) ao quase normal (2).
+	"caminheiro_batida_abafada_0": ["caminheiro/batida_abafada_0.ogg"],
+	"caminheiro_batida_abafada_1": ["caminheiro/batida_abafada_1.ogg"],
+	"caminheiro_batida_abafada_2": ["caminheiro/batida_abafada_2.ogg"],
 	# Bolsa, equipamento e machado: um arquivo só ou variações _1 a _4 (sorteadas
 	# sem repetir a última). Sem os arquivos, sons gerados por código.
 	"machado_golpe": ["ferramentas/machado_golpe.ogg", "ferramentas/machado_golpe_1.ogg", "ferramentas/machado_golpe_2.ogg", "ferramentas/machado_golpe_3.ogg", "ferramentas/machado_golpe_4.ogg"],
@@ -287,6 +291,14 @@ static func _pick_fresh(key: String) -> AudioStream:
 ## beacon. Sem os arquivos, sons gerados por código.
 static func heartbeat() -> AudioStream:
 	return _pick("caminheiro_batida", SoundBank.heartbeat)
+
+
+## A batida em 4 níveis de abertura: 0 = bem abafada (atrás) ... 3 = normal
+## (de frente). Sem os arquivos abafados, cai na batida normal.
+static func heartbeat_level(level: int) -> AudioStream:
+	if level >= 3:
+		return heartbeat()
+	return _pick("caminheiro_batida_abafada_%d" % clampi(level, 0, 2), heartbeat, false)
 
 
 ## Camada de cristal por cima da batida, quando a criatura está de frente
