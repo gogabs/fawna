@@ -716,6 +716,8 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		where = WorldGen.cell_center(extra["cell"])
 	elif extra.has("post"):
 		where = WorldGen.cell_center(Builds.post_cell(build, int(extra["post"])))
+	if event == "porta":
+		where = WorldGen.cell_center(Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])))
 	var near := where.distance_to(_pos) <= HEARING_RADIUS
 	var mine := by_id == my_id
 	var title := builds.title_of(build_id)
@@ -726,7 +728,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"apagou": Sounds.fire_out(), "nomeado": Sounds.build_done(),
 		"limpando": Sounds.build_knock(), "limpo": Sounds.build_stage(), "capinando": Sounds.build_knock(),
 		"capinado": Sounds.build_deposit(), "fase": Sounds.build_stage(), "secou": Sounds.build_stage(),
-		"porta": Sounds.build_knock(),
+		"porta": Sounds.door(bool(extra.get("open", true))) if event == "porta" else null,
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])

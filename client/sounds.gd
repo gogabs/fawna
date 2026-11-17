@@ -56,6 +56,8 @@ const MANIFEST := {
 	"musica_vila_3": ["musica/vila_3.ogg"],
 	"passo_trilha": ["world/dirtstep1.ogg", "world/dirtstep2.ogg", "world/dirtstep3.ogg", "world/dirtstep4.ogg", "world/dirtstep5.ogg"],
 	"passo_abrigo": ["abrigo/passo_1.ogg", "abrigo/passo_2.ogg", "abrigo/passo_3.ogg", "abrigo/passo_4.ogg", "abrigo/passo_5.ogg"],
+	"porta_abre": ["abrigo/porta_abre_1.ogg", "abrigo/porta_abre_2.ogg", "abrigo/porta_abre_3.ogg"],
+	"porta_fecha": ["abrigo/porta_fecha_1.ogg", "abrigo/porta_fecha_2.ogg", "abrigo/porta_fecha_3.ogg"],
 	"passo_ponte": ["world/bridgestep1.ogg", "world/bridgestep2.ogg", "world/bridgestep3.ogg", "world/bridgestep4.ogg", "world/bridgestep5.ogg"],
 	"amb_lago": ["world/loop_wind_water.ogg"],
 	"fundo_lagoa": ["world/loop_lapping_waves.ogg"],
@@ -350,6 +352,11 @@ static func pile_loop() -> AudioStream:
 ## trabalho, uma etapa concluída e a obra pronta.
 static func build_deposit() -> AudioStream:
 	return _pick_variant("obra_deposito", SoundBank.stone_place)
+
+
+## Porta do abrigo (rangido de bambu e couro; tools/sons_abrigo.py).
+static func door(opening: bool) -> AudioStream:
+	return _pick_fresh("porta_abre" if opening else "porta_fecha")
 
 
 static func build_knock() -> AudioStream:

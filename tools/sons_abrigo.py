@@ -34,3 +34,42 @@ for i in range(1, 6):
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', tmp, '-c:a', 'libvorbis', '-q:a', '5', os.path.join(OUT, f'passo_{i}.ogg')], check=True)
     os.remove(tmp)
 print('ok')
+
+
+# --- Porta (abrigo/porta_abre_N.ogg, porta_fecha_N.ogg): porta improvisada de bambu e couro,
+# rangido de madeira seca + arrasto + batida surda no fim.
+def rangido(rng, dur, f0, f1):
+    n = int(dur * SR); t = np.arange(n) / SR
+    f = f0 * (f1 / f0) ** (t / dur) * (1 + 0.03 * np.sin(2 * np.pi * rng.uniform(5, 9) * t))
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    # pulsos de atrito (stick-slip): serra com trepidação irregular
+    saw = ((ph / (2 * np.pi)) % 1.0) * 2 - 1
+    saw *= 0.5 + 0.5 * np.sign(np.sin(2 * np.pi * rng.uniform(28, 46) * t + rng.uniform(0, 6)))
+    y = filt(saw, 'bp', [350, 2200])
+    env = np.minimum(1, t / 0.05) * np.minimum(1, (dur - t) / 0.12) * (0.6 + 0.4 * filt(rng.standard_normal(n), 'lp', 9, 1) / 0.3).clip(0.2, 1)
+    return y * env
+
+def porta(seed, abre):
+    rng = np.random.default_rng(seed)
+    dur = rng.uniform(0.55, 0.75) if abre else rng.uniform(0.4, 0.55)
+    tail = 0.25; n = int((dur + tail) * SR); y = np.zeros(n)
+    f0, f1 = (rng.uniform(170, 210), rng.uniform(260, 340)) if abre else (rng.uniform(290, 340), rng.uniform(170, 210))
+    c = rangido(rng, dur, f0, f1); y[:len(c)] += c * 0.55
+    # arrasto no chão de terra
+    sd = int(dur * SR); sc = filt(rng.standard_normal(sd), 'bp', [500, 2400]) * np.sin(np.pi * np.linspace(0, 1, sd)) ** 1.5
+    y[:sd] += sc * 0.18
+    # batida surda: no fechar forte (porta no batente); no abrir, leve encosto
+    i = sd - int(0.02 * SR); m = int(0.16 * SR); tt = np.arange(m) / SR
+    th = filt(rng.standard_normal(m), 'lp', rng.uniform(130, 170), 4) * np.exp(-tt / 0.045)
+    th = th / np.max(np.abs(th)) * (0.9 if not abre else 0.35)
+    tk = filt(rng.standard_normal(m), 'bp', [700, 3000]) * np.exp(-tt / 0.012) * (0.4 if not abre else 0.12)
+    y[i:i + m] += th + tk
+    y = filt(y, 'lp', 7000, 1)
+    return y / np.max(np.abs(y)) * 0.5
+
+for i in range(1, 4):
+    for nome, abre in (('abre', True), ('fecha', False)):
+        tmp = tempfile.mktemp(suffix='.wav'); sf.write(tmp, porta(500 + i + (0 if abre else 50), abre), SR)
+        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', tmp, '-c:a', 'libvorbis', '-q:a', '5', os.path.join(OUT, f'porta_{nome}_{i}.ogg')], check=True)
+        os.remove(tmp)
+print('porta ok')
