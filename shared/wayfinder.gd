@@ -29,6 +29,12 @@ const SIMPLIFY_TOLERANCE := 0.9  # casas: desvio que ainda conta como reta
 const MAX_SEGMENT := 20.0  # casas (30 m) no máximo entre dois beacons
 const ROUTE_DETOUR := 6  # regiões de folga para contornar um mar
 const CLEAR_RADIUS := 0.2  # folga ao conferir se uma reta passa livre
+## Rota direta (ignorando trilhas) só é comparada até esta distância reta.
+const DIRECT_MAX_DISTANCE := 160.0  # casas
+## A trilha ainda vence se for no máximo 10% mais longa que o caminho direto
+## (ou até 6 casas, em rotas curtas): diferença pequena não vale sair dela.
+const TRAIL_TOLERANCE := 1.10
+const TRAIL_SLACK := 6.0  # casas
 
 var world: WorldGen
 var destination := Vector2.ZERO
@@ -45,7 +51,45 @@ func _init(new_world: WorldGen) -> void:
 
 
 ## Planeja a rota de "from" até "to". Devolve false se não há rota.
+##
+## O caminho direto (livre de obstáculos, sem olhar trilhas) é sempre preferido
+## quando for mais curto que a rota pelas trilhas. A trilha só ganha quando não
+## há caminho direto ou quando a diferença é pequena (TRAIL_TOLERANCE).
 func plan(from: Vector2, to: Vector2) -> bool:
+	var direct := _direct_path(from, to)
+	if direct.is_empty():
+		return _plan_trails(from, to)
+	var direct_beacons := simplify(direct, from, to)
+	var direct_length := _length(from, direct_beacons)
+	if not _plan_trails(from, to):
+		return _use_direct(direct_beacons, to, direct_length)
+	var trail_length := _length(from, full_route())
+	if trail_length - direct_length <= maxf(TRAIL_SLACK, direct_length * (TRAIL_TOLERANCE - 1.0)):
+		return true
+	return _use_direct(direct_beacons, to, direct_length)
+
+
+func _use_direct(beacons: Array[Vector2], to: Vector2, length: float) -> bool:
+	destination = to
+	_beacons = beacons
+	_targets.clear()
+	_cursor = to
+	estimated_length = length
+	return true
+
+
+## Caminho casa a casa até "to" sem preferir trilhas (vazio se não há).
+func _direct_path(from: Vector2, to: Vector2) -> Array[Vector2i]:
+	if from.distance_to(to) > DIRECT_MAX_DISTANCE:
+		return []
+	for margin in [LEG_MARGIN, WIDE_MARGIN]:
+		var path := _astar(WorldGen.cell_of(from), WorldGen.cell_of(to), margin, false)
+		if not path.is_empty():
+			return path
+	return []
+
+
+func _plan_trails(from: Vector2, to: Vector2) -> bool:
 	destination = to
 	_beacons.clear()
 	_targets.clear()
@@ -172,7 +216,7 @@ func cell_path(from: Vector2, to: Vector2) -> Array[Vector2i]:
 	return []
 
 
-func _astar(start: Vector2i, goal: Vector2i, margin: int) -> Array[Vector2i]:
+func _astar(start: Vector2i, goal: Vector2i, margin: int, use_trails := true) -> Array[Vector2i]:
 	var low := Vector2i(mini(start.x, goal.x), mini(start.y, goal.y)) - Vector2i.ONE * margin
 	var high := Vector2i(maxi(start.x, goal.x), maxi(start.y, goal.y)) + Vector2i.ONE * margin
 	var heap := _Heap.new()
@@ -191,7 +235,7 @@ func _astar(start: Vector2i, goal: Vector2i, margin: int) -> Array[Vector2i]:
 			var next: Vector2i = step[0]
 			if next.x < low.x or next.y < low.y or next.x > high.x or next.y > high.y:
 				continue
-			var weight: float = step[1] * (1.0 if world.is_trail(next) else OFF_TRAIL_COST)
+			var weight: float = step[1] * (1.0 if not use_trails or world.is_trail(next) else OFF_TRAIL_COST)
 			var new_cost: float = cost[cell] + weight
 			if new_cost < cost.get(next, INF):
 				cost[next] = new_cost
