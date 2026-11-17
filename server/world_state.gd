@@ -206,12 +206,15 @@ func drop(id: int, item: String, amount: int) -> Dictionary:
 
 ## Pega do chão o que couber na carga, do mais pesado ao mais leve. Devolve
 ## { ok, reason, cell, taken, left }. reason: "longe", "nada", "cheio", "devagar".
-func pick_up(id: int, cell: Vector2i) -> Dictionary:
+func pick_up(id: int, cell: Vector2i, only := "") -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
 	if players[id]["pos"].distance_to(WorldGen.cell_center(cell)) > REACH:
 		return {"ok": false, "reason": "longe"}
 	var pile := ground.items_at(cell)
+	# "only": o jogador escolheu um item do monte (a chave exata, ex. "pedra_grande").
+	if not only.is_empty():
+		pile = {only: pile[only]} if pile.has(only) else {}
 	if pile.is_empty():
 		return {"ok": false, "reason": "nada"}
 	var inv := inventory_of(id)

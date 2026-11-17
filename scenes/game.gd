@@ -75,6 +75,7 @@ const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
 const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
 ## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
 const BUMP_SLIDE_MIN := 0.5
+const MENU_LIMIT_DB := -8.0  # o toque de limite ao apertar Baixo na raiz do menu
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
 const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
@@ -344,11 +345,11 @@ func request_drop(item: String, amount: int) -> void:
 
 ## Espaço perto de um monte no chão: pega o que couber na carga.
 @rpc("any_peer", "call_local", "reliable")
-func request_pick_up(cell: Vector2i) -> void:
+func request_pick_up(cell: Vector2i, only := "") -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	var result := state.pick_up(id, cell)
+	var result := state.pick_up(id, cell, only)
 	if not result["ok"]:
 		if state.players.has(id) and result["reason"] == "cheio":
 			action_failed.rpc_id(id, "cheio", "")
@@ -1181,7 +1182,8 @@ func _interact() -> void:
 		else:
 			request_build_work.rpc_id(1, int(build["id"]))
 	elif pile_distance <= target_distance and pile != WorldGen.NO_CELL:
-		request_pick_up.rpc_id(1, pile)
+		# O jogador escolhe o que pegar: um monte vira bagunça rápido.
+		Speech.say(_menu.open_at("Pilha no chão", _pile_pick_items.bind(pile)))
 	elif target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
 
@@ -1577,7 +1579,7 @@ func _caminheiro_items() -> Array:
 		{"label": "Locais", "open": _caminheiro_places},
 		{"label": "Recursos", "open": _caminheiro_resources},
 		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma nesta região"},
-		{"label": "Itens no chão", "run": _track_pile, "stay": true},
+		{"label": "Itens no chão", "open": _caminheiro_piles, "empty": "nenhum nesta região"},
 	]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
@@ -1595,15 +1597,69 @@ func _caminheiro_places() -> Array:
 		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(build["cell"])))
 		items.append({"label": "%s, %s" % [build["name"], meters],
 			"run": _track.bind(_approach_point(build["cell"]), "o povoado " + build["name"]), "stay": true})
+	items.append_array(_neighbor_region_items())
 	return items
 
 
-## Acende o cristal rumo ao monte de itens mais próximo.
-func _track_pile() -> String:
-	var cell := ground.nearest(_pos, float(RESOURCE_SEARCH_RADIUS))
-	if cell == WorldGen.NO_CELL:
-		return "Não há itens no chão por perto."
-	return _track(WorldGen.cell_center(cell), "os itens no chão", cell)
+## As regiões vizinhas de terra (as ligadas por trilha à de agora), com o
+## bioma e a distância até o ponto de encontro de cada uma.
+func _neighbor_region_items() -> Array:
+	var items := []
+	var region := world.region_of(WorldGen.cell_of(_pos))
+	var names := {Vector2i.UP: "ao norte", Vector2i.RIGHT: "a leste", Vector2i.DOWN: "ao sul", Vector2i.LEFT: "a oeste"}
+	for step: Vector2i in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
+		var next := region + step
+		if not world.has_trail(region, next):
+			continue
+		var landmark := world.region_landmark(next)
+		var meters := Compass.meters(_pos.distance_to(landmark))
+		items.append({"label": "Região %s, %s, %s" % [names[step], world.place_name(WorldGen.cell_of(landmark)), meters],
+			"run": _track.bind(landmark, "a região %s" % names[step])})
+	return items
+
+
+## Os montes da região de agora, do mais perto ao mais longe, para escolher
+## qual rastrear: "Pilha com pedras e lenhas, 12 metros".
+func _caminheiro_piles() -> Array:
+	var items := []
+	var region := world.region_of(WorldGen.cell_of(_pos))
+	var cells: Array = ground.cells().filter(func(c: Vector2i): return world.region_of(c) == region)
+	cells.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a)) < _pos.distance_squared_to(WorldGen.cell_center(b)))
+	for cell: Vector2i in cells:
+		var what := _pile_name(cell)
+		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(cell)))
+		items.append({"label": "%s, %s" % [what.left(1).to_upper() + what.substr(1), meters],
+			"run": _track.bind(WorldGen.cell_center(cell), "a " + what, cell), "stay": true})
+	return items
+
+
+## "pilha com pedras e lenhas": só o que há nela, sem quantidades nem tamanhos.
+func _pile_name(cell: Vector2i) -> String:
+	var bases := []
+	for key: String in ground.items_at(cell):
+		var name: String = Economy.names_of(Economy.base_of(key))[1]
+		if not bases.has(name):
+			bases.append(name)
+	if bases.is_empty():
+		return "pilha vazia"
+	var text: String = bases[0] if bases.size() == 1 else ", ".join(bases.slice(0, -1)) + " e " + bases[-1]
+	return "pilha com " + text
+
+
+## O que pegar da pilha à frente: cada item dela (e tudo o que couber).
+func _pile_pick_items(cell: Vector2i) -> Array:
+	var items := []
+	var pile := ground.items_at(cell)
+	if pile.size() > 1:
+		items.append({"label": "Tudo que couber", "run": _pick_from.bind(cell, "")})
+	for key: String in pile:
+		items.append({"label": Economy.item_text(key, int(pile[key])), "run": _pick_from.bind(cell, key)})
+	return items
+
+
+func _pick_from(cell: Vector2i, key: String) -> String:
+	request_pick_up.rpc_id(1, cell, key)
+	return ""
 
 
 func _caminheiro_resources() -> Array:
@@ -1615,7 +1671,7 @@ func _caminheiro_resources() -> Array:
 
 ## Acende o cristal rumo ao recurso coletável mais próximo destes tipos.
 func _track_resource(things: Array, place: String) -> String:
-	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS)
+	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS, true)
 	if cell == WorldGen.NO_CELL:
 		return "Não há %s por perto." % place.substr(place.find(" ") + 1)
 	return _track(resource_destination(world, cell, _pos), place, cell)
@@ -1624,8 +1680,9 @@ func _track_resource(things: Array, place: String) -> String:
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas
 ## pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
 ## nenhum no raio.
-static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int) -> Vector2i:
+static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int, same_region := false) -> Vector2i:
 	var here := WorldGen.cell_of(pos)
+	var region := the_world.region_of(here)
 	var best := WorldGen.NO_CELL
 	var best_distance := INF
 	for dy in range(-radius, radius + 1):
@@ -1634,6 +1691,8 @@ static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: 
 				continue
 			var cell := here + Vector2i(dx, dy)
 			if not things.has(the_world.thing_at(cell)):
+				continue
+			if same_region and the_world.region_of(cell) != region:
 				continue
 			if the_harvest != null and not the_harvest.is_available(cell):
 				continue
@@ -1828,6 +1887,8 @@ func _on_menu_sound(kind: String) -> void:
 			_play(Sounds.ui_confirm())
 		"fechar":
 			_play(Sounds.ui_close())
+		"limite":  # Baixo já na raiz do menu: nada mais para voltar
+			_play(Sounds.bump(), false, MENU_LIMIT_DB)
 
 
 # --- Testes automáticos ------------------------------------------------------

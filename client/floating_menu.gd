@@ -9,17 +9,17 @@ extends RefCounted
 ##
 ## Cada opção é um dicionário com "label" e uma destas chaves:
 ##   "open": Callable que devolve as opções do submenu (Array de opções)
-##   "run":  Callable executado ao confirmar; depois o menu volta ao começo
+##   "run":  Callable executado ao confirmar; o menu não fecha: o foco fica
+##           onde está e as opções são atualizadas
 ##   "info": texto falado ao confirmar, sem sair do lugar (itens sem ação)
-## Opcionais: "stay" (com "run": depois de executar, o foco fica onde está,
-## em vez de voltar ao começo), "empty" (o que dizer se o submenu vier vazio) e os sons do
+## Opcionais: "empty" (o que dizer se o submenu vier vazio) e os sons do
 ## submenu, no lugar dos genéricos: "open_sound" (ao entrar, em vez de
 ## "abrir"), "move_sound" (ao passar pelas opções, em vez de "mover") e
 ## "close_sound" (ao sair com Baixo, em vez de "fechar").
 ## press() devolve o texto a falar; quem usa o menu (o jogo) fala e toca os
 ## sons de interface.
 
-signal sound(kind: String)  # "mover", "abrir", "confirmar", "fechar" ou um "open_sound"
+signal sound(kind: String)  # "mover", "abrir", "confirmar", "fechar", "limite" ou um "open_sound"
 
 var _root: Callable  # devolve as opções do primeiro nível
 var _levels: Array = []  # [{ "title", "items", "index" }], o último é o atual
@@ -95,29 +95,33 @@ func _confirm() -> String:
 			return "%s: %s." % [item["label"], item.get("empty", "nada aqui por enquanto")]
 		return "%s. %s" % [item["label"], _describe(_levels[-1])]
 	sound.emit("confirmar")
-	if item.get("stay", false):
-		var said_here: Variant = item["run"].call() if item.has("run") else ""
-		return said_here if said_here is String else ""
-	reset()
-	if item.has("run"):
-		var said: Variant = item["run"].call()
-		return said if said is String else ""
-	return ""
+	# O menu nunca fecha ao executar: o foco fica onde está e só as opções são
+	# atualizadas (a bolsa mudou, o cristal acendeu, o monte esvaziou...). Se a
+	# ação abriu outro menu (open_at), esse é que vale.
+	var depth_before := _levels.size()
+	var said: Variant = item["run"].call() if item.has("run") else ""
+	if _levels.size() == depth_before and is_same(_levels[-1], level):
+		_refresh(level)
+	return said if said is String else ""
 
 
+## Baixo volta um nível; no primeiro, só toca o som de limite.
 func _back() -> String:
 	if _levels.size() <= 1:
-		# No primeiro nível, Baixo só lembra onde se está.
-		return "Menu das setas: %s." % _describe(_levels[-1])
+		sound.emit("limite")
+		return ""
 	var closed: Dictionary = _levels.pop_back()
-	# As opções podem ter mudado (ex.: o cristal acendeu).
-	var level: Dictionary = _levels[-1]
+	_refresh(_levels[-1])
+	sound.emit(closed.get("close_sound", "fechar"))
+	return _describe(_levels[-1])
+
+
+## As opções do nível podem ter mudado: pergunta de novo à fonte dele.
+func _refresh(level: Dictionary) -> void:
 	var source: Callable = level.get("source", _root) if _levels.size() > 1 else _root
 	var index: int = level["index"]
 	level["items"] = source.call()
 	level["index"] = clampi(index, 0, maxi(level["items"].size() - 1, 0))
-	sound.emit(closed.get("close_sound", "fechar"))
-	return _describe(level)
 
 
 ## "Origem", ou "Origem, 1 de 2" quando há mais de uma opção.
