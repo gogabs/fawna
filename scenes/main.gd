@@ -1,8 +1,14 @@
 extends Control
-## Menu principal: Conectar, Opções e Sair.
+## Menu principal e Opções.
 ##
 ## Usa nós nativos do Godot, que o leitor de tela lê sozinho (Godot 4.5+).
 ## Sem leitor de tela, anunciamos o foco com a fala do jogo.
+##
+## A navegação é só por setas (sem Tab), na orientação escolhida em Opções
+## (ver MenuNav): escolher, confirmar e voltar. As setas são tratadas aqui, não
+## pela navegação de foco do Godot, que perdia o foco na primeira opção.
+## Campos de texto são MenuTextField: na navegação mostram "Nome: valor" e
+## só abrem o campo de digitar ao confirmar.
 ## O visual tem contraste alto e foco bem marcado, para quem enxerga pouco.
 ##
 ## O VSync fica desligado por padrão (project.godot, com teto de 60 quadros por
@@ -24,18 +30,18 @@ extends Control
 @onready var join_page: Control = %JoinPage
 @onready var join_status: Label = %JoinStatus
 @onready var found_box: VBoxContainer = %FoundBox
-@onready var ip_button: Button = %IpButton
-@onready var ip_edit: LineEdit = %IpEdit
 @onready var rescan_button: Button = %RescanButton
 @onready var join_back_button: Button = %JoinBackButton
 @onready var options_button: Button = %OptionsButton
 @onready var quit_button: Button = %QuitButton
-@onready var name_edit: LineEdit = %NameEdit
-@onready var server_edit: LineEdit = %ServerEdit
 @onready var vsync_check: CheckButton = %VsyncCheck
+@onready var graphics_check: CheckButton = %GraphicsCheck
+@onready var nav_button: Button = %NavButton
 @onready var back_button: Button = %BackButton
 @onready var ui_sound: AudioStreamPlayer = %UiSound
 
+var name_field: MenuTextField
+var ip_field: MenuTextField
 var _key_usec := -1
 var _scanner: LanDiscovery
 var _scan_left := 0.0
@@ -51,45 +57,63 @@ func _ready() -> void:
 	connect_button.pressed.connect(_on_connect)
 	host_button.pressed.connect(_on_host)
 	join_button.pressed.connect(_show_join)
-	ip_button.pressed.connect(_on_ip_button)
-	ip_edit.text_submitted.connect(_on_ip_submitted)
 	rescan_button.pressed.connect(_start_scan)
 	join_back_button.pressed.connect(_show_main.bind(false))
+	ip_field = MenuTextField.new("IP")
+	ip_field.placeholder = "ip ou ip:porta"
+	ip_field.empty_text = "digitar"
+	join_page.add_child(ip_field)
+	join_page.move_child(ip_field, found_box.get_index() + 1)
+	ip_field.nav_control().pressed.connect(_say_editing_ip)
+	ip_field.submitted.connect(_on_ip_submitted)
 	options_button.pressed.connect(_show_options)
 	quit_button.pressed.connect(func(): get_tree().quit())
 	back_button.pressed.connect(_show_main)
-	name_edit.text_submitted.connect(func(_t): server_edit.grab_focus())
-	server_edit.text_submitted.connect(func(_t): vsync_check.grab_focus())
+	name_field = MenuTextField.new("Nome")
+	name_field.max_length = 24
+	name_field.placeholder = "Como sua criatura se chama?"
+	options_page.add_child(name_field)
+	options_page.move_child(name_field, 1)  # logo depois do título
+	name_field.nav_control().pressed.connect(_say_editing)
+	name_field.submitted.connect(func(_t): _say_field_done("Nome"))
 	vsync_check.toggled.connect(_on_vsync_toggled)
-	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_edit, server_edit, vsync_check, back_button, ip_button, ip_edit, rescan_button, join_back_button]:
+	graphics_check.toggled.connect(_on_graphics_toggled)
+	nav_button.pressed.connect(_on_nav_pressed)
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), ip_field.nav_control(), vsync_check, graphics_check, nav_button, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
-	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, ip_button, rescan_button, join_back_button]:
+	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
 
 	_show_main(false)
 	Music.start()
-	Speech.say(Updater.take_notice() + "Fawna. Menu principal. Use as setas para escolher e Enter para confirmar.")
+	Speech.say(Updater.take_notice() + "Fawna. Menu principal. " + MenuNav.help())
 
 
 func _input(event: InputEvent) -> void:
-	# O Tab não navega mais pelo menu: só as setas.
-	if event.is_action_pressed("ui_focus_next", true) or event.is_action_pressed("ui_focus_prev", true):
+	# Sem Tab nos menus: a navegação é só pelas setas.
+	if event.is_action("ui_focus_next") or event.is_action("ui_focus_prev"):
 		get_viewport().set_input_as_handled()
 		return
-	for action in ["ui_up", "ui_down", "ui_left", "ui_right"]:
-		if event.is_action_pressed(action, true):
-			_key_usec = Time.get_ticks_usec()
+	for input_action: String in MenuNav.ACTIONS:
+		if not event.is_action(input_action):
+			continue
+		if _editing():  # as setas movem o cursor do campo
 			return
+		get_viewport().set_input_as_handled()
+		if event.is_pressed():
+			_key_usec = Time.get_ticks_usec()
+			_navigate(MenuNav.from_event(event))
+		return
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
-		if options_page.visible:
-			_show_main()
-			get_viewport().set_input_as_handled()
-		elif join_page.visible:
-			_show_main(false)
-			get_viewport().set_input_as_handled()
+	if event.is_action_pressed("ui_cancel") and not _editing():
+		get_viewport().set_input_as_handled()
+		_navigate("voltar")
+
+
+func _editing() -> bool:
+	return (name_field != null and name_field.is_editing()) or (ip_field != null and ip_field.is_editing())
 
 
 func _process(delta: float) -> void:
@@ -103,11 +127,57 @@ func _process(delta: float) -> void:
 			Speech.say(join_status.text, false)
 
 
+## Itens navegáveis da página aberta, na ordem de cima para baixo. Campos de
+## texto entram pelo botão (nav_control).
+func _page_items() -> Array[Control]:
+	var page: Control = main_page
+	if options_page.visible:
+		page = options_page
+	elif join_page.visible:
+		page = join_page
+	var items: Array[Control] = []
+	for child in page.get_children():
+		if not child.visible:
+			continue
+		if child is MenuTextField:
+			items.append((child as MenuTextField).nav_control())
+		elif child == found_box:  # jogos encontrados, um botão cada
+			for found in found_box.get_children():
+				items.append(found)
+		elif child is BaseButton:
+			items.append(child)
+	return items
+
+
+func _navigate(action: String) -> void:
+	match action:
+		"anterior", "proximo":
+			var items := _page_items()
+			if items.is_empty():
+				return
+			var at := items.find(get_viewport().gui_get_focus_owner())
+			var next := 0 if at < 0 else posmod(at + (-1 if action == "anterior" else 1), items.size())
+			items[next].grab_focus()
+		"confirmar":
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused is BaseButton:
+				var button := focused as BaseButton
+				if button.toggle_mode:
+					button.button_pressed = not button.button_pressed
+				else:
+					button.pressed.emit()
+		"voltar":
+			if options_page.visible:
+				_show_main()
+			elif join_page.visible:
+				_show_main(false)
+			else:
+				_play(Sounds.ui_limit())
+
+
 func _show_main(save := true) -> void:
 	if save:
-		Net.player_name = name_edit.text.strip_edges()
-		Net.set_server(server_edit.text)
-		Net.vsync = vsync_check.button_pressed
+		Net.player_name = name_field.value
 		Net.save_settings()
 	_stop_scan()
 	options_page.hide()
@@ -121,13 +191,14 @@ func _show_main(save := true) -> void:
 
 
 func _show_options() -> void:
-	name_edit.text = Net.player_name
-	server_edit.text = Net.server_text()
+	name_field.value = Net.player_name
 	vsync_check.set_pressed_no_signal(Net.vsync)
+	graphics_check.set_pressed_no_signal(Net.graphics_off)
+	_refresh_nav_button()
 	main_page.hide()
 	options_page.show()
 	Speech.say("Opções.", true)
-	name_edit.grab_focus.call_deferred()
+	name_field.nav_control().grab_focus.call_deferred()
 
 
 ## Aplica na hora, para dar para sentir a diferença antes de salvar.
@@ -137,6 +208,41 @@ func _on_vsync_toggled(on: bool) -> void:
 	_play(Sounds.ui_confirm())
 	if not Speech.screen_reader_active():
 		Speech.say(_on_off(on))
+
+
+## Gráficos desligados: vale ao entrar no jogo, para os menus continuarem
+## visíveis (e o leitor de tela recebendo o foco).
+func _on_graphics_toggled(on: bool) -> void:
+	Net.graphics_off = on
+	_play(Sounds.ui_confirm())
+	if not Speech.screen_reader_active():
+		Speech.say(_on_off(on))
+
+
+func _on_nav_pressed() -> void:
+	Net.vertical_nav = not Net.vertical_nav
+	_refresh_nav_button()
+	# Aplica na hora, no menu e no jogo; salva ao sair de Opções.
+	Speech.say("Navegação %s. %s" % [_nav_name(), MenuNav.help()])
+
+
+func _nav_name() -> String:
+	return "vertical" if Net.vertical_nav else "horizontal"
+
+
+func _refresh_nav_button() -> void:
+	nav_button.text = "Navegação dos menus: %s" % _nav_name().capitalize()
+
+
+func _say_editing() -> void:
+	if not Speech.screen_reader_active():
+		Speech.say("Digite o nome. Enter confirma e Esc cancela.")
+
+
+func _say_field_done(field: String) -> void:
+	_play(Sounds.ui_confirm())
+	if not Speech.screen_reader_active():
+		Speech.say("%s: %s" % [field, name_field.value if not name_field.value.is_empty() else "vazio"])
 
 
 func _on_off(on: bool) -> String:
@@ -181,8 +287,6 @@ func _show_join() -> void:
 	main_page.hide()
 	options_page.hide()
 	join_page.show()
-	ip_edit.hide()
-	ip_button.show()
 	Speech.say("Entrar em um jogo privado.", true)
 	_start_scan()
 	rescan_button.grab_focus.call_deferred()
@@ -224,19 +328,15 @@ func _on_game_found(address: String, port: int, host_name: String, version: Stri
 	Speech.say("Encontrado: " + button.text, false)
 
 
-func _on_ip_button() -> void:
-	ip_button.hide()
-	ip_edit.show()
-	ip_edit.grab_focus.call_deferred()
+func _say_editing_ip() -> void:
+	if not Speech.screen_reader_active():
+		Speech.say("Digite o IP. Enter confirma e Esc cancela.")
 
 
 func _on_ip_submitted(text: String) -> void:
-	if text.strip_edges().is_empty():
-		ip_edit.hide()
-		ip_button.show()
-		ip_button.grab_focus.call_deferred()
-		return
-	_join_address(text)
+	_play(Sounds.ui_confirm())
+	if not text.is_empty():
+		_join_address(text)
 
 
 func _join_address(text: String) -> void:
@@ -255,12 +355,14 @@ func _on_focus(control: Control) -> void:
 	_log_focus_delay(control)
 	if Speech.screen_reader_active():
 		return
-	if control is LineEdit:
-		var field := control as LineEdit
-		var value := field.text if not field.text.is_empty() else "vazio"
-		Speech.say("%s, campo de texto, %s" % [field.accessibility_name, value], interrupt)
+	if control == name_field.nav_control():
+		Speech.say(name_field.spoken(), interrupt)
 	elif control == vsync_check:
 		Speech.say("VSync, %s. Botão de alternar. Deixe desligado se o leitor de tela demorar." % _on_off(vsync_check.button_pressed), interrupt)
+	elif control == graphics_check:
+		Speech.say("Desligar os gráficos, %s. Botão de alternar. Gasta bem menos processador no jogo; a janela fica parada." % _on_off(graphics_check.button_pressed), interrupt)
+	elif control == ip_field.nav_control():
+		Speech.say(ip_field.spoken(), interrupt)
 	elif control is Button:
 		Speech.say("%s, botão" % (control as Button).text, interrupt)
 

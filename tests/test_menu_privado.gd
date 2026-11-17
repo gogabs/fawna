@@ -28,8 +28,8 @@ func _ready() -> void:
 	menu._on_game_found("10.0.0.5", 7350, "Bia", "0.1.0")
 	_check(menu.found_box.get_child_count() == 1, "jogo listado")
 	_check((menu.found_box.get_child(0) as Button).text == "Jogo de Bia, em 10.0.0.5", "texto do jogo")
-	menu.ip_button.pressed.emit()
-	_check(menu.ip_edit.visible, "campo de IP")
+	menu.ip_field.nav_control().pressed.emit()
+	_check(menu.ip_field.is_editing(), "campo de IP")
 	print("TESTE OK" if _failures == 0 else "FALHOU: %d" % _failures)
 	get_tree().quit(_failures)
 
