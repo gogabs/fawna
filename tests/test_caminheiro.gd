@@ -28,7 +28,9 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _free_point(world: WorldGen, p: Vector2) -> Vector2:
-	while not world.is_free(p):
+	# No bosque (mata fechada) só vale ponto na trilha: o resto são clareiras
+	# isoladas, de onde não há rota a pé.
+	while not world.is_free(p) or (world.biome_at(WorldGen.cell_of(p)) == WorldGen.Biome.BOSQUE and not world.is_trail(WorldGen.cell_of(p))):
 		p += Vector2(1.0, 0.3)
 	return p
 

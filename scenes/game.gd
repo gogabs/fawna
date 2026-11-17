@@ -489,16 +489,18 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 	harvest.apply_info(cell, data)
 	var where := WorldGen.cell_center(cell)
 	var near := where.distance_to(_pos) <= HEARING_RADIUS
+	var tree := world.thing_at(cell) == WorldGen.Thing.ARVORE
 	match event:
 		"golpe":
 			if near:
-				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
+				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
 		"queda":
 			if near:
-				audio.play_at_point(where, Sounds.bamboo_knock(), 0.0, true, true)
-				audio.play_at_point(where, Sounds.bamboo_fall())
+				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
+				audio.play_at_point(where, Sounds.tree_fall() if tree else Sounds.bamboo_fall())
 			if by_id == my_id:
-				Speech.say("O bambu caiu. Aperte Espaço para recolher.")
+				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a lenha." if tree \
+						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
 
 
@@ -632,7 +634,7 @@ func action_failed(reason: String, detail: String) -> void:
 		return
 	match reason:
 		"golpear":
-			Speech.say("O bambu ainda está de pé. Empunhe o machado e golpeie com J.")
+			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
 			Speech.say("Você já carrega o máximo de %s." % Economy.names_of(detail)[1])
 		"nao_tem":
@@ -937,7 +939,12 @@ func _bump(target: Vector2) -> void:
 	if _bump_speech_cooldown <= 0.0 or thing != _last_bump_thing:
 		_bump_speech_cooldown = BUMP_SPEECH_COOLDOWN
 		_last_bump_thing = thing
-		Speech.say("Fim do caminho." if thing == WorldGen.Thing.NADA else WorldGen.THING_NAMES[thing])
+		if thing == WorldGen.Thing.NADA:
+			Speech.say("Fim do caminho.")
+		elif thing == WorldGen.Thing.ARVORE:
+			Speech.say("Mata fechada. Siga a trilha ou abra caminho com o machado.")
+		else:
+			Speech.say(WorldGen.THING_NAMES[thing])
 
 
 ## Gira 45° (step -1 para a esquerda, 1 para a direita), com o clique da

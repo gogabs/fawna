@@ -15,12 +15,17 @@ extends RefCounted
 ## O arbusto não some: depois de colhido continua lá como um arbusto vazio
 ## (TAKEN_NAMES), até os gravetos ou as frutas voltarem.
 
+## Tempo de rebrota que nunca chega: a árvore derrubada não volta.
+const NEVER := 1.0e15
+
 ## coisa do mundo -> regras da fonte.
 ##   item: o que vai para a bolsa; amount: quanto dá de uma vez;
 ##   hits: golpes de machado até poder recolher (0: recolhe direto, com a mão);
 ##   extra_hits: até quantos golpes a mais uma fonte pode pedir (varia por lugar);
-##   regrow: segundos até voltar depois de recolhida.
+##   regrow: segundos até voltar depois de recolhida;
+##   opens: derrubada (ou recolhida), a casa deixa de bloquear (world.cleared).
 const SOURCES := {
+	WorldGen.Thing.ARVORE: {"item": "lenha", "amount": 3, "hits": 6, "extra_hits": 3, "tool": "machado", "regrow": NEVER, "opens": true},
 	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0},
 	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
@@ -36,6 +41,8 @@ const SIZE_CHANCES := {
 	"lenha": {"media": 0.5, "pequena": 0.5},
 	"pedra": {"grande": 1.0 / 3.0, "media": 1.0 / 3.0, "pequena": 1.0 / 3.0},
 }
+## Árvore dá só lenha grande.
+const TREE_SIZE_CHANCES := {"grande": 1.0}
 const WATERSIDE_STONE_CHANCES := {"grande": 0.15, "media": 0.25, "pequena": 0.6}
 
 ## Como se fala de uma fonte já colhida que continua no lugar. Quem não está
@@ -89,7 +96,7 @@ func spoken_name(cell: Vector2i, at := -1.0) -> String:
 	if not is_available(cell, at):
 		return TAKEN_NAMES.get(thing, "")
 	if needs_tool(thing) and hits_left(cell, at) == 0:
-		return "bambu derrubado"
+		return "árvore caída" if thing == WorldGen.Thing.ARVORE else "bambu derrubado"
 	return WorldGen.THING_NAMES[thing]
 
 
@@ -137,6 +144,7 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 	if left == 0:
 		return {"ok": false, "reason": "caido", "hits_left": 0, "felled": true}
 	_nodes[cell] = {"hits": _hits_done(cell, at) + 1, "regrow_at": 0.0, "struck_at": at}
+	_sync(cell)
 	left -= 1
 	return {"ok": true, "reason": "", "hits_left": left, "felled": left == 0}
 
@@ -144,6 +152,8 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 ## Chance de cada tamanho para o que esta casa dá ({} se o item não tem
 ## tamanho).
 func size_chances(cell: Vector2i) -> Dictionary:
+	if world.thing_at(cell) == WorldGen.Thing.ARVORE:
+		return TREE_SIZE_CHANCES
 	var item := item_of(world.thing_at(cell))
 	if item == "pedra" and world.is_waterside(cell):
 		return WATERSIDE_STONE_CHANCES
@@ -187,6 +197,7 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	if left > 0:
 		return {"ok": false, "reason": "golpear", "item": source["item"], "hits_left": left}
 	_nodes[cell] = {"hits": 0, "regrow_at": at + float(source["regrow"]), "struck_at": 0.0}
+	_sync(cell)
 	var amount := int(source["amount"])
 	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
 		"parts": _roll_parts(cell, source["item"], amount)}
@@ -219,6 +230,7 @@ func apply_info(cell: Vector2i, data: Dictionary, at := -1.0) -> void:
 		_nodes.erase(cell)
 	else:
 		_nodes[cell] = node
+	_sync(cell)
 
 
 ## Tudo o que difere do mundo intocado, para quem acabou de entrar.
@@ -236,6 +248,7 @@ func apply_snapshot(data: Dictionary, at := -1.0) -> void:
 	_nodes.clear()
 	for cell in data:
 		apply_info(cell, data[cell], at)
+	_sync_all()
 
 
 ## Esquece o que já rebrotou e os golpes velhos. Devolve as casas que voltaram
@@ -250,6 +263,7 @@ func prune(at := -1.0) -> Array:
 		var forgotten := float(node["regrow_at"]) <= 0.0 and _hits_done(cell, at) == 0
 		if regrown or forgotten:
 			_nodes.erase(cell)
+			_sync(cell)
 			restored.append(cell)
 	return restored
 
@@ -272,12 +286,33 @@ func load_save(data: Array) -> void:
 			"hits": int(entry[2]), "regrow_at": float(entry[3]), "struck_at": float(entry[4]),
 		}
 	prune()
+	_sync_all()
+
+
+## Mantém world.cleared em dia com o estado de uma casa: fonte que abre
+## passagem (árvore) deixa de bloquear quando cai ou é recolhida, e volta a
+## bloquear se rebrotar.
+func _sync(cell: Vector2i) -> void:
+	var source: Dictionary = SOURCES.get(world.thing_at(cell), {})
+	var node: Dictionary = _nodes.get(cell, {})
+	if bool(source.get("opens", false)) and not node.is_empty() \
+			and (float(node["regrow_at"]) > 0.0 or int(node["hits"]) >= hits_needed(cell)):
+		world.cleared[cell] = true
+	else:
+		world.cleared.erase(cell)
+
+
+func _sync_all() -> void:
+	world.cleared.clear()
+	for cell: Vector2i in _nodes:
+		_sync(cell)
 
 
 func _hits_done(cell: Vector2i, at: float) -> int:
 	var node: Dictionary = _nodes.get(cell, {})
 	if node.is_empty() or float(node["regrow_at"]) > 0.0:
 		return 0
-	if at - float(node["struck_at"]) > STRIKE_MEMORY:
+	# Golpes soltos se perdem com o tempo, mas o que já caiu continua caído.
+	if at - float(node["struck_at"]) > STRIKE_MEMORY and int(node["hits"]) < hits_needed(cell):
 		return 0
 	return int(node["hits"])

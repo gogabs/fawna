@@ -112,6 +112,8 @@ static func bump(thing := WorldGen.Thing.NADA) -> AudioStream:
 	var key := "colisao"
 	if thing == WorldGen.Thing.RIACHO or thing == WorldGen.Thing.LAGO:
 		key = "colisao_agua"
+	elif thing == WorldGen.Thing.ARVORE:
+		key = "colisao_arvore"
 	if not _has_file(key):
 		key = "colisao"
 	return _pick(key, SoundBank.bump)
@@ -151,6 +153,16 @@ static func has_resource_loop(thing: WorldGen.Thing) -> bool:
 ## cortando o ar fica com quem empunha).
 static func bamboo_knock() -> AudioStream:
 	return _pick_existing(["bambu_golpe"], SoundBank.bamboo_knock)
+
+
+## Machado no tronco e a árvore caindo. Sem arquivos próprios (arvore_golpe,
+## arvore_queda), usam os sons do bambu, que são os que existem.
+static func tree_knock() -> AudioStream:
+	return _pick_existing(["arvore_golpe"], SoundBank.bamboo_knock)
+
+
+static func tree_fall() -> AudioStream:
+	return _pick_existing(["arvore_queda"], SoundBank.bamboo_fall)
 
 
 ## A touceira estalando e caindo, no último golpe.

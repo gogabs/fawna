@@ -18,6 +18,7 @@ func _init() -> void:
 	_test_world_state()
 	_test_narrator()
 	_test_stones_and_sizes()
+	_test_dense_forest()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -280,3 +281,72 @@ func _test_narrator() -> void:
 	_check(harvest.spoken_name(bush[1]) == "arbusto", "arbusto sem gravetos é só arbusto")
 	_check(not Sounds.has_resource_loop(WorldGen.Thing.ARBUSTO), "gravetos não têm emissor próprio")
 	_check(Sounds.has_ambient(WorldGen.Thing.ARBUSTO_FRUTAS), "arbusto com frutas soa como arbusto também")
+
+
+## O bosque é fechado: sem trilha ou machado, as clareiras são pequenas e
+## isoladas. Derrubar uma árvore deixa a casa livre (e ela nunca volta).
+func _test_dense_forest() -> void:
+	for world_seed in [42, 7, 173]:
+		var world := WorldGen.new(world_seed)
+		var harvest := Harvest.new(world)
+		var seen := {}
+		var largest := 0
+		var trees := 0
+		var forest := 0
+		for y in range(-300, 300):
+			for x in range(-300, 300):
+				var cell := Vector2i(x, y)
+				if world.biome_at(cell) != WorldGen.Biome.BOSQUE or world.thing_at(cell) == WorldGen.Thing.TRILHA:
+					continue
+				forest += 1
+				if world.thing_at(cell) == WorldGen.Thing.ARVORE:
+					trees += 1
+				if seen.has(cell) or not world.is_passable(cell) or world.thing_at(cell) == WorldGen.Thing.PONTE:
+					continue
+				var size := 0
+				var open := [cell]
+				seen[cell] = true
+				var touches_trail := false
+				while not open.is_empty():
+					var c: Vector2i = open.pop_back()
+					size += 1
+					for d: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+						var n := c + d
+						if world.thing_at(n) == WorldGen.Thing.TRILHA:
+							touches_trail = true
+						if not seen.has(n) and world.is_passable(n) and world.biome_at(n) == WorldGen.Biome.BOSQUE and world.thing_at(n) != WorldGen.Thing.TRILHA:
+							seen[n] = true
+							open.append(n)
+				if not touches_trail:
+					largest = maxi(largest, size)
+		print("[floresta] semente %d: %d casas, %d árvores, maior clareira isolada %d" % [world_seed, forest, trees, largest])
+		_check(forest > 0 and float(trees) / forest > 0.55, "o bosque deveria ser cheio de árvores (semente %d)" % world_seed)
+		_check(largest < 60, "clareiras do bosque deveriam ser pequenas (semente %d: %d)" % [world_seed, largest])
+	var world := WorldGen.new(42)
+	var harvest := Harvest.new(world)
+	var cell: Vector2i = _find(world, WorldGen.Thing.ARVORE)[1]
+	_check(not world.is_passable(cell), "árvore bloqueia")
+	var needed := harvest.hits_needed(cell)
+	_check(needed >= 6 and needed <= 9, "árvore pede de 6 a 9 golpes (pediu %d)" % needed)
+	var t := 5000.0
+	for i in needed - 1:
+		harvest.strike(cell, t + i)
+	_check(not world.is_passable(cell), "árvore em pé ainda bloqueia")
+	harvest.strike(cell, t + needed)
+	_check(world.is_passable(cell) and world.cleared.has(cell), "árvore caída abre passagem")
+	_check(harvest.spoken_name(cell, t + needed + 1) == "árvore caída", "fala: árvore caída")
+	# Golpes soltos se esquecem, mas a árvore caída não se levanta sozinha.
+	_check(world.is_passable(cell) and harvest.hits_left(cell, t + 99999.0) == 0, "árvore caída continua caída")
+	var got := harvest.take(cell, t + 100000.0)
+	_check(got["ok"] and got["item"] == "lenha" and got["parts"].get("lenha_grande", 0) == 3, "árvore dá 3 lenhas grandes (%s)" % got)
+	_check(world.is_passable(cell), "recolhida, a casa segue livre")
+	_check(not harvest.is_available(cell, t + 1.0e9), "árvore não rebrota")
+	# Cliente: o espelho recebido do servidor também abre a passagem.
+	var mirror_world := WorldGen.new(42)
+	var mirror := Harvest.new(mirror_world)
+	mirror.apply_snapshot(harvest.snapshot(t + 100001.0), t + 100001.0)
+	_check(mirror_world.is_passable(cell), "espelho do cliente abre a passagem")
+	var reloaded_world := WorldGen.new(42)
+	var reloaded := Harvest.new(reloaded_world)
+	reloaded.load_save(harvest.to_save())
+	_check(reloaded_world.is_passable(cell), "passagem aberta sobrevive ao salvamento")
