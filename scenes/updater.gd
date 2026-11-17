@@ -70,12 +70,27 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Rede de segurança: se por algum motivo o foco sumiu, uma tecla de
+	# navegação o devolve ao primeiro controle visível.
+	if get_viewport().gui_get_focus_owner() == null and _is_nav_key(event):
+		for button: Button in [primary_button, notes_button, skip_button]:
+			if button.is_visible_in_tree():
+				button.grab_focus()
+				get_viewport().set_input_as_handled()
+				return
 	if event.is_action_pressed("repetir_fala"):
 		Speech.say(_status_sentence())
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("ui_cancel") and state != State.INSTALLING:
 		get_viewport().set_input_as_handled()
 		_on_skip()
+
+
+func _is_nav_key(event: InputEvent) -> bool:
+	for action in ["ui_up", "ui_down", "ui_left", "ui_right", "ui_focus_next", "ui_focus_prev"]:
+		if event.is_action_pressed(action):
+			return true
+	return false
 
 
 # --- Verificação --------------------------------------------------------------
@@ -151,11 +166,11 @@ func _show_available() -> void:
 	status_label.text = details
 	var notes := _notes()
 	notes_text.text = _notes_bbcode(notes) if not notes.is_empty() else "Esta versão não tem notas."
-	notes_text.show()
 	progress_bar.hide()
 	primary_button.text = "Baixar e instalar" if blocker.is_empty() else "Abrir página de download"
 	notes_button.text = "Ouvir novidades"
 	skip_button.text = "Pular"
+	notes_text.show()
 	_show_buttons([primary_button, notes_button, skip_button])
 	_play(Sounds.chime())
 	Speech.say("Atualização disponível. %s Escolha %s, Ouvir novidades ou Pular." % [
@@ -323,6 +338,27 @@ func _status_sentence() -> String:
 func _show_buttons(visible_buttons: Array) -> void:
 	for button: Button in [primary_button, notes_button, skip_button]:
 		button.visible = button in visible_buttons
+	_link_focus(visible_buttons)
+
+
+## Prende o foco nos controles visíveis: nas pontas, Cima/Baixo ficam no mesmo
+## controle em vez de sair para o nada (o foco se perdia e não voltava).
+func _link_focus(visible_buttons: Array) -> void:
+	var chain: Array[Control] = []
+	if notes_text.visible:
+		chain.append(notes_text)
+	for button: Button in visible_buttons:
+		chain.append(button)
+	for i in chain.size():
+		var control := chain[i]
+		var above := chain[maxi(i - 1, 0)]
+		var below := chain[mini(i + 1, chain.size() - 1)]
+		control.focus_neighbor_top = control.get_path_to(above)
+		control.focus_neighbor_bottom = control.get_path_to(below)
+		control.focus_previous = control.get_path_to(above)
+		control.focus_next = control.get_path_to(below)
+		control.focus_neighbor_left = control.get_path_to(control)
+		control.focus_neighbor_right = control.get_path_to(control)
 
 
 func _focus(button: Button) -> void:
