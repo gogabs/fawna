@@ -25,7 +25,7 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO }
+enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -94,10 +94,11 @@ const THING_NAMES := {
 	Thing.PEDRAS: "pedras",
 	Thing.MAR: "mar",
 	Thing.CHARCO: "charco",
+	Thing.ARVORE: "árvore",
 }
 
 ## Coisas que não deixam passar.
-const BLOCKING := [Thing.RIACHO, Thing.LAGO, Thing.BAMBU, Thing.MAR, Thing.CHARCO]
+const BLOCKING := [Thing.RIACHO, Thing.LAGO, Thing.BAMBU, Thing.MAR, Thing.CHARCO, Thing.ARVORE]
 ## Água, de qualquer tipo.
 const WATER := [Thing.RIACHO, Thing.LAGO, Thing.MAR, Thing.CHARCO]
 ## Chão por onde se anda: não são "coisas" para a fala listar.
@@ -197,6 +198,9 @@ const BEACH_WIDTH := 5.0
 const POOL_LEVEL := 0.3
 const POOL_BANK := 0.12  # no mesmo ruído: a beira lamacenta da poça
 const STONE_WASTE_CHANCE := 0.012  # o deserto gelado é pedregoso
+## Árvores: o bosque é uma mata fechada. Em cada casa fora das trilhas há essa
+## chance de ter uma árvore; derrubar a árvore deixa a casa livre para sempre.
+const TREE_CHANCE := 0.72
 ## Fração dos arbustos que dá frutas em vez de gravetos: são raros (uns poucos
 ## por região).
 const FRUIT_BUSH_CHANCE := 0.07
@@ -229,6 +233,9 @@ var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 ## Casas ocupadas por construções (marco, fogueira): não deixam passar.
 ## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
 var built := {}
+## Casas de recursos que bloqueiam mas foram derrubadas e deixam passar
+## (árvores caídas). Quem mantém é Harvest; aqui só a colisão consulta.
+var cleared := {}
 
 
 func _init(new_seed: int) -> void:
@@ -486,7 +493,7 @@ static func _chunk_index(cell: Vector2i) -> int:
 
 
 func is_passable(cell: Vector2i) -> bool:
-	return in_bounds(cell) and not BLOCKING.has(thing_at(cell)) and not built.has(cell)
+	return in_bounds(cell) and not built.has(cell) and (cleared.has(cell) or not BLOCKING.has(thing_at(cell)))
 
 
 func is_trail(cell: Vector2i) -> bool:
@@ -529,6 +536,8 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 	# a trilha fica limpa e fácil de seguir.
 	if trail != 0:
 		return Thing.NADA
+	if biome == Biome.BOSQUE and cell_random(cell, "arvore") < TREE_CHANCE:
+		return Thing.ARVORE
 	var roll := _random([cell.x, cell.y])
 	var bamboo := _bamboo_chance(cell, region, biome, around, x, y)
 	if roll < bamboo:

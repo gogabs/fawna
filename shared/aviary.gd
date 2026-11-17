@@ -21,7 +21,7 @@ enum Species { SABIA, CARRICA, ROLINHA, CORVO, CORUJA, GAVIAO, PERIQUITO }
 const SPECIES := {
 	Species.SABIA: {
 		"name": "sabiá-da-névoa",
-		"perches": [WorldGen.Thing.ARBUSTO, WorldGen.Thing.BAMBU],
+		"perches": [WorldGen.Thing.ARVORE, WorldGen.Thing.BAMBU],
 		"group": [1, 1],
 		"song_every": [7.0, 18.0],  # entre um canto e outro
 		"stay": [25.0, 70.0],  # tempo num poleiro antes de mudar

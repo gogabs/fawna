@@ -30,6 +30,7 @@ const THING_COLORS := {
 	WorldGen.Thing.ARGILA: Color("b0654a"),
 	WorldGen.Thing.ARBUSTO_FRUTAS: Color("b02a4a"),
 	WorldGen.Thing.PEDRAS: Color("9a9a9a"),
+	WorldGen.Thing.ARVORE: Color("1f3a24"),
 }
 
 var _world: WorldGen
