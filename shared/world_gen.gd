@@ -118,10 +118,10 @@ const NO_CELL := Vector2i(-9999999, -9999999)
 ##   encosta em campo aberto (Cover.ABERTA: pradaria, clareira, lagoa, brejo,
 ##   deserto gelado). Mais cheios do lado de dentro da mata, e ainda alguns
 ##   passos campo adentro. Longe da orla só há um ou outro arbusto perdido.
-## - Bambu cresce em dois lugares: no bambuzal, com as touceiras fechando a orla
-##   e mais ralas no miolo (para dar para andar lá dentro), e na beira da água,
-##   em moitas ao longo das margens das lagoas, dos riachos e dos charcos do
-##   brejo.
+## - Bambu cresce em dois lugares: no bambuzal, onde é denso e fechado (toda
+##   casa fora das trilhas é uma touceira: só se passa pelas trilhas ou abrindo
+##   caminho com o machado, ver Harvest), e na beira da água, em moitas ao longo
+##   das margens das lagoas, dos riachos e dos charcos do brejo.
 ##
 ## Biomas novos só precisam ter uma Cover (cover_of) para ganhar a orla.
 ## Até quantas casas da divisa entre regiões a orla é procurada.
@@ -140,11 +140,12 @@ const BUSH_STRAY_CHANCE := {
 	Biome.DESERTO_GELADO: 0.002, Biome.BAMBUZAL: 0.002, Biome.BREJO: 0.008,
 }
 ## Bambuzal: orla de BAMBOO_BAND casas, de BAMBOO_EDGE_CHANCE na divisa até
-## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE.
+## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE. Todas em 1,0: o bambuzal é
+## uma parede contínua, sem frestas por onde uma criatura caiba.
 const BAMBOO_BAND := 4.0
-const BAMBOO_EDGE_CHANCE := 0.16
-const BAMBOO_EDGE_FADE := 0.07
-const BAMBOO_INSIDE_CHANCE := 0.025
+const BAMBOO_EDGE_CHANCE := 1.0
+const BAMBOO_EDGE_FADE := 1.0
+const BAMBOO_INSIDE_CHANCE := 1.0
 ## Bambu na beira da água: só onde o ruído das moitas deixa (mais ou menos
 ## metade das margens), para formar moitas com espaços entre elas. Na lagoa, de
 ## BAMBOO_LAKE_FROM a BAMBOO_LAKE_TO casas além da margem (a argila fica mais
@@ -233,8 +234,9 @@ var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 ## Casas ocupadas por construções (marco, fogueira): não deixam passar.
 ## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
 var built := {}
-## Casas de recursos que bloqueiam mas foram derrubadas e deixam passar
-## (árvores caídas). Quem mantém é Harvest; aqui só a colisão consulta.
+## Casas de recursos que bloqueiam mas foram derrubadas ou recolhidas e deixam
+## passar (árvores caídas, bambu aberto, ver Harvest). Quem mantém é Harvest;
+## aqui só a colisão consulta. Vector2i -> true.
 var cleared := {}
 
 
