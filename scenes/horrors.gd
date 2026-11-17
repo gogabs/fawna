@@ -13,6 +13,7 @@ const STALE_SECONDS := 2.0  # sem notícias por esse tempo, o cliente o esquece
 const OPEN_HZ := 20000.0
 const HUSHED_HZ := 900.0  # passa-baixa do mundo com ele ao lado
 const HUSHED_DB := -6.0  # e o volume geral cai junto
+const INDOOR_HUSH := 0.6  # dentro do abrigo: abafado, mas menos que o horror
 const PRESENCE_RISE := 0.5  # por segundo: o abafamento chega devagar
 const PRESENCE_FALL := 0.35
 const BREATH_DB := -8.0
@@ -33,6 +34,7 @@ var _presence := 0.0  # 0 (longe) a 1 (ao lado)
 var _breath: AudioStreamPlayer3D
 var _filter: AudioEffectLowPassFilter
 var _touched_master := false
+var _indoors := 0.0  # 0 fora, 1 dentro de paredes fechadas
 
 
 func start_server(world: WorldGen) -> void:
@@ -209,6 +211,7 @@ func _client_step(delta: float) -> void:
 	var wanted := 0.0 if nearest.is_empty() else Horrors.presence_at(nearest_distance())
 	var rate := PRESENCE_RISE if wanted > _presence else PRESENCE_FALL
 	_presence = move_toward(_presence, wanted, rate * delta)
+	_indoors = move_toward(_indoors, _indoor_target(game), delta / 0.6)
 	_apply_hush()
 	_update_breath(nearest, delta)
 
@@ -228,10 +231,23 @@ func _apply_hush() -> void:
 	if _filter == null:
 		return
 	# Na escala das oitavas, para o ouvido sentir o filtro fechar por igual.
-	_filter.cutoff_hz = OPEN_HZ * pow(HUSHED_HZ / OPEN_HZ, _presence)
-	if _presence > 0.0 or _touched_master:
-		_touched_master = _presence > 0.0
-		AudioServer.set_bus_volume_db(_master(), Music.MASTER_DB + HUSHED_DB * _presence)
+	var hush := maxf(_presence, _indoors * INDOOR_HUSH)
+	_filter.cutoff_hz = OPEN_HZ * pow(HUSHED_HZ / OPEN_HZ, hush)
+	if hush > 0.0 or _touched_master:
+		_touched_master = hush > 0.0
+		AudioServer.set_bus_volume_db(_master(), Music.MASTER_DB + HUSHED_DB * hush)
+
+
+## 1 dentro de uma construção grande de paredes de pé (porta fechada), metade
+## com a porta aberta, 0 fora dela.
+func _indoor_target(game: Node) -> float:
+	var cell := WorldGen.cell_of(game._pos)
+	var build: Dictionary = game.builds.at(cell)
+	if build.is_empty() or not Crafting.is_large(build["kind"]) or not Builds.walls_up(build):
+		return 0.0
+	if cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])):
+		return 0.5
+	return 0.5 if bool(build.get("door_open", false)) else 1.0
 
 
 ## A respiração soa no silêncio que o próprio Calado causa, sem o Tab, e some

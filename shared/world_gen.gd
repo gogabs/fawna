@@ -238,6 +238,9 @@ var built := {}
 ## passar (árvores caídas, bambu aberto, ver Harvest). Quem mantém é Harvest;
 ## aqui só a colisão consulta. Vector2i -> true.
 var cleared := {}
+## Casas de coisas (árvores, arbustos, bambu) que uma obra arrancou de vez:
+## viram chão livre. Quem mantém é Builds; Vector2i -> true.
+var removed := {}
 
 
 func _init(new_seed: int) -> void:
@@ -477,7 +480,7 @@ func has_trail(from: Vector2i, to: Vector2i) -> bool:
 # --- Coisas --------------------------------------------------------------------
 
 func thing_at(cell: Vector2i) -> Thing:
-	if not in_bounds(cell):
+	if not in_bounds(cell) or removed.has(cell):
 		return Thing.NADA
 	return _chunk_data(cell)[0][_chunk_index(cell)] as Thing
 

@@ -266,7 +266,53 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_strike[id] = now
+	# O terreno de uma obra tem as suas próprias fases (preparo).
+	if not builds.at(cell).is_empty():
+		return {"ok": false, "reason": "nada", "hits_left": 0, "felled": false}
 	return harvest.strike(cell)
+
+
+## Um golpe de preparo no terreno de uma obra grande: machado (limpar) ou
+## enxada (capinar), na casa "cell", ao alcance. Quem chama confere o que está
+## empunhado. O que for arrancado cai no chão da casa, como se tivesse sido
+## colhido ("drop"). Devolve o resultado de Builds.prep_hit, com "drop" e
+## "pile" quando algo caiu.
+func prep_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	var thing := world.thing_at(cell)
+	var drop := _clear_yield(cell) if Crafting.CLEAR_HITS.has(thing) else {}
+	var result := builds.prep_hit(build_id, cell, wielding(id))
+	if result["ok"] and result.get("cleared", false) and not drop.is_empty():
+		ground.add_items(cell, drop)
+		result["drop"] = drop
+		result["pile"] = ground.items_at(cell)
+	return result
+
+
+## O que uma árvore, bambu ou arbusto arrancado deixa no chão: o mesmo que
+## daria ao ser colhido (Harvest.SOURCES), já com os tamanhos sorteados.
+## Precisa ser chamado antes de a casa ser limpa.
+func _clear_yield(cell: Vector2i) -> Dictionary:
+	var source: Dictionary = Harvest.SOURCES.get(world.thing_at(cell), {})
+	if source.is_empty():
+		return {}
+	var items := {}
+	var parts := harvest._roll_parts(cell, source["item"], int(source["amount"]))
+	if parts.is_empty():
+		items[source["item"]] = int(source["amount"])
+	else:
+		items = parts
+	for extra: String in source.get("extras", {}):
+		items[extra] = int(items.get(extra, 0)) + int(source["extras"][extra])
+	return items
 
 
 ## Começa uma construção na casa "cell" (a que está à frente da criatura,
@@ -285,6 +331,45 @@ func start_build(id: int, kind: String, cell: Vector2i) -> Dictionary:
 	return builds.start(kind, cell)
 
 
+## Começa uma construção grande no terreno com o canto noroeste em "origin" e
+## lado "size", com a porta para o lado "entrance". A criatura precisa estar na
+## mesma região do terreno. Devolve { ok, reason, id }.
+func start_site(id: int, kind: String, origin: Vector2i, size: int, entrance: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if world.region_of(WorldGen.cell_of(pos)) != world.region_of(origin):
+		return {"ok": false, "reason": "regiao_longe"}
+	return builds.start_site(kind, origin, size, entrance)
+
+
+## Tira do caminho quem estava dentro de uma parede que acabou de subir: cada
+## criatura vai para o ponto livre mais perto. Devolve [[id, posição nova], ...].
+func eject_from_walls(build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	var moved := []
+	for id in players:
+		var pos: Vector2 = players[id]["pos"]
+		if world.is_free(pos):
+			continue
+		var best := pos
+		var best_distance := INF
+		for ring in range(1, 8):
+			for dx in range(-ring, ring + 1):
+				for dy in range(-ring, ring + 1):
+					var point := pos + Vector2(dx, dy) * 0.5
+					var distance := point.distance_to(pos)
+					if distance < best_distance and world.is_free(point):
+						best_distance = distance
+						best = point
+			if best_distance < INF:
+				break
+		if best != pos:
+			players[id]["pos"] = best
+			moved.append([id, best])
+	return moved
+
+
 ## Dá nome ao povoado de um marco ao alcance (Builds.name_settlement).
 func name_settlement(id: int, build_id: int, noun_index: int, adjective_index: int) -> Dictionary:
 	if not players.has(id):
@@ -293,7 +378,7 @@ func name_settlement(id: int, build_id: int, noun_index: int, adjective_index: i
 	if build.is_empty():
 		return {"ok": false, "reason": "nao_marco"}
 	var pos: Vector2 = players[id]["pos"]
-	if pos.distance_to(WorldGen.cell_center(build["cell"])) > BUILD_REACH:
+	if Builds.reach_distance(build, pos) > BUILD_REACH:
 		return {"ok": false, "reason": "longe"}
 	return builds.name_settlement(build_id, noun_index, adjective_index)
 
@@ -307,13 +392,13 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
 	var pos: Vector2 = players[id]["pos"]
-	if pos.distance_to(WorldGen.cell_center(build["cell"])) > BUILD_REACH:
+	if Builds.reach_distance(build, pos) > BUILD_REACH:
 		return {"ok": false, "reason": "longe"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_build.get(id, -BUILD_COOLDOWN_MS)) < BUILD_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_build[id] = now
-	return builds.work(build_id, inventory_of(id))
+	return builds.work(build_id, inventory_of(id), -1.0, pos)
 
 
 ## Fabrica uma arma com o que está na bolsa. Devolve { ok, reason, item,
@@ -321,10 +406,10 @@ func work_build(id: int, build_id: int) -> Dictionary:
 func craft(id: int, weapon: String) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
-	if not Crafting.WEAPONS.has(weapon):
+	if Crafting.recipe(weapon).is_empty():
 		return {"ok": false, "reason": "desconhecida"}
 	var inv := inventory_of(id)
-	var materials: Dictionary = Crafting.WEAPONS[weapon]["materials"]
+	var materials: Dictionary = Crafting.recipe(weapon)["materials"]
 	var missing := Crafting.missing(inv, materials)
 	if not missing.is_empty():
 		return {"ok": false, "reason": "faltam", "item": weapon, "missing": missing}

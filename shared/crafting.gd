@@ -53,10 +53,44 @@ const BUILDS := {
 			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3}, "work": 2},
 		],
 	},
+	"abrigo": {
+		"name": ["abrigo", "abrigos"],
+		"article": "o",
+		"settlement": true,
+		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
+		"stages": [
+			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
+			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
+			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
+		],
+	},
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira"]
+const BUILD_ORDER := ["marco", "fogueira", "abrigo"]
+
+## Construções grandes (as de BUILDS com "size"): ocupam um quadrado de lados
+## "size" (em casas) em vez de uma casa só. O lugar é escolhido por âncoras
+## (SitePlanner), só dentro de um povoado (um marco com nome na região), e a
+## obra começa por duas fases de preparo antes das etapas: limpar (arrancar
+## árvores, bambus e arbustos do terreno, com o machado) e capinar (arrancar a
+## grama de cada casa, com a enxada). As etapas e o trabalho valem para o
+## tamanho de referência ("reference"); em outros tamanhos, materiais e batidas
+## crescem ou diminuem com a área (stage_of).
+##
+## Golpes de machado (limpar) para arrancar o que está no terreno de uma obra
+## grande, e de enxada (capinar) para a grama de cada casa. A árvore pede bem
+## mais que numa queda comum.
+const CLEAR_HITS := {
+	WorldGen.Thing.ARVORE: 10,
+	WorldGen.Thing.BAMBU: 4,
+	WorldGen.Thing.ARBUSTO: 3,
+	WorldGen.Thing.ARBUSTO_FRUTAS: 3,
+}
+const WEED_HITS := 2
+## Ferramenta de cada fase de preparo.
+const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
 ## Fogo: batidas de pedra até acender, quanto cada lenha queima e o máximo
 ## que a fogueira guarda. A lenha da última etapa da fogueira já é o
@@ -76,6 +110,19 @@ const WEAPONS := {
 		"materials": {"lenha_media": 1, "pedra_media": 1}},
 }
 const WEAPON_ORDER := ["lanca", "clava"]
+
+## Ferramentas: também fabricadas da bolsa, mas dão trabalho: "steps" são os
+## passos que a criatura vê e ouve ao fabricar (cada um com suas batidas).
+const TOOLS := {
+	"enxada": {"name": ["enxada", "enxadas"], "article": "a",
+		"materials": {"bambu": 1, "pedra_media": 1, "pedra_pequena": 1},
+		"steps": [
+			{"say": "Você fura a pedra com a pedra pequena.", "knocks": 7, "sound": "pedra"},
+			{"say": "Você afeiçoa o cabo de bambu.", "knocks": 5, "sound": "madeira"},
+			{"say": "Você encaixa o cabo na pedra furada.", "knocks": 3, "sound": "encaixe"},
+		]},
+}
+const TOOL_ORDER := ["enxada"]
 
 
 static func material_text(item: String, amount: int) -> String:
@@ -106,6 +153,39 @@ static func missing_text(missing: Dictionary) -> String:
 	return ("falta " if single else "faltam ") + materials_text(missing)
 
 
+static func is_large(kind: String) -> bool:
+	return BUILDS.has(kind) and BUILDS[kind].has("size")
+
+
+## A etapa "index" de uma construção para o tamanho "size" (1 nas pequenas).
+## Nas grandes, materiais e batidas acompanham a área em relação ao tamanho de
+## referência.
+static func stage_of(kind: String, index: int, size := 1) -> Dictionary:
+	var stage: Dictionary = BUILDS[kind]["stages"][index]
+	if not is_large(kind):
+		return stage
+	var factor := float(size * size) / float(int(BUILDS[kind]["size"]["reference"]) ** 2)
+	var materials := {}
+	for item: String in stage["materials"]:
+		materials[item] = maxi(1, ceili(float(stage["materials"][item]) * factor - 0.001))
+	return {"name": stage["name"], "materials": materials, "work": maxi(1, roundi(float(stage["work"]) * factor))}
+
+
+## As paredes de uma construção grande ficam de pé quando termina a etapa
+## marcada com "walls" (ou quando a obra termina); antes disso o terreno é
+## só um canteiro por onde se anda. Sem etapa marcada, nunca bloqueiam.
+static func walls_stage(kind: String) -> int:
+	var stages: Array = BUILDS[kind]["stages"]
+	for i in stages.size():
+		if stages[i].get("walls", false):
+			return i
+	return -1
+
+
+static func stage_count(kind: String) -> int:
+	return BUILDS[kind]["stages"].size()
+
+
 static func build_name(kind: String) -> String:
 	return BUILDS[kind]["name"][0] if BUILDS.has(kind) else kind
 
@@ -116,18 +196,32 @@ static func build_title(kind: String) -> String:
 
 
 static func weapon_name(kind: String) -> String:
+	if TOOLS.has(kind):
+		return TOOLS[kind]["name"][0]
 	return WEAPONS[kind]["name"][0] if WEAPONS.has(kind) else kind
 
 
+## Receita de uma arma ou ferramenta ({} se não existe).
+static func recipe(kind: String) -> Dictionary:
+	if WEAPONS.has(kind):
+		return WEAPONS[kind]
+	return TOOLS.get(kind, {})
+
+
+static func is_tool_recipe(kind: String) -> bool:
+	return TOOLS.has(kind)
+
+
 static func weapon_title(kind: String) -> String:
-	var text := weapon_name(kind)
+	var text := weapon_name(kind) if WEAPONS.has(kind) else str(TOOLS.get(kind, {}).get("name", [kind])[0])
 	return text.left(1).to_upper() + text.substr(1)
 
 
 ## Tudo o que uma construção pede, somando as etapas.
-static func total_materials(kind: String) -> Dictionary:
+static func total_materials(kind: String, size := 1) -> Dictionary:
 	var total := {}
-	for stage: Dictionary in BUILDS[kind]["stages"]:
+	for i in stage_count(kind):
+		var stage := stage_of(kind, i, size)
 		for item: String in stage["materials"]:
 			total[item] = int(total.get(item, 0)) + int(stage["materials"][item])
 	return total
@@ -135,11 +229,13 @@ static func total_materials(kind: String) -> Dictionary:
 
 ## Descrição da receita para o menu: "3 etapas: 3 pedras grandes, 2 pedras
 ## médias e 1 pedra pequena."
-static func build_summary(kind: String) -> String:
+static func build_summary(kind: String, size := 0) -> String:
+	if size <= 0 and is_large(kind):
+		size = int(BUILDS[kind]["size"]["default"])
 	var stages: Array = BUILDS[kind]["stages"]
 	var parts: PackedStringArray = []
 	for i in stages.size():
-		var stage: Dictionary = stages[i]
+		var stage: Dictionary = stage_of(kind, i, maxi(size, 1))
 		parts.append("%s, %s" % [stage["name"], materials_text(stage["materials"])])
 	return "%d etapas. %s." % [stages.size(), "; ".join(parts).left(1).to_upper() + "; ".join(parts).substr(1)]
 
