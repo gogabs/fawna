@@ -11,10 +11,11 @@ def passo(seed):
     rng = np.random.default_rng(seed)
     n = int(0.26 * SR); t = np.arange(n) / SR; y = np.zeros(n)
     # corpo: batida surda no chão firme (grave curto, com leve queda de altura)
-    f = rng.uniform(95, 135) * (1 - 0.25 * np.minimum(t / 0.08, 1))
-    y += np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.035) * 0.9
+    # (ruído de baixa frequência com passa-baixa agressivo, sem altura definida: baque e não nota)
+    thud = filt(rng.standard_normal(n), 'lp', rng.uniform(110, 150), 4) * np.exp(-t / 0.04)
+    y += thud / np.max(np.abs(thud)) * 0.5
     # superfície: terra compactada, ruído médio e curto
-    body = filt(rng.standard_normal(n), 'bp', [180, 1400]) * np.exp(-t / 0.03)
+    body = filt(rng.standard_normal(n), 'bp', [250, 1400]) * np.exp(-t / 0.03)
     y += body * rng.uniform(0.7, 1.0)
     # grãos: poucos estalinhos secos de cascalho/argila, logo depois do contato
     for _ in range(rng.integers(3, 7)):
@@ -26,7 +27,7 @@ def passo(seed):
     y[s0:] += s * 0.12
     y *= np.minimum(1, t / 0.002)
     y = filt(y, 'lp', 6500, 1)
-    return y / np.max(np.abs(y)) * 0.7
+    return y / np.max(np.abs(y)) * 0.35  # bem baixo (~ -6 dB do anterior)
 
 for i in range(1, 6):
     tmp = tempfile.mktemp(suffix='.wav'); sf.write(tmp, passo(900 + i), SR)
