@@ -72,6 +72,7 @@ const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
 const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1,9)
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
 const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
+const CRAFT_TOOL_KNOCK := 0.55  # segundos entre as batidas de cada passo de uma ferramenta
 const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
 ## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
 const BUMP_SLIDE_MIN := 0.5
@@ -105,6 +106,7 @@ var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor m
 var _harvest_timer := 0.0
 var _server_harvest_timer := 0.0
 var builds: Builds  # espelho das construções (o servidor manda)
+var _dry_notice_ms := 0
 var ground: Ground  # espelho dos itens soltos no chão (o servidor manda)
 var _burn_timer := 0.0  # servidor: fogueiras que apagaram
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
@@ -189,6 +191,9 @@ func _process(delta: float) -> void:
 			for build_id: int in state.builds.burn_out():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "apagou", 0, {})
+			for build_id: int in state.builds.dried():
+				_dirty = true
+				build_changed.rpc(state.builds.info(build_id), "secou", 0, {})
 	if world == null or not players.has(my_id):
 		return
 	_turn_cooldown = maxf(_turn_cooldown - delta, 0.0)
@@ -448,17 +453,60 @@ func request_build_work(build_id: int) -> void:
 		var detail := ""
 		if result["reason"] == "faltam":
 			detail = Crafting.missing_text(result["missing"])
-		elif result["reason"] == "pronta":
+		elif result["reason"] == "pronta" or result["reason"] == "preparo":
 			detail = state.builds.status_text(build_id)
+		elif result["reason"] == "canto":
+			var names: PackedStringArray = []
+			for post: int in result["posts"]:
+				names.append(Builds.post_name(post))
+			detail = ", ".join(names)
 		action_failed.rpc_id(id, "obra_" + result["reason"], detail)
 		return
 	_dirty = true
 	if result["event"] in ["deposito", "abasteceu", "alimentou"]:
 		equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	var extra := {}
-	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left"]:
+	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry"]:
 		if result.has(key):
 			extra[key] = result[key]
+	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
+
+
+## Fabricar > Construções > (grande) > âncora, tamanho e porta: começa uma
+## construção grande no terreno escolhido. "origin" é o canto noroeste.
+@rpc("any_peer", "call_local", "reliable")
+func request_site_start(kind: String, origin: Vector2i, size: int, entrance: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.start_site(id, kind, origin, size, entrance)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, "obra_" + result["reason"], kind)
+		return
+	_dirty = true
+	build_changed.rpc(state.builds.info(result["id"]), "iniciada", id, {})
+
+
+## J com o machado (limpar) ou a enxada (capinar) no terreno de uma obra grande.
+@rpc("any_peer", "call_local", "reliable")
+func request_prep(build_id: int, cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_tell_others_handled(id, "golpeou")
+	var result := state.prep_build(id, build_id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] in ["ferramenta", "fase"]:
+			action_failed.rpc_id(id, "preparo_" + result["reason"], str(result.get("tool", "")))
+		return
+	_dirty = true
+	var extra := {"cell": result["cell"]}
+	for key in ["left", "cells_left", "next", "drop", "thing", "cleared"]:
+		if result.has(key):
+			extra[key] = result[key]
+	if result.has("pile"):
+		ground_changed.rpc(result["cell"], result["pile"], "caiu", id, result["drop"])
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
 
 
@@ -654,7 +702,13 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 	builds.apply_info(data)
 	var build_id := int(data["id"])
 	var build := builds.get_build(build_id)
-	var where := WorldGen.cell_center(build["cell"])
+	# O som sai de onde a coisa acontece: a casa golpeada, o canteiro ou, nas
+	# construções grandes, o ponto do terreno mais perto de quem ouve.
+	var where := Builds.nearest_point(build, _pos)
+	if extra.has("cell"):
+		where = WorldGen.cell_center(extra["cell"])
+	elif extra.has("post"):
+		where = WorldGen.cell_center(Builds.post_cell(build, int(extra["post"])))
 	var near := where.distance_to(_pos) <= HEARING_RADIUS
 	var mine := by_id == my_id
 	var title := builds.title_of(build_id)
@@ -663,9 +717,15 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"etapa": Sounds.build_stage(), "pronta": Sounds.build_done(), "faisca": Sounds.fire_spark(),
 		"acesa": Sounds.fire_ignite(), "abasteceu": Sounds.fire_feed(), "alimentou": Sounds.fire_feed(),
 		"apagou": Sounds.fire_out(), "nomeado": Sounds.build_done(),
+		"limpando": Sounds.build_knock(), "limpo": Sounds.build_stage(), "capinando": Sounds.build_knock(),
+		"capinado": Sounds.build_deposit(), "fase": Sounds.build_stage(), "secou": Sounds.build_stage(),
 	}.get(event)
 	if near and stream != null:
-		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito"])
+		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
+	if event == "secou":
+		if near:
+			Speech.say("A argila secou: a obra volta a render por inteiro.", false)
+		return
 	_refresh_fires()
 	if event == "apagou":
 		if where.distance_to(_pos) <= HEARING_RADIUS * 1.5:
@@ -676,8 +736,32 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 	match event:
 		"iniciada":
 			var what := ("um " if Crafting.BUILDS[build["kind"]]["article"] == "o" else "uma ") + Crafting.build_name(build["kind"])
-			Speech.say("Você começou %s à frente. %s Espaço perto da obra deposita o que você tiver na bolsa. O Caminheiro sabe voltar aqui, em Construções." % [
-				what, builds.status_text(build_id).trim_prefix(title + " em obra. ")])
+			if Crafting.is_large(build["kind"]):
+				var size := int(build["size"])
+				Speech.say("Você marcou o terreno d%s %s, %d por %d casas, com a porta para o %s. %s O Caminheiro leva ao que falta, em Construções." % [
+					Crafting.BUILDS[build["kind"]]["article"], Crafting.build_name(build["kind"]), size, size, build["entrance"],
+					_capital(builds.status_text(build_id).trim_prefix(title + " em obra, "))])
+			else:
+				Speech.say("Você começou %s à frente. %s Espaço perto da obra deposita o que você tiver na bolsa. O Caminheiro sabe voltar aqui, em Construções." % [
+					what, builds.status_text(build_id).trim_prefix(title + " em obra. ")])
+		"limpando", "capinando":
+			pass  # só o som do golpe; a fala vem quando a casa fica pronta
+		"limpo":
+			var thing := int(extra.get("thing", 0))
+			var drop: Dictionary = extra.get("drop", {})
+			Speech.say("Você arrancou %s. %s%s" % [
+				SitePlanner.CLEAR_THING_TEXT.get(thing, "o que havia ali"),
+				"Caiu no chão: %s. Espaço pega. " % Economy.items_text(drop) if not drop.is_empty() else "",
+				"Faltam %d casas a limpar." % int(extra.get("cells_left", 0)) if int(extra.get("cells_left", 0)) > 0 else ""])
+		"capinado":
+			var left := int(extra.get("cells_left", 0))
+			Speech.say("Casa capinada. %s" % ("Falta%s %d." % ["" if left == 1 else "m", left] if left > 0 else ""))
+		"fase":
+			if extra.get("next", "") == "capina":
+				Speech.say("Terreno limpo. Agora a capina: empunhe a enxada pela Bolsa e golpeie a grama de cada casa com J. %s" % (
+					"" if Bag.count(inventory, "enxada") + (1 if wielded == "enxada" else 0) > 0 else "Você ainda não tem uma: ela se fabrica em Fabricar, Ferramentas."))
+			else:
+				Speech.say("Terreno pronto. %s" % builds.status_text(build_id).trim_prefix(title + " em obra. "))
 		"deposito":
 			var put := "Você colocou %s." % Crafting.materials_text(extra.get("deposited", {}))
 			var missing: Dictionary = extra.get("missing", {})
@@ -686,15 +770,27 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 				Speech.say("%s Materiais completos. Espaço para trabalhar: %d batida%s." % [put, left, "" if left == 1 else "s"])
 			else:
 				Speech.say("%s %s." % [put, Crafting.missing_text(missing).left(1).to_upper() + Crafting.missing_text(missing).substr(1)])
+		"trabalho":
+			if not bool(extra.get("counted", true)):
+				if Time.get_ticks_msec() - _dry_notice_ms > 8000:
+					_dry_notice_ms = Time.get_ticks_msec()
+					Speech.say("A argila ainda seca: trabalhar agora rende metade.")
+			elif int(extra.get("post_left", 1)) == 0:
+				Speech.say("O canto %s terminou a sua parte." % Builds.post_name(int(extra.get("post", 0))))
 		"etapa":
 			var missing := builds.stage_missing(build_id)
-			Speech.say("Etapa concluída. Agora %s: %s." % [extra.get("next", ""),
-				Crafting.missing_text(missing) if not missing.is_empty() else "Espaço para trabalhar"])
+			var dry := float(extra.get("dry", 0.0))
+			Speech.say("Etapa concluída. %sAgora %s: %s." % [
+				"A argila precisa secar uns %s; dá para trabalhar antes, mas rende metade. " % Builds._minutes_text(dry) if dry > 0.0 else "",
+				extra.get("next", ""), Crafting.missing_text(missing) if not missing.is_empty() else "Espaço para trabalhar"])
 		"pronta":
 			if build["kind"] == "marco":
 				Speech.say("O marco está pronto. %s" % (
 					"Espaço nele para dar nome ao povoado." if builds.can_name(build_id) else
 					"Com uma fogueira nesta região, o lugar vira um povoado."))
+			elif Crafting.is_large(build["kind"]):
+				Speech.say("%s está pronto: %d por %d casas, com a porta para o %s." % [
+					Crafting.build_title(build["kind"]), int(build["size"]), int(build["size"]), build["entrance"]])
 			else:
 				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 				Speech.say("A fogueira está pronta, com lenha para uns %d minuto%s. Espaço bate as pedras para acender.%s" % [
@@ -717,11 +813,25 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 	if world == null:
 		return
 	inventory = new_bag
-	for i in CRAFT_KNOCKS:
-		get_tree().create_timer(0.3 * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
-	get_tree().create_timer(0.3 * CRAFT_KNOCKS).timeout.connect(_play.bind(Sounds.build_stage()))
-	Speech.say("Você fabricou %s %s. Está na bolsa: empunhe pela Bolsa, no menu das setas." % [
-		"uma" if Crafting.WEAPONS[weapon]["article"] == "a" else "um", Crafting.weapon_name(weapon)])
+	var recipe := Crafting.recipe(weapon)
+	var done_text := "Você fabricou %s %s. Está na bolsa: empunhe pela Bolsa, no menu das setas." % [
+		"uma" if recipe["article"] == "a" else "um", Crafting.weapon_name(weapon)]
+	if not Crafting.is_tool(weapon):
+		for i in CRAFT_KNOCKS:
+			get_tree().create_timer(0.3 * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
+		get_tree().create_timer(0.3 * CRAFT_KNOCKS).timeout.connect(_play.bind(Sounds.build_stage()))
+		Speech.say(done_text)
+		return
+	# Ferramenta: dá trabalho. Cada passo tem as suas batidas e a sua fala; a
+	# ferramenta já está na bolsa, mas só se anuncia no fim.
+	var clock := 0.0
+	for step: Dictionary in recipe["steps"]:
+		get_tree().create_timer(clock).timeout.connect(Speech.say.bind(step["say"], false))
+		for i in int(step["knocks"]):
+			get_tree().create_timer(clock + 0.9 + CRAFT_TOOL_KNOCK * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
+		clock += 0.9 + CRAFT_TOOL_KNOCK * int(step["knocks"]) + 0.5
+		get_tree().create_timer(clock - 0.4).timeout.connect(_play.bind(Sounds.build_stage()))
+	get_tree().create_timer(clock + 0.2).timeout.connect(Speech.say.bind(done_text, true))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -790,7 +900,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"obra_lugar":
 			Speech.say("Não dá para construir aí à frente. Procure chão livre, fora da trilha, da água, dos recursos e da Origem.")
 		"obra_perto":
-			Speech.say("Há outra construção colada nesse lugar.")
+			Speech.say("Há outra construção, a água, a trilha ou um recurso nesse lugar, ou perto demais: entre uma obra e outra ficam sempre 2 casas livres.")
 		"obra_regiao":
 			Speech.say("Esta região já tem um marco.")
 		"obra_ocupado":
@@ -799,6 +909,22 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Para esta etapa %s, e não há nada disso na sua bolsa." % detail)
 		"obra_pronta":
 			Speech.say(detail)
+		"obra_preparo":
+			Speech.say(detail)
+		"obra_canto":
+			Speech.say("Aqui não há mais o que fazer. Vá a um canto que ainda tem batidas: %s." % detail)
+		"obra_sem_povoado":
+			Speech.say("Obras grandes só se começam num povoado: falta um marco com nome nesta região.")
+		"obra_agua":
+			Speech.say("Esse terreno pega água. Escolha outro lugar.")
+		"obra_tamanho", "obra_entrada":
+			Speech.say("Esse tamanho ou essa porta não serve.")
+		"obra_regiao_longe":
+			Speech.say("Só dá para marcar o terreno de uma obra na região em que você está.")
+		"preparo_ferramenta":
+			Speech.say("Para esta fase, empunhe %s pela Bolsa." % Bag.with_article(detail) if not detail.is_empty() else "Empunhe a ferramenta certa.")
+		"preparo_fase":
+			pass
 		"obra_sem_lenha":
 			Speech.say("A fogueira está sem lenha, e não há lenha na sua bolsa.")
 		"obra_sem_lenha_bolsa":
@@ -817,7 +943,7 @@ func action_failed(reason: String, detail: String) -> void:
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
 		"arma_cheio":
-			Speech.say("Você já carrega o máximo de %s." % Crafting.WEAPONS[detail.split("|")[0]]["name"][1])
+			Speech.say("Você já carrega o máximo de %s." % Crafting.recipe(detail.split("|")[0])["name"][1])
 		_:
 			pass  # "nada", "colhido", "devagar", "longe": ignora em silêncio
 
@@ -1172,13 +1298,23 @@ func _interact() -> void:
 	var build := _build_target()
 	var pile := ground.nearest(_pos, COLLECT_REACH)
 	# O que está mais perto vence; empate: obra, depois monte, depois recurso.
-	var build_distance := INF if build.is_empty() else _pos.distance_to(WorldGen.cell_center(build["cell"]))
+	var build_distance := INF if build.is_empty() else Builds.reach_distance(build, _pos)
 	var pile_distance := INF if pile == WorldGen.NO_CELL else _pos.distance_to(WorldGen.cell_center(pile))
 	var target_distance := INF if target == WorldGen.NO_CELL else _pos.distance_to(WorldGen.cell_center(target))
+	# No preparo de um terreno (limpeza, capina) o Espaço não tem o que fazer na
+	# obra: o que caiu no chão ali dentro vem primeiro.
+	if not build.is_empty() and Crafting.is_large(build["kind"]) and not build["done"] \
+			and builds.phase_of(int(build["id"])) != "obra" and (pile != WorldGen.NO_CELL or target != WorldGen.NO_CELL):
+		build_distance = INF
 	if build_distance <= pile_distance and build_distance <= target_distance and not build.is_empty():
 		if builds.can_name(int(build["id"])):
 			# Marco pronto com fogueira na região: abre a escolha do nome.
 			Speech.say(_menu.open_at("Nome do povoado, primeira palavra", _name_nouns.bind(int(build["id"]))))
+		elif build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty():
+			# O marco do povoado: de onde partem as obras grandes.
+			Speech.say(_menu.open_at("Obras do povoado %s" % build["name"], _site_kinds))
+		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
+			Speech.say(builds.status_text(int(build["id"])))
 		else:
 			request_build_work.rpc_id(1, int(build["id"]))
 	elif pile_distance <= target_distance and pile != WorldGen.NO_CELL:
@@ -1193,7 +1329,7 @@ func _interact() -> void:
 ## já colhido só é escolhido se não houver outro, para a fala explicar).
 func _collect_target() -> Vector2i:
 	return _nearest_resource(COLLECT_REACH, func(cell: Vector2i):
-		return Harvest.is_source(world.thing_at(cell)), true)
+		return Harvest.is_source(world.thing_at(cell)) and builds.at(cell).is_empty(), true)
 
 
 ## A construção mais perto ao alcance do Espaço, com preferência para a que
@@ -1203,11 +1339,11 @@ func _build_target() -> Dictionary:
 	var best_score := INF
 	var ahead := Compass.forward(_heading)
 	for build: Dictionary in builds.all():
-		var offset := WorldGen.cell_center(build["cell"]) - _pos
-		var distance := offset.length()
+		var offset := Builds.nearest_point(build, _pos) - _pos
+		var distance := Builds.reach_distance(build, _pos)
 		if distance > BUILD_REACH:
 			continue
-		var score := distance - (0.6 if distance > 0.01 and ahead.dot(offset / distance) > 0.5 else 0.0)
+		var score := distance - (0.6 if offset.length() > 0.01 and ahead.dot(offset / offset.length()) > 0.5 else 0.0)
 		if score < best_score:
 			best_score = score
 			best = build
@@ -1227,7 +1363,7 @@ func _front_cell() -> Vector2i:
 ## NO_CELL se não houver nenhuma ao alcance (o golpe vai no ar).
 func _strike_target() -> Vector2i:
 	return _nearest_resource(STRIKE_REACH, func(cell: Vector2i):
-		return Harvest.needs_tool(world.thing_at(cell)), false)
+		return Harvest.needs_tool(world.thing_at(cell)) and builds.at(cell).is_empty(), false)
 
 
 func _nearest_resource(reach: float, accepts: Callable, prefer_ready: bool) -> Vector2i:
@@ -1275,6 +1411,13 @@ func _swing() -> void:
 		return
 	_swing_cooldown = SWING_COOLDOWN
 	_play(Sounds.axe_swing(), true)
+	# No terreno de uma obra grande, o machado limpa e a enxada capina.
+	if wielded == "machado" or wielded == "enxada":
+		var prep := builds.prep_target(_pos, Compass.forward(_heading), STRIKE_REACH, wielded)
+		if not prep.is_empty():
+			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
+			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
+			return
 	if wielded != "machado":
 		# Armas ainda não acertam nada (os horrores virão): só o golpe no ar.
 		request_swing.rpc_id(1)
@@ -1291,7 +1434,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Construções, no Caminheiro, mostra as da região em que você está. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: segure o Tab para ouvir de onde vem a respiração e gire até ficar de frente para ela, que então se cala. Encarado, ele para e acaba indo embora; fogueira acesa e companhia também o afastam. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: segure o Tab para ouvir de onde vem a respiração e gire até ficar de frente para ela, que então se cala. Encarado, ele para e acaba indo embora; fogueira acesa e companhia também o afastam. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1760,15 +1903,44 @@ func _on_caminheiro_arrived(place: String) -> void:
 ## obras em andamento). O cristal leva até uma casa livre colada na obra.
 func _caminheiro_builds() -> Array:
 	var list := builds.in_region(world.region_of(WorldGen.cell_of(_pos)))
-	list.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a["cell"])) < _pos.distance_squared_to(WorldGen.cell_center(b["cell"])))
+	list.sort_custom(func(a, b): return Builds.reach_distance(a, _pos) < Builds.reach_distance(b, _pos))
 	var items := []
 	for build: Dictionary in list:
 		var spoken := builds.spoken_name(int(build["id"]))
-		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(build["cell"])))
+		var meters := Compass.meters(Builds.reach_distance(build, _pos))
 		var place: String = Crafting.BUILDS[build["kind"]]["article"] + " " + spoken
 		items.append({"label": "%s, %s" % [spoken.left(1).to_upper() + spoken.substr(1), meters],
-			"run": _track.bind(_approach_point(build["cell"]), place), "stay": true})
+			"run": _track.bind(_approach_point(_build_goal_cell(build)), place), "stay": true})
 	return items
+
+
+## Para onde o Caminheiro leva numa obra: na limpeza e na capina, a casa que
+## ainda falta mais perto; nas etapas de uma obra grande, o canto com batidas
+## pendentes mais perto; nas demais, a própria casa.
+func _build_goal_cell(build: Dictionary) -> Vector2i:
+	var best: Vector2i = build["cell"]
+	var best_distance := INF
+	if not build["done"] and str(build["phase"]) != "obra":
+		for cell: Vector2i in build["prep"]:
+			var distance := WorldGen.cell_center(cell).distance_to(_pos)
+			if distance < best_distance:
+				best_distance = distance
+				best = cell
+		return best
+	if not build["done"] and Builds.post_count(build) > 1:
+		for i in Builds.post_count(build):
+			if builds.post_left(int(build["id"]), i) <= 0 or not builds.stage_missing(int(build["id"])).is_empty():
+				continue
+			var cell := Builds.post_cell(build, i)
+			var distance := WorldGen.cell_center(cell).distance_to(_pos)
+			if distance < best_distance:
+				best_distance = distance
+				best = cell
+		if best_distance < INF:
+			return best
+	if Builds.post_count(build) > 1:
+		return WorldGen.cell_of(Builds.nearest_point(build, _pos))
+	return best
 
 
 ## Um ponto livre colado numa casa ocupada (a obra), o mais perto de quem está
@@ -1792,6 +1964,7 @@ func _craft_root() -> Array:
 	return [
 		{"label": "Construções", "open": _build_kinds},
 		{"label": "Armas", "open": _weapon_kinds},
+		{"label": "Ferramentas", "open": _tool_kinds},
 	]
 
 
@@ -1803,6 +1976,13 @@ func _build_kinds() -> Array:
 
 
 func _build_actions(kind: String) -> Array:
+	if Crafting.is_large(kind):
+		return [
+			{"label": "Escolher o lugar", "open": _site_quadrants.bind(kind)},
+			{"label": "Materiais", "info": "Obra grande, só em povoado, de %d a %d casas de lado (recomendado %d). Primeiro se limpa o terreno com o machado e se capina com a enxada; depois, %s Cada etapa se divide em 4 cantos." % [
+				int(Crafting.BUILDS[kind]["size"]["min"]), int(Crafting.BUILDS[kind]["size"]["max"]),
+				int(Crafting.BUILDS[kind]["size"]["default"]), Crafting.build_summary(kind).left(1).to_lower() + Crafting.build_summary(kind).substr(1)]},
+		]
 	return [
 		{"label": "Iniciar à frente", "run": _start_build.bind(kind)},
 		{"label": "Materiais", "info": Crafting.build_summary(kind)},
@@ -1812,6 +1992,88 @@ func _build_actions(kind: String) -> Array:
 ## O lugar é a casa que está à frente quando a criatura escolhe Iniciar.
 func _start_build(kind: String) -> String:
 	request_build_start.rpc_id(1, kind, _front_cell())
+	return ""
+
+
+## Obras do povoado (Espaço no marco): as construções grandes.
+func _site_kinds() -> Array:
+	var items := []
+	for kind: String in Crafting.BUILD_ORDER:
+		if Crafting.is_large(kind):
+			items.append({"label": Crafting.build_title(kind), "open": _site_quadrants.bind(kind)})
+	return items
+
+
+## Primeiro nível: os 4 quadrantes da região e as construções que já há nela.
+func _site_quadrants(kind: String) -> Array:
+	var region := world.region_of(WorldGen.cell_of(_pos))
+	if not builds.has_settlement(region):
+		return [{"label": "Falta um povoado nesta região", "info": "Obras grandes só se começam num povoado: um marco e uma fogueira prontos na região, e o marco com nome."}]
+	var min_size := int(Crafting.BUILDS[kind]["size"]["min"])
+	var items := []
+	for quadrant: Dictionary in SitePlanner.quadrants(builds, region, min_size):
+		if quadrant["fits"]:
+			items.append({"label": quadrant["text"], "open": _site_anchors.bind(kind, quadrant["id"])})
+		else:
+			items.append({"label": quadrant["text"], "info": "%s. Não cabe uma obra de %d por %d casas." % [quadrant["text"], min_size, min_size]})
+	for build: Dictionary in builds.in_region(region):
+		var title := builds.title_of(int(build["id"]))
+		items.append({"label": "%s, construção" % title, "open": _site_building_anchors.bind(kind, int(build["id"]))})
+	return items
+
+
+## Segundo nível, num quadrante: os cantos dele e o redor dos obstáculos.
+func _site_anchors(kind: String, quadrant_id: String) -> Array:
+	var region := world.region_of(WorldGen.cell_of(_pos))
+	var min_size := int(Crafting.BUILDS[kind]["size"]["min"])
+	var quadrant := {}
+	for candidate: Dictionary in SitePlanner.quadrants(builds, region, min_size):
+		if candidate["id"] == quadrant_id:
+			quadrant = candidate
+	var items := []
+	for anchor: Dictionary in SitePlanner.quadrant_anchors(builds, region, quadrant, min_size):
+		items.append({"label": anchor["text"], "open": _site_sizes.bind(kind, anchor)})
+	return items
+
+
+## Segundo nível, numa construção: os quatro lados dela.
+func _site_building_anchors(kind: String, build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	var items := []
+	if build.is_empty():
+		return items
+	for anchor: Dictionary in SitePlanner.building_anchors(builds, build, int(Crafting.BUILDS[kind]["size"]["min"])):
+		items.append({"label": anchor["text"], "open": _site_sizes.bind(kind, anchor)})
+	return items
+
+
+## Tamanho: o recomendado primeiro, depois os outros que cabem.
+func _site_sizes(kind: String, anchor: Dictionary) -> Array:
+	var limits: Dictionary = Crafting.BUILDS[kind]["size"]
+	var sizes := SitePlanner.sizes_for(anchor, limits)
+	sizes.sort_custom(func(a, b):
+		return absi(int(a["size"]) - int(limits["default"])) * 2 + (1 if a["size"] > limits["default"] else 0) \
+				< absi(int(b["size"]) - int(limits["default"])) * 2 + (1 if b["size"] > limits["default"] else 0))
+	var items := []
+	for entry: Dictionary in sizes:
+		var size := int(entry["size"])
+		items.append({"label": "%d por %d casas, %s por %s metros%s%s" % [size, size, SitePlanner.meters_text(size), SitePlanner.meters_text(size),
+				", recomendado" if size == int(limits["default"]) else "", ", com limpeza do terreno" if entry["needs_clearing"] else ""],
+			"open": _site_entrances.bind(kind, anchor, size)})
+	return items
+
+
+## Por fim, o lado da porta; escolher começa a obra.
+func _site_entrances(kind: String, anchor: Dictionary, size: int) -> Array:
+	var items := [{"label": "Materiais", "info": Crafting.build_summary(kind, size)}]
+	for side: String in ["norte", "sul", "leste", "oeste"]:
+		items.append({"label": "Porta ao %s" % side, "run": _start_site.bind(kind, anchor, size, side), "close": true})
+	return items
+
+
+func _start_site(kind: String, anchor: Dictionary, size: int, entrance: String) -> String:
+	var origin := SitePlanner.rect_for(anchor["corner"], anchor["dir"], size).position
+	request_site_start.rpc_id(1, kind, origin, size, entrance)
 	return ""
 
 
@@ -1845,8 +2107,15 @@ func _weapon_kinds() -> Array:
 	return items
 
 
+func _tool_kinds() -> Array:
+	var items := []
+	for tool: String in Crafting.TOOL_ORDER:
+		items.append({"label": Crafting.weapon_title(tool), "open": _weapon_actions.bind(tool)})
+	return items
+
+
 func _weapon_actions(weapon: String) -> Array:
-	var materials: Dictionary = Crafting.WEAPONS[weapon]["materials"]
+	var materials: Dictionary = Crafting.recipe(weapon)["materials"]
 	var missing := Crafting.missing(inventory, materials)
 	var info := "Precisa de %s." % Crafting.materials_text(materials)
 	if not missing.is_empty():
@@ -1993,6 +2262,84 @@ func _run_auto_commands() -> void:
 				_drop("pedra_grande", 99)
 			"LANCA", "CLAVA":
 				_craft(command.to_lower())
+			"POVOADO":  # testes, só quem hospeda: um marco com nome e uma fogueira prontos aqui perto
+				_test_settlement()
+			"MENU_OBRAS":  # testes: abre a escolha de obras do povoado
+				Speech.say(_menu.open_at("Obras do povoado", _site_kinds))
+			"ABRIGO":  # testes: escolhe a primeira âncora com espaço e começa um abrigo 4x4 com a porta ao sul
+				_test_site()
+			"PREPARO":  # testes: limpa e capina o terreno da obra, casa a casa, pelo servidor
+				await _test_prepare()
 			"SAIR":
 				Net.stop()
 				get_tree().quit()
+
+
+## Teste: um marco com nome e uma fogueira prontos perto de quem hospeda.
+func _test_settlement() -> void:
+	if state == null:
+		return
+	var here := WorldGen.cell_of(_pos)
+	var spots := []
+	for r in range(3, 20):
+		for dx in range(-r, r + 1):
+			for dy in [-r, r]:
+				var cell := here + Vector2i(dx, dy)
+				if state.builds.refusal("fogueira", cell).is_empty() and world.region_of(cell) == world.region_of(here):
+					spots.append(cell)
+		if spots.size() >= 30:
+			break
+	var marco: int = state.builds.start("marco", spots[0])["id"]
+	state.builds.get_build(marco)["done"] = true
+	state.builds.get_build(marco)["name"] = "Vale Calmo"
+	for cell: Vector2i in spots:
+		if state.builds.refusal("fogueira", cell).is_empty():
+			state.builds.get_build(int(state.builds.start("fogueira", cell)["id"]))["done"] = true
+			break
+	build_snapshot.rpc(state.builds.snapshot())
+
+
+## Teste: começa um abrigo 4x4 na primeira âncora que comporta.
+func _test_site() -> void:
+	var region := world.region_of(WorldGen.cell_of(_pos))
+	for quadrant: Dictionary in SitePlanner.quadrants(builds, region):
+		for anchor: Dictionary in SitePlanner.quadrant_anchors(builds, region, quadrant):
+			if int(anchor["square_loose"]) >= 4:
+				print("[teste] âncora: ", anchor["text"])
+				_start_site("abrigo", anchor, 4, "sul")
+				return
+
+
+## Teste: a cada rodada, vai à primeira casa de preparo, empunha a ferramenta da
+## fase e golpeia até a casa ficar pronta.
+func _test_prepare() -> void:
+	for round in 120:
+		var target := {}
+		for build: Dictionary in builds.all():
+			if not build["done"] and str(build["phase"]) != "obra":
+				target = build
+				break
+		if target.is_empty():
+			return
+		var tool: String = Crafting.PREP_TOOLS[target["phase"]]
+		if wielded != tool:
+			if state != null and Bag.count(inventory, tool) <= 0:
+				state.inventory_of(my_id)[tool] = 1
+				equipment_changed(state.inventory_of(my_id), state.wielding(my_id), "", "")
+			request_equip.rpc_id(1, tool)
+			await get_tree().create_timer(0.3).timeout
+			continue
+		var cell: Vector2i = (target["prep"] as Dictionary).keys()[0]
+		_set_pos(WorldGen.cell_center(cell) + Vector2(0.3, 0.0))
+		state.players[my_id]["pos"] = _pos
+		for i in 14:
+			if state != null:
+				state._last_strike.erase(my_id)
+			request_prep.rpc_id(1, int(target["id"]), cell)
+			await get_tree().create_timer(0.08).timeout
+			if not (builds.get_build(int(target["id"]))["prep"] as Dictionary).has(cell):
+				break
+
+
+func _capital(text: String) -> String:
+	return text.left(1).to_upper() + text.substr(1)
