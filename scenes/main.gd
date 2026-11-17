@@ -24,6 +24,14 @@ extends Control
 @onready var main_page: Control = %MainPage
 @onready var options_page: Control = %OptionsPage
 @onready var connect_button: Button = %ConnectButton
+@onready var host_button: Button = %HostButton
+@onready var join_button: Button = %JoinButton
+@onready var notice_label: Label = %NoticeLabel
+@onready var join_page: Control = %JoinPage
+@onready var join_status: Label = %JoinStatus
+@onready var found_box: VBoxContainer = %FoundBox
+@onready var rescan_button: Button = %RescanButton
+@onready var join_back_button: Button = %JoinBackButton
 @onready var options_button: Button = %OptionsButton
 @onready var quit_button: Button = %QuitButton
 @onready var vsync_check: CheckButton = %VsyncCheck
@@ -33,7 +41,10 @@ extends Control
 @onready var ui_sound: AudioStreamPlayer = %UiSound
 
 var name_field: MenuTextField
+var ip_field: MenuTextField
 var _key_usec := -1
+var _scanner: LanDiscovery
+var _scan_left := 0.0
 
 
 func _ready() -> void:
@@ -44,6 +55,17 @@ func _ready() -> void:
 
 	theme = UiTheme.build()
 	connect_button.pressed.connect(_on_connect)
+	host_button.pressed.connect(_on_host)
+	join_button.pressed.connect(_show_join)
+	rescan_button.pressed.connect(_start_scan)
+	join_back_button.pressed.connect(_show_main.bind(false))
+	ip_field = MenuTextField.new("IP")
+	ip_field.placeholder = "ip ou ip:porta"
+	ip_field.empty_text = "digitar"
+	join_page.add_child(ip_field)
+	join_page.move_child(ip_field, found_box.get_index() + 1)
+	ip_field.nav_control().pressed.connect(_say_editing_ip)
+	ip_field.submitted.connect(_on_ip_submitted)
 	options_button.pressed.connect(_show_options)
 	quit_button.pressed.connect(func(): get_tree().quit())
 	back_button.pressed.connect(_show_main)
@@ -57,9 +79,9 @@ func _ready() -> void:
 	vsync_check.toggled.connect(_on_vsync_toggled)
 	graphics_check.toggled.connect(_on_graphics_toggled)
 	nav_button.pressed.connect(_on_nav_pressed)
-	for control: Control in [connect_button, options_button, quit_button, name_field.nav_control(), vsync_check, graphics_check, nav_button, back_button]:
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), ip_field.nav_control(), vsync_check, graphics_check, nav_button, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
-	for button: Button in [connect_button, options_button, quit_button, back_button, nav_button]:
+	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
 
 	_show_main(false)
@@ -91,19 +113,37 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _editing() -> bool:
-	return name_field != null and name_field.is_editing()
+	return (name_field != null and name_field.is_editing()) or (ip_field != null and ip_field.is_editing())
+
+
+func _process(delta: float) -> void:
+	if _scan_left <= 0.0:
+		return
+	_scan_left -= delta
+	if _scan_left <= 0.0:
+		_stop_scan()
+		if found_box.get_child_count() == 0:
+			join_status.text = "Nenhum jogo privado encontrado na rede."
+			Speech.say(join_status.text, false)
 
 
 ## Itens navegáveis da página aberta, na ordem de cima para baixo. Campos de
 ## texto entram pelo botão (nav_control).
 func _page_items() -> Array[Control]:
-	var page: Control = options_page if options_page.visible else main_page
+	var page: Control = main_page
+	if options_page.visible:
+		page = options_page
+	elif join_page.visible:
+		page = join_page
 	var items: Array[Control] = []
 	for child in page.get_children():
 		if not child.visible:
 			continue
 		if child is MenuTextField:
 			items.append((child as MenuTextField).nav_control())
+		elif child == found_box:  # jogos encontrados, um botão cada
+			for found in found_box.get_children():
+				items.append(found)
 		elif child is BaseButton:
 			items.append(child)
 	return items
@@ -129,6 +169,8 @@ func _navigate(action: String) -> void:
 		"voltar":
 			if options_page.visible:
 				_show_main()
+			elif join_page.visible:
+				_show_main(false)
 			else:
 				_play(Sounds.ui_limit())
 
@@ -137,8 +179,12 @@ func _show_main(save := true) -> void:
 	if save:
 		Net.player_name = name_field.value
 		Net.save_settings()
+	_stop_scan()
 	options_page.hide()
+	join_page.hide()
 	main_page.show()
+	connect_button.text = ("Entrar no mundo como %s" % Net.player_name) if _has_name() else "Entrar no mundo"
+	notice_label.hide()
 	connect_button.grab_focus.call_deferred()
 	if save:
 		Speech.say("Opções salvas. Menu principal.", false)
@@ -203,7 +249,99 @@ func _on_off(on: bool) -> String:
 	return "ligado" if on else "desligado"
 
 
+func _has_name() -> bool:
+	return not Net.player_name.strip_edges().is_empty()
+
+
+## Sem nome não se entra em lugar nenhum: o nome vem de Opções.
+func _require_name() -> bool:
+	if _has_name():
+		return true
+	notice_label.text = "Defina seu nome nas Opções antes de entrar."
+	notice_label.show()
+	Speech.say(notice_label.text)
+	return false
+
+
+## O mundo principal sempre usa o servidor padrão.
 func _on_connect() -> void:
+	if not _require_name():
+		return
+	Net.set_server("")
+	Net.mode = Net.Mode.CLIENT
+	_start_game()
+
+
+## Sobe o servidor aqui, ouvindo em qualquer endereço na porta padrão.
+func _on_host() -> void:
+	if not _require_name():
+		return
+	Net.port = Net.DEFAULT_PORT
+	Net.mode = Net.Mode.HOST
+	_start_game()
+
+
+func _show_join() -> void:
+	if not _require_name():
+		return
+	main_page.hide()
+	options_page.hide()
+	join_page.show()
+	Speech.say("Entrar em um jogo privado.", true)
+	_start_scan()
+	rescan_button.grab_focus.call_deferred()
+
+
+func _start_scan() -> void:
+	_stop_scan()
+	for child in found_box.get_children():
+		found_box.remove_child(child)
+		child.queue_free()
+	join_status.text = "Procurando jogos na rede local..."
+	Speech.say(join_status.text, false)
+	_scanner = LanDiscovery.new()
+	add_child(_scanner)
+	_scanner.found.connect(_on_game_found)
+	_scanner.start_searching()
+	_scan_left = 5.0
+
+
+func _stop_scan() -> void:
+	_scan_left = 0.0
+	if _scanner != null:
+		_scanner.queue_free()
+		_scanner = null
+
+
+func _on_game_found(address: String, port: int, host_name: String, version: String) -> void:
+	var button := Button.new()
+	button.text = "Jogo de %s, em %s" % [host_name, address]
+	if port != Net.DEFAULT_PORT:
+		button.text += ":%d" % port
+	if version != Updater.current_version():
+		button.text += " (versão %s, diferente da sua)" % version
+	button.focus_entered.connect(_on_focus.bind(button))
+	button.pressed.connect(_play.bind(Sounds.ui_confirm()))
+	button.pressed.connect(_join_address.bind(address if port == Net.DEFAULT_PORT else "%s:%d" % [address, port]))
+	found_box.add_child(button)
+	join_status.text = "Jogos encontrados na rede local:"
+	Speech.say("Encontrado: " + button.text, false)
+
+
+func _say_editing_ip() -> void:
+	if not Speech.screen_reader_active():
+		Speech.say("Digite o IP. Enter confirma e Esc cancela.")
+
+
+func _on_ip_submitted(text: String) -> void:
+	_play(Sounds.ui_confirm())
+	if not text.is_empty():
+		_join_address(text)
+
+
+func _join_address(text: String) -> void:
+	_stop_scan()
+	Net.set_server(text)
 	Net.mode = Net.Mode.CLIENT
 	_start_game()
 
@@ -223,8 +361,8 @@ func _on_focus(control: Control) -> void:
 		Speech.say("VSync, %s. Botão de alternar. Deixe desligado se o leitor de tela demorar." % _on_off(vsync_check.button_pressed), interrupt)
 	elif control == graphics_check:
 		Speech.say("Desligar os gráficos, %s. Botão de alternar. Gasta bem menos processador no jogo; a janela fica parada." % _on_off(graphics_check.button_pressed), interrupt)
-	elif control == connect_button:
-		Speech.say("Conectar, como %s. Botão." % Net.player_name, interrupt)
+	elif control == ip_field.nav_control():
+		Speech.say(ip_field.spoken(), interrupt)
 	elif control is Button:
 		Speech.say("%s, botão" % (control as Button).text, interrupt)
 

@@ -16,7 +16,9 @@ O projeto usa **Godot 4.6 ou mais novo** e **GDScript**.
 
 O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, mas fica bem melhor com elas. No menu principal:
 
-- **Conectar:** entra no servidor configurado (padrão da versão de testes: `26.127.36.156`, pela VPN).
+- **Entrar no mundo como [nome]:** entra no servidor padrão (versão de testes: `26.127.36.156`, pela VPN). Sem nome definido nas Opções, não entra.
+- **Hospedar um jogo privado:** sobe o servidor aqui, em qualquer endereço na porta UDP 7350, e põe você no mundo. Outros computadores da rede local o encontram por broadcast UDP na porta 7355 (libere no firewall).
+- **Entrar em um jogo privado:** procura jogos na rede local e lista o que achar, com a opção de digitar o IP.
 - **Opções:** muda seu nome (campo que mostra "Nome: valor" e só abre para digitar ao confirmar), o VSync, desliga os gráficos dentro do jogo (gasta bem menos processador; a janela fica parada) e escolhe a orientação das setas nos menus. Fica salvo em `user://config.cfg`. O servidor é sempre o padrão (7350).
 - **Navegação:** só pelas setas, sem Tab. Horizontal (padrão): ← / → escolhem, ↑ confirma, ↓ volta. Vertical: ↑ / ↓ escolhem, → confirma, ← volta. Vale para o menu principal, as Opções, o menu flutuante e o Caminheiro.
 - **Sair.**
