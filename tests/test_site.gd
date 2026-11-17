@@ -311,6 +311,24 @@ func _test_posts_and_drying() -> void:
 	_check(done, "dá para terminar o abrigo sozinho (%d ações)" % guard)
 	_check(b3.get_build(id3)["done"], "abrigo pronto")
 	_check(b3.status_text(id3).begins_with("Abrigo pronto"), "texto de pronto: " + b3.status_text(id3))
+	# A porta abre e fecha com Espaço, perto dela.
+	var build3 := b3.get_build(id3)
+	var door3 := Builds.door_cell(build3["cell"], 3, "sul")
+	var door_pos := WorldGen.cell_center(door3) + Vector2(0, 1.0)
+	_check(ctx3["state"].world.is_passable(door3), "pronto: a porta começa aberta")
+	var far3 := b3.work(id3, {}, 9000.0, door_pos + Vector2(30, 30))
+	_check(not far3["ok"] and far3["reason"] == "porta_longe" and far3["side"] == "sul", "longe da porta, Espaço não faz nada")
+	var closed := b3.work(id3, {}, 9000.0, door_pos)
+	_check(closed["ok"] and closed["event"] == "porta" and not closed["open"] and closed["walls"], "Espaço perto fecha a porta")
+	_check(not ctx3["state"].world.is_passable(door3), "porta fechada bloqueia")
+	_check(b3.status_text(id3).contains("fechada"), "e a fala diz")
+	var reopened := b3.work(id3, {}, 9000.0, door_pos)
+	_check(reopened["open"] and ctx3["state"].world.is_passable(door3), "Espaço de novo abre")
+	b3.work(id3, {}, 9000.0, door_pos)  # fecha de novo para o teste de salvamento
+	var saved3 := JSON.parse_string(JSON.stringify(b3.to_save())) as Dictionary
+	var copy3 := Builds.new(WorldGen.new(173))
+	copy3.load_save(saved3)
+	_check(not copy3.get_build(id3)["door_open"] and not copy3.world.is_passable(door3), "a porta fechada sobrevive ao salvamento")
 
 
 func _test_persistence() -> void:

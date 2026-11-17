@@ -455,6 +455,8 @@ func request_build_work(build_id: int) -> void:
 			detail = Crafting.missing_text(result["missing"])
 		elif result["reason"] == "pronta" or result["reason"] == "preparo":
 			detail = state.builds.status_text(build_id)
+		elif result["reason"] == "porta_longe":
+			detail = str(result["side"])
 		elif result["reason"] == "canto":
 			var names: PackedStringArray = []
 			for post: int in result["posts"]:
@@ -466,7 +468,7 @@ func request_build_work(build_id: int) -> void:
 	if result["event"] in ["deposito", "abasteceu", "alimentou"]:
 		equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	var extra := {}
-	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry", "walls"]:
+	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry", "walls", "open"]:
 		if result.has(key):
 			extra[key] = result[key]
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
@@ -724,6 +726,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"apagou": Sounds.fire_out(), "nomeado": Sounds.build_done(),
 		"limpando": Sounds.build_knock(), "limpo": Sounds.build_stage(), "capinando": Sounds.build_knock(),
 		"capinado": Sounds.build_deposit(), "fase": Sounds.build_stage(), "secou": Sounds.build_stage(),
+		"porta": Sounds.build_knock(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
@@ -749,6 +752,9 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 			else:
 				Speech.say("Você começou %s à frente. %s Espaço perto da obra deposita o que você tiver na bolsa. O Caminheiro sabe voltar aqui, em Construções." % [
 					what, builds.status_text(build_id).trim_prefix(title + " em obra. ")])
+		"porta":
+			Speech.say("A porta d%s %s está %s." % [Crafting.BUILDS[build["kind"]]["article"], Crafting.build_name(build["kind"]),
+				"aberta" if extra.get("open", true) else "fechada"])
 		"limpando", "capinando":
 			pass  # só o som do golpe; a fala vem quando a casa fica pronta
 		"limpo":
@@ -917,6 +923,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say(detail)
 		"obra_preparo":
 			Speech.say(detail)
+		"obra_porta_longe":
+			Speech.say("A porta fica ao %s. Chegue perto dela e aperte Espaço para abrir ou fechar." % detail)
 		"obra_canto":
 			Speech.say("Aqui não há mais o que fazer. Vá a um canto que ainda tem batidas: %s." % detail)
 		"obra_sem_povoado":
@@ -1946,6 +1954,8 @@ func _build_goal_cell(build: Dictionary) -> Vector2i:
 		if best_distance < INF:
 			return best
 	if Builds.post_count(build) > 1:
+		if build["done"]:
+			return Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"]))
 		return WorldGen.cell_of(Builds.nearest_point(build, _pos))
 	return best
 
@@ -2365,7 +2375,9 @@ func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
 	var id := int(build["id"])
 	var name: String = Crafting.build_name(build["kind"])
 	var article: String = Crafting.BUILDS[build["kind"]]["article"]
-	if build["done"] or Builds.walls_up(build):
+	if Builds.walls_up(build) and cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])):
+		Speech.say("Porta d%s %s." % [article, name], false)
+	elif build["done"] or Builds.walls_up(build):
 		Speech.say("Dentro d%s %s." % [article, name], false)
 	else:
 		Speech.say("Terreno d%s %s, %s." % [article, name, builds.spoken_name(id).trim_prefix(name + ", ").trim_prefix(name + " ")], false)

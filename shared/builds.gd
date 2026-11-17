@@ -51,6 +51,8 @@ const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
 const POSTS := 4
 ## Até onde (em casas) do canto a batida conta para aquele canteiro.
 const POST_REACH := 2.2
+## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
+const DOOR_REACH := 2.4
 
 
 func _init(new_world: WorldGen) -> void:
@@ -106,10 +108,11 @@ static func wall_cells(build: Dictionary) -> Array:
 	if not walls_up(build):
 		return []
 	var door := door_cell(build["cell"], size, str(build.get("entrance", "")))
+	var door_closed := not bool(build.get("door_open", true))
 	var cells := []
 	for cell: Vector2i in footprint_cells(build["cell"], size):
 		var inner: Vector2i = cell - build["cell"]
-		if (inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1) and cell != door:
+		if (inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1) and (cell != door or door_closed):
 			cells.append(cell)
 	return cells
 
@@ -400,7 +403,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -562,6 +565,8 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 	if build["done"]:
 		if Crafting.BUILDS[build["kind"]].get("fire", false):
 			return _tend_fire(build, bag, at_time)
+		if int(build["size"]) > 1:
+			return _use_door(build, pos)
 		return {"ok": false, "reason": "pronta"}
 	if str(build["phase"]) != "obra":
 		return {"ok": false, "reason": "preparo", "phase": build["phase"]}
@@ -646,6 +651,18 @@ func _pick_post(build: Dictionary, id: int, pos: Vector2) -> int:
 	return best
 
 
+## Espaço perto da porta de uma construção grande pronta: abre ou fecha.
+## Recusa "porta_longe" (com "side": o lado da porta) se está longe dela.
+func _use_door(build: Dictionary, pos: Vector2) -> Dictionary:
+	var door := WorldGen.cell_center(door_cell(build["cell"], int(build["size"]), str(build["entrance"])))
+	if pos.x != INF and pos.distance_to(door) > DOOR_REACH:
+		return {"ok": false, "reason": "porta_longe", "side": build["entrance"]}
+	_unregister_walls(build)
+	build["door_open"] = not bool(build["door_open"])
+	_register_walls(build)
+	return {"ok": true, "event": "porta", "open": build["door_open"], "walls": not build["door_open"]}
+
+
 func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionary:
 	var id: int = build["id"]
 	var lit := is_lit(id, at_time)
@@ -722,7 +739,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"burn_left": maxf(0.0, float(build["burn_until"]) - at_time) if float(build["burn_until"]) > 0.0 else 0.0,
 		"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
-		"posts": build["posts"].duplicate(),
+		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
 	}
 
@@ -773,7 +790,7 @@ func to_save() -> Dictionary:
 			"sparks": build["sparks"], "name": build["name"],
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
-			"posts": build["posts"], "dry_until": build["dry_until"],
+			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -821,6 +838,7 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 	build["posts"] = posts
 	build["dry_until"] = dry_until
 	build["slack"] = false
+	build["door_open"] = bool(data.get("door_open", true))
 	return build
 
 
@@ -851,6 +869,11 @@ func _add(build: Dictionary) -> void:
 func _register_walls(build: Dictionary) -> void:
 	for cell: Vector2i in wall_cells(build):
 		world.built[cell] = build["id"]
+
+
+func _unregister_walls(build: Dictionary) -> void:
+	for cell: Vector2i in footprint_cells(build["cell"], int(build["size"])):
+		world.built.erase(cell)
 
 
 func _unregister(build: Dictionary) -> void:
@@ -924,6 +947,9 @@ func status_text(id: int, at_time := -1.0) -> String:
 		if float(build["fuel"]) > 0.0:
 			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
 		return "%s apagada e sem lenha. Espaço põe uma lenha." % title
+	if int(build["size"]) > 1:
+		return "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
+			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]
 	if build["kind"] == "marco":
 		if not str(build["name"]).is_empty():
 			return "Marco do povoado %s." % build["name"]
