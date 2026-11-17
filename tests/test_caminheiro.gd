@@ -55,8 +55,9 @@ func _test_routes_reach_origin() -> void:
 					on_trail += 1
 				previous = point
 			# Quase todos os beacons ficam em cima de trilha (o resto é a
-			# chegada até a trilha e a clareira da Origem).
-			_check(route.size() < 5 or on_trail >= route.size() * 0.75, "a rota deveria seguir as trilhas (%d de %d beacons)" % [on_trail, route.size()])
+			# chegada até a trilha, desviando das moitas de bambu da beira da
+			# água, e a clareira da Origem).
+			_check(route.size() < 5 or on_trail >= route.size() * 0.6, "a rota deveria seguir as trilhas (%d de %d beacons)" % [on_trail, route.size()])
 
 
 func _test_off_trail_goes_to_nearest_trail_first() -> void:

@@ -17,9 +17,76 @@ static func clear() -> void:
 static func footstep(biome: WorldGen.Biome) -> AudioStreamWAV:
 	var key := "passo_%d" % biome
 	if not _cache.has(key):
-		var smooth := 0.85 if biome == WorldGen.Biome.BOSQUE else 0.35
-		_cache[key] = _noise_burst(0.09, smooth, 0.55, 1234 + biome)
+		if WorldGen.COLD_BIOMES.has(biome):
+			_cache[key] = _noise_burst(0.16, 0.6, 0.5, 1234 + biome)  # neve: mais longo, rangido
+		elif biome == WorldGen.Biome.MAR:
+			_cache[key] = _noise_burst(0.12, 0.2, 0.35, 1234 + biome)  # areia: chiado leve
+		else:
+			var smooth := 0.85 if biome == WorldGen.Biome.BOSQUE or biome == WorldGen.Biome.BAMBUZAL else 0.35
+			_cache[key] = _noise_burst(0.09, smooth, 0.55, 1234 + biome)
 	return _cache[key]
+
+
+## Fundo (em loop) dos biomas que ainda não têm gravação: o mar e o frio.
+## Nulo para os outros.
+static func biome_bed(biome: WorldGen.Biome) -> AudioStreamWAV:
+	var key := "fundo_%d" % biome
+	if not _cache.has(key):
+		match biome:
+			WorldGen.Biome.MAR:
+				_cache[key] = _sea_loop()
+			WorldGen.Biome.FLORESTA_GELADA:
+				_cache[key] = _cold_wind_loop(false)
+			WorldGen.Biome.DESERTO_GELADO:
+				_cache[key] = _cold_wind_loop(true)
+			_:
+				return null
+	return _cache[key]
+
+
+const BED_SECONDS := 6
+
+## Mar: uma onda grave e lenta que cresce, quebra num chiado e recua. O loop
+## fecha no ponto mais baixo, entre uma onda e outra.
+static func _sea_loop() -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var count := RATE * BED_SECONDS
+	var deep := _filtered_noise(count, 0.97, 1.0, rng)
+	var foam := _filtered_noise(count, 0.55, 1.0, rng)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	for i in count:
+		var phase := float(i) / count
+		var swell := pow(0.5 - 0.5 * cos(TAU * phase), 2.0)
+		# A espuma vem um pouco depois do pico da onda e some depressa.
+		var crash := pow(maxf(0.0, 0.5 - 0.5 * cos(TAU * (phase - 0.08))), 6.0)
+		samples[i] = deep[i] * (0.5 + 2.2 * swell) + foam[i] * 0.1 * crash
+	return _to_wav(samples, true)
+
+
+## Vento frio: sopro grave com rajadas lentas. No deserto gelado ("open") ele
+## é mais fino e traz um assobio distante; na floresta gelada, mais abafado.
+static func _cold_wind_loop(open: bool) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 47 if open else 53
+	var count := RATE * BED_SECONDS
+	var low := _filtered_noise(count, 0.985 if not open else 0.96, 1.0, rng)
+	var high := _filtered_noise(count, 0.8, 1.0, rng)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var whistle_phase := 0.0
+	for i in count:
+		var phase := float(i) / count
+		# Rajadas: somas de ondas que cabem inteiras no loop.
+		var gust := 0.55 + 0.3 * sin(TAU * phase - 1.0) + 0.15 * sin(TAU * 3.0 * phase + 0.7)
+		var value := low[i] * (2.5 if not open else 1.2) * gust
+		if open:
+			value += high[i] * 0.05 * gust * gust
+			whistle_phase += TAU * (840.0 + 60.0 * sin(TAU * 2.0 * phase)) / RATE
+			value += sin(whistle_phase) * 0.012 * maxf(0.0, gust - 0.5) * (0.5 - 0.5 * cos(TAU * phase))
+		samples[i] = value
+	return _to_wav(samples, true)
 
 
 ## Esbarrão: tom grave e curto.
@@ -59,7 +126,7 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
 	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.ORIGEM else 0]
 	if not _cache.has(key):
 		match thing:
-			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO:
+			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
