@@ -953,9 +953,11 @@ func _turn(step: int) -> void:
 
 
 func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
-	var biome := world.biome_at(cell)
-	if old_cell != WorldGen.NO_CELL and biome != world.biome_at(old_cell):
-		Speech.say(WorldGen.BIOME_NAMES[biome])
+	# Fala o lugar novo ao trocar de bioma, e também ao entrar numa clareira
+	# ou sair dela (o bioma é o mesmo, o lugar não).
+	var place := world.place_name(cell)
+	if old_cell != WorldGen.NO_CELL and place != world.place_name(old_cell):
+		Speech.say(place)
 	var thing := world.thing_at(cell)
 	var old_thing := world.thing_at(old_cell) if old_cell != WorldGen.NO_CELL else WorldGen.Thing.NADA
 	if thing == WorldGen.Thing.TRILHA or thing == WorldGen.Thing.PONTE:
@@ -1226,10 +1228,12 @@ func _update_wind() -> void:
 		_wind.play(randf() * stream.get_length())
 	var cell := WorldGen.cell_of(_pos)
 	var target := WIND_FIELD_DB
-	if world.is_trail(cell) or _near_lake(cell):
+	var biome := world.biome_at(cell)
+	# O mar e o deserto gelado são descampados: o vento não dá trégua.
+	if world.is_trail(cell) or _near_lake(cell) or biome == WorldGen.Biome.MAR or biome == WorldGen.Biome.DESERTO_GELADO:
 		target = WIND_OPEN_DB
-	elif world.biome_at(cell) == WorldGen.Biome.BOSQUE:
-		target = WIND_SHELTER_DB
+	elif world.is_forest(cell):
+		target = WIND_SHELTER_DB  # numa clareira o vento volta a entrar
 	if _focus:
 		target += FOCUS_DUCK_DB
 	if _wind_tween != null:
@@ -1242,7 +1246,8 @@ func _near_lake(cell: Vector2i) -> bool:
 	var r := WIND_LAKE_RADIUS
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
-			if world.thing_at(cell + Vector2i(dx, dy)) == WorldGen.Thing.LAGO:
+			var thing := world.thing_at(cell + Vector2i(dx, dy))
+			if thing == WorldGen.Thing.LAGO or thing == WorldGen.Thing.MAR:
 				return true
 	return false
 

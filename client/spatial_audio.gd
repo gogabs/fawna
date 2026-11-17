@@ -237,6 +237,9 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 			# A lagoa ocupa muitas casas: uma fonte a cada 3, para não abafar o resto.
 			if thing == WorldGen.Thing.LAGO and (posmod(cell.x, 3) != 0 or posmod(cell.y, 3) != 0):
 				continue
+			# O mar é enorme: uma fonte a cada 4 casas basta para ouvir de que lado ele fica.
+			if thing == WorldGen.Thing.MAR and (posmod(cell.x, 4) != 0 or posmod(cell.y, 4) != 0):
+				continue
 			if Sounds.has_ambient(thing):
 				found.append(cell)
 	found.sort_custom(func(a, b): return (a - center).length_squared() < (b - center).length_squared())

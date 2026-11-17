@@ -55,6 +55,12 @@ const MANIFEST := {
 	"fundo_bosque": ["world/loop_forest_windy.ogg"],
 	"fundo_pradaria": ["world/loop_windy_afternoon.ogg"],
 	"vento_aberto": ["world/loop_wind.ogg"],
+	"passo_neve": ["world/deepsnowstep1.ogg", "world/deepsnowstep2.ogg", "world/deepsnowstep3.ogg", "world/deepsnowstep4.ogg", "world/deepsnowstep5.ogg"],
+	"passo_areia": ["world/deepsandstep1.ogg", "world/deepsandstep2.ogg", "world/deepsandstep3.ogg", "world/deepsandstep4.ogg", "world/deepsandstep5.ogg"],
+	# Sem arquivo ainda: gerados por código (SoundBank.biome_bed).
+	"fundo_mar": [],
+	"fundo_floresta_gelada": [],
+	"fundo_deserto_gelado": [],
 	# Foley de movimento da criatura (roupa de algodão e tornozeleira de
 	# conchas). Ficam em foley/, fora do repositório até a licença ser
 	# confirmada; sem eles o jogo segue sem esses sons.
@@ -99,7 +105,13 @@ static var _loaded := {}  # caminho -> AudioStream
 
 ## Passo: o chão da trilha e da ponte soa diferente do mato de cada bioma.
 static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA) -> AudioStream:
-	var key := "passo_bosque" if biome == WorldGen.Biome.BOSQUE else "passo_pradaria"
+	var key := "passo_pradaria"
+	if biome == WorldGen.Biome.BOSQUE or biome == WorldGen.Biome.BAMBUZAL:
+		key = "passo_bosque"
+	elif WorldGen.COLD_BIOMES.has(biome):
+		key = "passo_neve"
+	elif biome == WorldGen.Biome.MAR:
+		key = "passo_areia"
 	if ground == WorldGen.Thing.TRILHA and _has_file("passo_trilha"):
 		key = "passo_trilha"
 	elif ground == WorldGen.Thing.PONTE and _has_file("passo_ponte"):
@@ -110,7 +122,7 @@ static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA) -> Au
 ## Esbarrão, com o som do material quando houver (água...).
 static func bump(thing := WorldGen.Thing.NADA) -> AudioStream:
 	var key := "colisao"
-	if thing == WorldGen.Thing.RIACHO or thing == WorldGen.Thing.LAGO:
+	if WorldGen.WATER.has(thing):
 		key = "colisao_agua"
 	if not _has_file(key):
 		key = "colisao"
@@ -385,10 +397,20 @@ static func open_wind() -> AudioStream:
 
 ## Ambiente de fundo do bioma (não posicional), em loop.
 static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
-	var key := "fundo_bosque" if biome == WorldGen.Biome.BOSQUE else "fundo_pradaria"
-	if biome == WorldGen.Biome.LAGOA and _has_file("fundo_lagoa"):
-		key = "fundo_lagoa"
-	var stream := _pick(key, func(): return null, false)
+	var key := "fundo_pradaria"
+	match biome:
+		WorldGen.Biome.BOSQUE, WorldGen.Biome.BAMBUZAL:
+			key = "fundo_bosque"
+		WorldGen.Biome.LAGOA, WorldGen.Biome.BREJO:
+			if _has_file("fundo_lagoa"):
+				key = "fundo_lagoa"
+		WorldGen.Biome.MAR:
+			key = "fundo_mar"
+		WorldGen.Biome.FLORESTA_GELADA:
+			key = "fundo_floresta_gelada"
+		WorldGen.Biome.DESERTO_GELADO:
+			key = "fundo_deserto_gelado"
+	var stream := _pick(key, func(): return SoundBank.biome_bed(biome), false)
 	if stream != null:
 		_make_loop(stream)
 	return stream
@@ -400,7 +422,9 @@ static func ambient(thing: WorldGen.Thing) -> AudioStream:
 	match thing:
 		WorldGen.Thing.RIACHO:
 			key = "amb_agua"
-		WorldGen.Thing.LAGO:
+		WorldGen.Thing.CHARCO:
+			key = "amb_agua"
+		WorldGen.Thing.LAGO, WorldGen.Thing.MAR:
 			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
 		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 			key = "amb_arbusto"
@@ -430,7 +454,7 @@ static func music(level: int) -> AudioStream:
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
 
 
 static func _has_file(key: String) -> bool:

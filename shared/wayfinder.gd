@@ -27,6 +27,7 @@ const WIDE_MARGIN := 40  # se não achou, tenta de novo com mais folga
 const TRAIL_SEARCH_RADIUS := 20  # casas: até onde procura uma trilha próxima
 const SIMPLIFY_TOLERANCE := 0.9  # casas: desvio que ainda conta como reta
 const MAX_SEGMENT := 20.0  # casas (30 m) no máximo entre dois beacons
+const ROUTE_DETOUR := 6  # regiões de folga para contornar um mar
 const CLEAR_RADIUS := 0.2  # folga ao conferir se uma reta passa livre
 
 var world: WorldGen
@@ -64,9 +65,12 @@ func plan(from: Vector2, to: Vector2) -> bool:
 			estimated_length += _length(from, points)
 			_cursor = entry
 	# 2. Rota entre regiões.
-	var regions := region_route(world.region_of(WorldGen.cell_of(_cursor)), world.region_of(WorldGen.cell_of(to)))
+	# Na praia não há ponto de encontro: a rota entra e sai pela região de
+	# terra mais próxima, e o trecho de areia é andado fora de trilha.
+	var first_region := _land_region(world.region_of(WorldGen.cell_of(_cursor)), _cursor)
+	var regions := region_route(first_region, _land_region(world.region_of(WorldGen.cell_of(to)), to))
 	var last := _cursor
-	for i in range(1, regions.size()):
+	for i in range(0 if first_region != world.region_of(WorldGen.cell_of(_cursor)) else 1, regions.size()):
 		var landmark := world.region_landmark(regions[i])
 		if landmark.distance_to(to) > 2.0:
 			_targets.append(landmark)
@@ -224,11 +228,40 @@ static func _rebuild(came: Dictionary, cell: Vector2i) -> Array[Vector2i]:
 	return path
 
 
+## A própria região, se for de terra; se for de mar, a vizinha de terra cujo
+## ponto de encontro fica mais perto de "near".
+func _land_region(region: Vector2i, near: Vector2) -> Vector2i:
+	if world.region_biome(region) != WorldGen.Biome.MAR:
+		return region
+	var best := region
+	var best_distance := INF
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			var other := region + Vector2i(dx, dy)
+			if world.region_biome(other) == WorldGen.Biome.MAR:
+				continue
+			var distance := world.region_landmark(other).distance_to(near)
+			if distance < best_distance:
+				best = other
+				best_distance = distance
+	return best
+
+
 ## Caminho mais curto entre regiões, de ponto de encontro em ponto de
-## encontro (Dijkstra). Inclui a região de partida e a de chegada.
+## encontro (Dijkstra). Inclui a região de partida e a de chegada. As trilhas
+## contornam o mar, então a busca tenta primeiro perto da reta e, se o mar
+## estiver no caminho, de novo com mais folga para dar a volta.
 func region_route(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	var low := Vector2i(mini(from.x, to.x), mini(from.y, to.y)) - Vector2i.ONE
-	var high := Vector2i(maxi(from.x, to.x), maxi(from.y, to.y)) + Vector2i.ONE
+	for margin in [1, ROUTE_DETOUR]:
+		var route := _region_route(from, to, margin)
+		if route.size() > 1 or from == to:
+			return route
+	return [from]
+
+
+func _region_route(from: Vector2i, to: Vector2i, margin: int) -> Array[Vector2i]:
+	var low := Vector2i(mini(from.x, to.x), mini(from.y, to.y)) - Vector2i.ONE * margin
+	var high := Vector2i(maxi(from.x, to.x), maxi(from.y, to.y)) + Vector2i.ONE * margin
 	var heap := _Heap.new()
 	var cost := {from: 0.0}
 	var came := {}

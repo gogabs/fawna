@@ -50,7 +50,7 @@ func _water_within(world: WorldGen, cell: Vector2i, r: int) -> bool:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var t := world.thing_at(cell + Vector2i(dx, dy))
-			if t == WorldGen.Thing.LAGO or t == WorldGen.Thing.RIACHO or t == WorldGen.Thing.PONTE:
+			if WorldGen.WATER.has(t) or t == WorldGen.Thing.PONTE:
 				return true
 	return false
 

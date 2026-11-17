@@ -16,6 +16,8 @@ func _init() -> void:
 	_test_regions_and_trails()
 	_test_straight_bridges()
 	_test_clear_wide_trails()
+	_test_biomes_and_borders()
+	_test_route_around_sea()
 	_test_collect()
 	_test_save_roundtrip()
 	if _failures == 0:
@@ -156,6 +158,8 @@ func _test_straight_bridges() -> void:
 	for ry in range(-3, 3):
 		for rx in range(-3, 3):
 			for d: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+				if not world.has_trail(Vector2i(rx, ry), Vector2i(rx, ry) + d):
+					continue  # o mar não tem trilhas
 				var line := world.trail_line(Vector2i(rx, ry), Vector2i(rx, ry) + d)
 				for i in line.size() - 1:
 					var a: Vector2 = line[i]
@@ -191,6 +195,8 @@ func _test_clear_wide_trails() -> void:
 		for ry in range(-2, 2):
 			for rx in range(-2, 2):
 				for d: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+					if not world.has_trail(Vector2i(rx, ry), Vector2i(rx, ry) + d):
+						continue
 					var line := world.trail_line(Vector2i(rx, ry), Vector2i(rx, ry) + d)
 					for i in range(1, line.size() - 1):
 						var p: Vector2 = line[i]
@@ -251,3 +257,122 @@ func _test_save_roundtrip() -> void:
 	_check(loaded.inventories["Lua"]["bambu"] == 3, "inventário salvo")
 	_check(loaded.inventories["Tico"] == {"argila": 1}, "itens que não existem mais (madeira) ficam para trás")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## Biomas vizinhos parecidos, clareiras no meio da mata, mar sem trilhas e
+## com praia, e as consultas de cobertura e de borda.
+func _test_biomes_and_borders() -> void:
+	for world_seed in [7, 42, 173]:
+		var world := WorldGen.new(world_seed)
+		var seen := {}
+		var same := 0
+		var pairs := 0
+		var clearings := 0
+		var reach := 24
+		for ry in range(-reach, reach):
+			for rx in range(-reach, reach):
+				var region := Vector2i(rx, ry)
+				var biome := world.region_biome(region)
+				seen[biome] = true
+				for next: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+					pairs += 1
+					if world.region_biome(region + next) == biome:
+						same += 1
+				if world.region_feature(region) == WorldGen.Feature.CLAREIRA:
+					clearings += 1
+					_check(biome == WorldGen.Biome.BOSQUE or biome == WorldGen.Biome.FLORESTA_GELADA, "clareira só em floresta (semente %d)" % world_seed)
+					_check(world.cover_of(region) == WorldGen.Cover.ABERTA, "clareira é aberta")
+					var forest := 0
+					for next: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+						if WorldGen.FOREST_BIOMES.has(world.region_biome(region + next)):
+							forest += 1
+					_check(forest >= WorldGen.CLEARING_FOREST_AROUND, "clareira fica no meio da mata (semente %d, %s)" % [world_seed, region])
+				if biome == WorldGen.Biome.MAR:
+					_check(world.trail_neighbors(region).is_empty(), "o mar não tem trilhas")
+					_check(world.cover_of(region) == WorldGen.Cover.AGUA, "o mar é água")
+				else:
+					for next in world.trail_neighbors(region):
+						_check(world.region_biome(next) != WorldGen.Biome.MAR, "trilha não entra no mar")
+		_check(seen.size() == WorldGen.Biome.size(), "todos os biomas aparecem (semente %d: %d)" % [world_seed, seen.size()])
+		_check(clearings > 0, "deveria haver clareiras (semente %d)" % world_seed)
+		# Sorteando ao acaso, uns 20% das vizinhas teriam o mesmo bioma.
+		_check(same > pairs * 0.45, "regiões vizinhas deveriam ser parecidas (semente %d: %d de %d)" % [world_seed, same, pairs])
+		# Perto da Origem não há mar nem frio.
+		for ry in range(-1, 2):
+			for rx in range(-1, 2):
+				var near := world.region_biome(Vector2i(rx, ry))
+				_check(near != WorldGen.Biome.MAR and not WorldGen.COLD_BIOMES.has(near), "em volta da Origem o clima é ameno (semente %d)" % world_seed)
+	# Mar: água que bloqueia, com uma praia andável encostada na terra.
+	var world := WorldGen.new(42)
+	var sea := WorldGen.NO_CELL
+	for ry in range(-12, 12):
+		for rx in range(-12, 12):
+			if sea == WorldGen.NO_CELL and world.region_biome(Vector2i(rx, ry)) == WorldGen.Biome.MAR and world.region_biome(Vector2i(rx + 1, ry)) != WorldGen.Biome.MAR:
+				sea = Vector2i(rx, ry) * WorldGen.REGION_SIZE
+	_check(sea != WorldGen.NO_CELL, "deveria haver um mar com terra a leste")
+	_check(world.thing_at(sea) == WorldGen.Thing.MAR and not world.is_passable(sea), "o meio do mar é água e bloqueia")
+	# Andando do mar para a terra a leste: água, depois praia, depois terra.
+	var stage := 0
+	var beach := 0
+	for dx in range(0, WorldGen.REGION_SIZE):
+		var cell := sea + Vector2i(dx, 0)
+		if world.region_biome(world.region_of(cell)) != WorldGen.Biome.MAR:
+			break
+		if world.is_beach(cell):
+			stage = 1
+			beach += 1
+			_check(world.is_passable(cell) or world.thing_at(cell) != WorldGen.Thing.MAR, "a praia não é água")
+			_check(world.border_distance(cell, [WorldGen.Cover.ABERTA, WorldGen.Cover.FECHADA]) < WorldGen.BEACH_WIDTH * 1.6, "a praia fica colada na terra")
+		else:
+			_check(stage == 0, "depois da praia não volta a ser mar em %s" % cell)
+			_check(world.thing_at(cell) == WorldGen.Thing.MAR, "fora da praia, o mar é água")
+	_check(beach >= 2, "deveria haver uma faixa de praia (%d casas)" % beach)
+	# Borda: a distância cai até zero ao chegar na região vizinha.
+	var a := Vector2i(0, 0)
+	var east_cover := world.cover_of(Vector2i.RIGHT)
+	var d0 := world.border_distance(a, [east_cover])
+	var d1 := world.border_distance(Vector2i(20, 0), [east_cover])
+	_check(d1 < d0 and d1 < 8.0, "a borda leste fica mais perto andando para leste (%.1f, %.1f)" % [d0, d1])
+	# Nomes de lugar.
+	_check(world.place_in(Vector2i.ZERO) == "na pradaria de girassóis", "a Origem fica na pradaria")
+
+
+## O Caminheiro dá a volta no mar, e sabe sair da praia e chegar nela.
+func _test_route_around_sea() -> void:
+	var world := WorldGen.new(42)
+	var found := false
+	for ry in range(-10, 10):
+		for rx in range(-10, 10):
+			var west := Vector2i(rx, ry)
+			var east := Vector2i(rx + 2, ry)
+			if found or world.region_biome(west + Vector2i.RIGHT) != WorldGen.Biome.MAR:
+				continue
+			if world.region_biome(west) == WorldGen.Biome.MAR or world.region_biome(east) == WorldGen.Biome.MAR:
+				continue
+			var finder := Wayfinder.new(world)
+			var regions := finder.region_route(west, east)
+			if regions.size() < 2:
+				continue  # ilha: não há volta por terra
+			found = true
+			for region in regions:
+				_check(world.region_biome(region) != WorldGen.Biome.MAR, "a rota entre regiões não passa pelo mar")
+			_check(regions.size() > 3, "contornar o mar dá uma volta (%d regiões)" % regions.size())
+			# Da praia até o ponto de encontro do outro lado.
+			var beach := WorldGen.NO_CELL
+			var sea_origin := (west + Vector2i.RIGHT) * WorldGen.REGION_SIZE
+			for dy in range(-20, 20):
+				for dx in range(-24, 24):
+					var cell := sea_origin + Vector2i(dx, dy)
+					if beach == WorldGen.NO_CELL and world.is_beach(cell) and world.is_passable(cell):
+						beach = cell
+			_check(beach != WorldGen.NO_CELL, "deveria haver praia nesse mar")
+			if beach != WorldGen.NO_CELL:
+				_check(finder.plan(WorldGen.cell_center(beach), world.region_landmark(east)), "rota saindo da praia")
+				var route := finder.full_route()
+				_check(not route.is_empty() and route[route.size() - 1].distance_to(world.region_landmark(east)) < 6.0, "a rota da praia chega ao destino")
+				for point in route:
+					_check(world.thing_at(WorldGen.cell_of(point)) != WorldGen.Thing.MAR, "beacon dentro do mar em %s" % point)
+				var back := Wayfinder.new(world)
+				_check(back.plan(world.region_landmark(west), WorldGen.cell_center(beach)), "rota chegando na praia")
+				_check(not back.full_route().is_empty(), "a rota até a praia tem beacons")
+	_check(found, "deveria haver um mar entre duas regiões de terra, com volta por terra")

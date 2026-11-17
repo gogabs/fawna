@@ -44,7 +44,7 @@ static func direction(offset: Vector2i) -> String:
 
 static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 	var cell := WorldGen.cell_of(pos)
-	var biome: String = WorldGen.BIOME_IN[world.biome_at(cell)]
+	var biome := world.place_in(cell)
 	match world.thing_at(cell):
 		WorldGen.Thing.TRILHA:
 			biome = "numa trilha, " + biome
@@ -93,5 +93,5 @@ static func surroundings(world: WorldGen, pos: Vector2, heading: int, others: Ar
 		if trail != WorldGen.NO_CELL:
 			lines.append("trilha mais próxima, %s" % Compass.describe(WorldGen.cell_center(trail) - pos, heading))
 	if lines.is_empty():
-		return "Nada por perto. Você está %s." % WorldGen.BIOME_IN[world.biome_at(here)]
+		return "Nada por perto. Você está %s." % world.place_in(here)
 	return ". ".join(lines) + "."

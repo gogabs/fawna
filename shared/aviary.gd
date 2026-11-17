@@ -127,6 +127,13 @@ const SPAWNS := {
 	WorldGen.Biome.BOSQUE: [[Species.SABIA, 0.55, 1], [Species.CARRICA, 0.15, 1], [Species.CORVO, 0.15, 1], [Species.CORUJA, 0.15, 1]],
 	WorldGen.Biome.PRADARIA: [[Species.CARRICA, 0.4, 1], [Species.SABIA, 0.1, 1], [Species.CORVO, 0.1, 1], [Species.GAVIAO, 0.12, 1]],
 	WorldGen.Biome.LAGOA: [[Species.ROLINHA, 0.7, 1], [Species.CARRICA, 0.25, 1], [Species.PERIQUITO, 0.3, 1]],
+	WorldGen.Biome.BAMBUZAL: [[Species.SABIA, 0.4, 1], [Species.PERIQUITO, 0.3, 1], [Species.CARRICA, 0.15, 1]],
+	WorldGen.Biome.BREJO: [[Species.ROLINHA, 0.5, 1], [Species.CARRICA, 0.2, 1], [Species.CORVO, 0.15, 1]],
+	# O frio é quase mudo: corvos e corujas na floresta, um gavião raro no
+	# deserto. No mar, ninguém.
+	WorldGen.Biome.FLORESTA_GELADA: [[Species.CORUJA, 0.25, 1], [Species.CORVO, 0.25, 1]],
+	WorldGen.Biome.DESERTO_GELADO: [[Species.GAVIAO, 0.08, 1], [Species.CORVO, 0.08, 1]],
+	WorldGen.Biome.MAR: [],
 }
 
 const CHUNK := WorldGen.CHUNK

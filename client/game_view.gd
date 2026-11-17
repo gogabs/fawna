@@ -11,10 +11,17 @@ const BIOME_COLORS := {
 	WorldGen.Biome.BOSQUE: Color("2f4a3a"),
 	WorldGen.Biome.PRADARIA: Color("8a9a3c"),
 	WorldGen.Biome.LAGOA: Color("4f7f6a"),
+	WorldGen.Biome.MAR: Color("c9b98a"),  # a areia da praia
+	WorldGen.Biome.FLORESTA_GELADA: Color("5f7f86"),
+	WorldGen.Biome.DESERTO_GELADO: Color("cfd8dc"),
+	WorldGen.Biome.BAMBUZAL: Color("3f6a2f"),
+	WorldGen.Biome.BREJO: Color("5a6240"),
 }
 const THING_COLORS := {
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
 	WorldGen.Thing.LAGO: Color("2f65b5"),
+	WorldGen.Thing.MAR: Color("1f3f6f"),
+	WorldGen.Thing.CHARCO: Color("3f5f5a"),
 	WorldGen.Thing.TRILHA: Color("a07a4f"),
 	WorldGen.Thing.PONTE: Color("7a5230"),
 	WorldGen.Thing.ARBUSTO: Color("d98ad9"),
@@ -57,9 +64,14 @@ func _draw() -> void:
 		for x in range(first.x, first.x + VIEW_CELLS.x + 2):
 			var cell := Vector2i(x, y)
 			var rect := Rect2(point_to_pixel(Vector2(cell)), Vector2.ONE * TILE)
-			draw_rect(rect, BIOME_COLORS[_world.biome_at(cell)])
+			var ground: Color = BIOME_COLORS[_world.biome_at(cell)]
+			if _world.feature_at(cell) == WorldGen.Feature.CLAREIRA:
+				ground = ground.lightened(0.25)
+			draw_rect(rect, ground)
 			var thing := _world.thing_at(cell)
-			if THING_COLORS.has(thing):
+			if thing == WorldGen.Thing.MAR:
+				draw_rect(rect, THING_COLORS[thing])
+			elif THING_COLORS.has(thing):
 				draw_rect(rect.grow(-4), THING_COLORS[thing])
 	if caminheiro != null and caminheiro.active and _players.has(_my_id):
 		var previous: Vector2 = _players[_my_id]["pos"]
