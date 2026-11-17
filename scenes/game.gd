@@ -1152,9 +1152,15 @@ func _tick_my_steps(moved: bool, delta: float) -> void:
 		_play_my_step()
 
 
+## Dentro de uma construção grande de paredes de pé: o chão é de terra batida.
+func _indoors(cell: Vector2i) -> bool:
+	var build := builds.at(cell)
+	return not build.is_empty() and Crafting.is_large(build["kind"]) and Builds.walls_up(build)
+
+
 func _play_my_step() -> void:
 	var cell := WorldGen.cell_of(_pos)
-	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), true, FOOTSTEP_DB)
+	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell), _indoors(cell)), true, FOOTSTEP_DB)
 	for sound: Array in _step_foley(_step_count):
 		_play(sound[0], true, sound[1])
 
@@ -1538,7 +1544,7 @@ func _play_other_step(pos: Vector2, n: int) -> void:
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
-	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell)), FOOTSTEP_DB)
+	_play_other(pos, Sounds.footstep(world.biome_at(cell), world.thing_at(cell), _indoors(cell)), FOOTSTEP_DB)
 	for sound: Array in _step_foley(n):
 		_play_other(pos, sound[0], sound[1])
 

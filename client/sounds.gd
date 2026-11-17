@@ -55,6 +55,7 @@ const MANIFEST := {
 	"musica_vila_2": ["musica/vila_2.ogg"],
 	"musica_vila_3": ["musica/vila_3.ogg"],
 	"passo_trilha": ["world/dirtstep1.ogg", "world/dirtstep2.ogg", "world/dirtstep3.ogg", "world/dirtstep4.ogg", "world/dirtstep5.ogg"],
+	"passo_abrigo": ["abrigo/passo_1.ogg", "abrigo/passo_2.ogg", "abrigo/passo_3.ogg", "abrigo/passo_4.ogg", "abrigo/passo_5.ogg"],
 	"passo_ponte": ["world/bridgestep1.ogg", "world/bridgestep2.ogg", "world/bridgestep3.ogg", "world/bridgestep4.ogg", "world/bridgestep5.ogg"],
 	"amb_lago": ["world/loop_wind_water.ogg"],
 	"fundo_lagoa": ["world/loop_lapping_waves.ogg"],
@@ -116,7 +117,9 @@ static var _loaded := {}  # caminho -> AudioStream
 
 
 ## Passo: o chão da trilha e da ponte soa diferente do mato de cada bioma.
-static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA) -> AudioStream:
+static func footstep(biome: WorldGen.Biome, ground := WorldGen.Thing.NADA, indoors := false) -> AudioStream:
+	if indoors and _has_file("passo_abrigo"):
+		return _pick("passo_abrigo", func(): return SoundBank.footstep(biome))
 	var key := "passo_pradaria"
 	if biome == WorldGen.Biome.BOSQUE or biome == WorldGen.Biome.BAMBUZAL:
 		key = "passo_bosque"
