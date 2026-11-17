@@ -17,7 +17,8 @@ O projeto usa **Godot 4.6 ou mais novo** e **GDScript**.
 O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, mas fica bem melhor com elas. No menu principal:
 
 - **Conectar:** entra no servidor configurado (padrão da versão de testes: `26.127.36.156`, pela VPN).
-- **Opções:** muda seu nome e o servidor (`ip` ou `ip:porta`; porta padrão 7350). Fica salvo em `user://config.cfg`.
+- **Opções:** muda seu nome (campo que mostra "Nome: valor" e só abre para digitar ao confirmar), o VSync, desliga os gráficos dentro do jogo (gasta bem menos processador; a janela fica parada) e escolhe a orientação das setas nos menus. Fica salvo em `user://config.cfg`. O servidor é sempre o padrão (7350).
+- **Navegação:** só pelas setas, sem Tab. Horizontal (padrão): ← / → escolhem, ↑ confirma, ↓ volta. Vertical: ↑ / ↓ escolhem, → confirma, ← volta. Vale para o menu principal, as Opções, o menu flutuante e o Caminheiro.
 - **Sair.**
 
 Para hospedar, rode o servidor dedicado ou `--host` pela linha de comando (abaixo).
@@ -44,7 +45,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Andar para frente / para trás | W / S |
 | Passo para o lado | A / D |
 | Girar 45° para a esquerda / direita | Q / E |
-| Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ← / → escolhem, ↑ confirma, ↓ volta |
+| Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas (orientação em Opções): ← / → escolhem, ↑ confirma, ↓ volta; no modo Vertical, ↑ / ↓ escolhem, → confirma, ← volta |
 | Para onde estou olhando | F |
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
@@ -75,7 +76,7 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 ## Menu das setas e o Caminheiro
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
-← e → passam pelas opções, ↑ confirma e ↓ volta. As opções são o
+← e → passam pelas opções, ↑ confirma e ↓ volta (em Opções dá para trocar para Vertical: ↑ e ↓ passam, → confirma e ← volta). As opções são o
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
 O Caminheiro tem três submenus: **Locais** (a Origem e os povoados com nome),
