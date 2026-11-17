@@ -80,6 +80,7 @@ const MENU_ACTIONS := {
 @onready var sfx: AudioStreamPlayer = $Sfx
 @onready var audio: SpatialAudio = $SpatialAudio
 @onready var birds: Node = $Birds
+@onready var horrors: Node = $Horrors
 
 var state: WorldState  # só no servidor
 var _dirty := false
@@ -276,6 +277,15 @@ func request_move_to(pos: Vector2) -> void:
 		move_corrected.rpc_id(id, result["pos"])
 
 
+## Para onde a criatura olha. O servidor só usa isso para os horrores, que
+## param quando são encarados.
+@rpc("any_peer", "call_local", "reliable")
+func request_heading(heading: int) -> void:
+	if not multiplayer.is_server():
+		return
+	state.set_heading(_sender_id(), heading)
+
+
 @rpc("any_peer", "call_local", "reliable")
 func request_collect(cell: Vector2i) -> void:
 	if not multiplayer.is_server():
@@ -456,6 +466,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	audio.setup(world, harvest)
 	audio.set_heading(_heading, false)
 	birds.start_client(audio)
+	horrors.start_client(audio)
 	_setup_caminheiro()
 	Music.start()
 	_update_listener()
@@ -742,6 +753,7 @@ func _load_or_create_world() -> void:
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
 	birds.start_server(state.world)
+	horrors.start_server(state.world)
 	print("[servidor] mundo único no ar, versão %s, porta %d, semente %d" % [Updater.current_version(), Net.port, state.world.world_seed])
 	_dirty = true
 	_save_world()
@@ -767,6 +779,7 @@ func _on_peer_disconnected(id: int) -> void:
 	print("[servidor] %s (peer %d) saiu" % [state.players[id]["name"], id])
 	state.remove_player(id)
 	birds.forget_peer(id)
+	horrors.forget_peer(id)
 	player_left.rpc(id)
 
 
@@ -950,6 +963,7 @@ func _turn(step: int) -> void:
 	audio.set_heading(_heading)
 	view.heading = _heading
 	view.queue_redraw()
+	request_heading.rpc_id(1, _heading)
 
 
 func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
@@ -1087,7 +1101,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: segure o Tab para ouvir de onde vem a respiração e gire até ficar de frente para ela, que então se cala. Encarado, ele para e acaba indo embora; fogueira acesa e companhia também o afastam. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1622,6 +1636,10 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás
+				print("[teste] calado chamado: %d" % horrors.summon(my_id, 12.0))
+			"CALADO_ONDE":
+				print("[teste] calado a %.1f casas, abafamento %.2f" % [horrors.nearest_distance(), horrors.presence()])
 			"ESPERAR":
 				await get_tree().create_timer(1.0).timeout
 			"ESPACO":

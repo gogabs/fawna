@@ -139,7 +139,14 @@ const STAGGER := 0.5  # segundos: os membros de um bando não saem todos juntos
 const SPREAD := 2.5  # casas: os membros pousam perto do alvo do bando
 const PER_PERCH := 3  # quantos membros de um bando cabem num arbusto
 
+## Perto de um horror (Horrors.points) os pássaros se calam; mais perto
+## ainda, fogem, no máximo uma vez a cada HUSH_FLEE_EVERY segundos.
+const HUSH_FLEE_EVERY := 20.0
+
 var world: WorldGen
+## Pontos (Vector2, em casas) que calam e espantam os pássaros. Quem roda a
+## simulação atualiza antes de cada passo.
+var hush: Array = []
 
 ## Um canto é identificado por voz * VOICE_STRIDE + frase.
 const VOICE_STRIDE := 100
@@ -299,6 +306,7 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 		group["leave_ms"] = now_ms + _seconds(data["stay"], 0.3)
 	var all_landed := true
 	var threat := Vector2.INF
+	var dread := _hush_near(birds[group["members"][0]]["pos"])
 	for bird_id in group["members"]:
 		var bird: Dictionary = birds[bird_id]
 		if bird["flying"]:
@@ -313,11 +321,17 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 			bird["next_song_ms"] = now_ms + _seconds(data["song_every"], 0.0, 0.2)
 		elif now_ms >= int(bird["next_song_ms"]):
 			bird["next_song_ms"] = now_ms + _seconds(data["song_every"])
+			if dread != Vector2.INF:
+				continue  # perto de um horror, ninguém canta
 			var song: int = bird["songs"][_rng.randi() % bird["songs"].size()]
 			for peer in bird["watchers"]:
 				out.append([peer, "sing", [bird_id, song]])
 	if not all_landed:
 		return
+	if threat == Vector2.INF and dread != Vector2.INF and now_ms >= int(group.get("dread_ms", 0)) \
+			and dread.distance_to(birds[group["members"][0]]["pos"]) <= Horrors.SCARE_RADIUS:
+		group["dread_ms"] = now_ms + int(HUSH_FLEE_EVERY * 1000.0)
+		threat = dread
 	if threat != Vector2.INF:
 		_move_group(group, now_ms, threat, out)
 	elif now_ms >= int(group["leave_ms"]):
@@ -462,6 +476,14 @@ func _players_by_chunk(players: Dictionary) -> Dictionary:
 			by_chunk[chunk] = []
 		by_chunk[chunk].append(players[id])
 	return by_chunk
+
+
+## O horror que cala os pássaros deste ponto, ou Vector2.INF.
+func _hush_near(point: Vector2) -> Vector2:
+	for spot: Vector2 in hush:
+		if spot.distance_to(point) <= Horrors.HUSH_RADIUS:
+			return spot
+	return Vector2.INF
 
 
 ## O jogador mais perto que "radius" de um ponto, ou Vector2.INF.

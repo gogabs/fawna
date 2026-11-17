@@ -51,6 +51,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Ajuda (lista de comandos) | H |
 | Ouvir os arredores | Tab (toque curto) |
 | Escutar com atenção: vento, fundo e música baixam, recursos sobem | segurar Tab |
+| Com o Calado por perto: ouvir a respiração dele (some quando você fica de frente para ele) | segurar Tab |
 | Onde estou | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
