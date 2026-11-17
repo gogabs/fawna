@@ -52,7 +52,7 @@ const POSTS := 4
 ## Até onde (em casas) do canto a batida conta para aquele canteiro.
 const POST_REACH := 2.2
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
-const DOOR_REACH := 2.4
+const DOOR_REACH := 1.6  # só na frente da porta, dentro ou fora
 
 
 func _init(new_world: WorldGen) -> void:

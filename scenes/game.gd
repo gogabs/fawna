@@ -924,7 +924,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"obra_preparo":
 			Speech.say(detail)
 		"obra_porta_longe":
-			Speech.say("A porta fica ao %s. Chegue perto dela e aperte Espaço para abrir ou fechar." % detail)
+			pass  # Espaço longe da porta não faz nada.
 		"obra_canto":
 			Speech.say("Aqui não há mais o que fazer. Vá a um canto que ainda tem batidas: %s." % detail)
 		"obra_sem_povoado":
@@ -2370,12 +2370,16 @@ func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
 	if build.is_empty() or not Crafting.is_large(build["kind"]):
 		return
 	var old_build := builds.at(old_cell) if old_cell != WorldGen.NO_CELL else {}
-	if not old_build.is_empty() and old_build["id"] == build["id"]:
+	var at_door := Builds.walls_up(build) and cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"]))
+	var old_door := not old_build.is_empty() and Builds.walls_up(old_build) \
+			and old_cell == Builds.door_cell(old_build["cell"], int(old_build["size"]), str(old_build["entrance"]))
+	# Só repete ao trocar de obra ou de zona (porta, dentro, terreno).
+	if not old_build.is_empty() and old_build["id"] == build["id"] and old_door == at_door:
 		return
 	var id := int(build["id"])
 	var name: String = Crafting.build_name(build["kind"])
 	var article: String = Crafting.BUILDS[build["kind"]]["article"]
-	if Builds.walls_up(build) and cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])):
+	if at_door:
 		Speech.say("Porta d%s %s." % [article, name], false)
 	elif build["done"] or Builds.walls_up(build):
 		Speech.say("Dentro d%s %s." % [article, name], false)
