@@ -34,6 +34,17 @@ func reset() -> void:
 	_levels = [{"title": "", "items": _root.call(), "index": 0}]
 
 
+## Abre o menu direto num submenu, a partir do começo (ex.: o Espaço num
+## marco abre a escolha do nome). source devolve as opções. Devolve o texto
+## a falar.
+func open_at(title: String, source: Callable) -> String:
+	reset()
+	_levels.append({"title": title, "items": source.call(), "index": 0, "source": source,
+		"move_sound": "mover", "close_sound": "fechar"})
+	sound.emit("abrir")
+	return "%s. %s" % [title, _describe(_levels[-1])]
+
+
 func depth() -> int:
 	return _levels.size()
 

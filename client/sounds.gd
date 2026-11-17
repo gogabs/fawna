@@ -93,6 +93,8 @@ const MANIFEST := {
 	"fogo_lenha": ["obras/lenha_1.ogg", "obras/lenha_2.ogg"],
 	"fogo_apagar": ["obras/apagar.ogg"],
 	"fogo_crepitar": ["obras/crepitar.ogg"],
+	# Passar de uma região para outra. Sem o arquivo, gerado por código.
+	"regiao": ["world/regiao.ogg"],
 	"bolsa_fechar": ["ferramentas/bolsa_fechar.ogg", "ferramentas/bolsa_fechar_1.ogg", "ferramentas/bolsa_fechar_2.ogg", "ferramentas/bolsa_fechar_3.ogg", "ferramentas/bolsa_fechar_4.ogg"],
 }
 
@@ -329,6 +331,11 @@ static func build_stage() -> AudioStream:
 
 static func build_done() -> AudioStream:
 	return _pick_variant("obra_pronta", SoundBank.build_done)
+
+
+## Passar de uma região para outra: um sopro grave e curto.
+static func region_change() -> AudioStream:
+	return _pick_variant("regiao", SoundBank.region_change)
 
 
 ## Fogo: pedra contra pedra (faísca), a chama pegando, lenha entrando, a

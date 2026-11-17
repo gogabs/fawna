@@ -180,7 +180,7 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 ## Começa uma construção na casa "cell" (a que está à frente da criatura,
 ## escolhida pelo cliente; o servidor confere se está ao alcance, livre e
 ## sem ninguém em cima). Devolve { ok, reason, id }.
-func start_build(id: int, kind: String, cell: Vector2i, build_name := "") -> Dictionary:
+func start_build(id: int, kind: String, cell: Vector2i) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
 	var pos: Vector2 = players[id]["pos"]
@@ -190,7 +190,20 @@ func start_build(id: int, kind: String, cell: Vector2i, build_name := "") -> Dic
 		var other: Vector2 = players[other_id]["pos"]
 		if WorldGen.cell_of(other) == cell or other.distance_to(WorldGen.cell_center(cell)) < 0.5 + WorldGen.PLAYER_RADIUS:
 			return {"ok": false, "reason": "ocupado"}
-	return builds.start(kind, cell, build_name)
+	return builds.start(kind, cell)
+
+
+## Dá nome ao povoado de um marco ao alcance (Builds.name_settlement).
+func name_settlement(id: int, build_id: int, noun_index: int, adjective_index: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "nao_marco"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(build["cell"])) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
+	return builds.name_settlement(build_id, noun_index, adjective_index)
 
 
 ## Um Espaço numa construção ao alcance: deposita materiais, bate, acende

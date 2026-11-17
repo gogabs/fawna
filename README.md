@@ -77,11 +77,23 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta. As opções são o
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
-O Caminheiro tem dois submenus: **Locais** (por enquanto, só a Origem; mais
-tarde, só os lugares com um marco construído) e **Recursos** (Bambu, Lenha,
+O Caminheiro tem três submenus: **Locais** (a Origem e os povoados com nome),
+**Construções** (só as da região em que você está) e **Recursos** (Bambu, Lenha,
 Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
 está: "Você chegou às pedras, atrás e à direita, 2 metros."
+
+### Povoados
+
+Um marco e uma fogueira prontos na mesma região fazem dela um povoado. Com
+os dois prontos, Espaço no marco abre duas listas no menu das setas: primeiro
+6 substantivos, depois 6 adjetivos (já concordando com o substantivo), sorteados
+para aquele marco de listas maiores (`shared/settlement_names.gd`). A
+combinação vira o nome do povoado ("Clareira Esquecida"), e só então ele
+aparece em Locais. Seta para baixo na primeira lista desiste sem nomear.
+
+Ao passar de uma região para outra soa um sopro grave e baixinho, sem fala
+(gerado por código; um arquivo `assets/sounds/world/regiao.ogg` o substitui).
 
 ### Bolsa e Equipamento
 
