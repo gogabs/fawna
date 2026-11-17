@@ -1846,6 +1846,13 @@ func _run_auto_commands() -> void:
 		return
 	for command in Net.auto_commands:
 		await get_tree().create_timer(0.4).timeout
+		if command.begins_with("TP_") and state != null:  # testes, só quem hospeda: TP_x_y leva para a casa (x, y)
+			var xy := command.split("_")
+			_set_pos(WorldGen.cell_center(Vector2i(int(xy[1]), int(xy[2]))))
+			state.players[my_id]["pos"] = _pos
+			_cell = WorldGen.cell_of(_pos)
+			_region = world.region_of(_cell)
+			continue
 		match command:
 			"N", "S", "L", "O":  # anda 1 casa nessa direção do mapa
 				var dirs := {"N": Vector2.UP, "S": Vector2.DOWN, "L": Vector2.RIGHT, "O": Vector2.LEFT}
