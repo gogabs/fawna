@@ -1293,6 +1293,7 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 		_last_trail_notice = now
 	elif thing != WorldGen.Thing.NADA and not harvest.spoken_name(cell).is_empty():
 		Speech.say(harvest.spoken_name(cell), false)
+	_announce_site(old_cell, cell)
 	if ground.has_pile(cell):
 		Speech.say("No chão: %s. Espaço pega." % _pile_text(cell), false)
 
@@ -2349,3 +2350,22 @@ func _test_prepare() -> void:
 
 func _capital(text: String) -> String:
 	return text.left(1).to_upper() + text.substr(1)
+
+
+## Entrar no terreno de uma obra grande é anunciado, como entrar numa trilha:
+## "Terreno do abrigo, obra em fase de limpeza" ou "Dentro do abrigo". Só ao
+## entrar (ou ao passar de uma obra a outra), sem repetir a cada casa.
+func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
+	var build := builds.at(cell)
+	if build.is_empty() or not Crafting.is_large(build["kind"]):
+		return
+	var old_build := builds.at(old_cell) if old_cell != WorldGen.NO_CELL else {}
+	if not old_build.is_empty() and old_build["id"] == build["id"]:
+		return
+	var id := int(build["id"])
+	var name: String = Crafting.build_name(build["kind"])
+	var article: String = Crafting.BUILDS[build["kind"]]["article"]
+	if build["done"] or Builds.walls_up(build):
+		Speech.say("Dentro d%s %s." % [article, name], false)
+	else:
+		Speech.say("Terreno d%s %s, %s." % [article, name, builds.spoken_name(id).trim_prefix(name + ", ").trim_prefix(name + " ")], false)
