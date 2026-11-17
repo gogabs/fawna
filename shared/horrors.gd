@@ -8,7 +8,9 @@ extends RefCounted
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
 ## ele recua. Fogueira acesa ou outra criatura por perto também o espantam.
-## Nesta primeira versão ele só chega perto: ser alcançado não custa nada.
+## Quem ele alcança é levado ao ponto seguro mais próximo (fogueira acesa,
+## povoado ou a Origem) e perde o que carregava na bolsa de recursos; o
+## equipamento fica. Armas não o afetam (as tochas virão depois).
 
 enum Mode { STALK, HELD, RETREAT }
 
@@ -16,7 +18,7 @@ enum Mode { STALK, HELD, RETREAT }
 const SPAWN_DISTANCE := 20.0  # nasce a essa distância, às costas do alvo
 const STALK_SPEED := 1.1  # mais lento que a criatura (1,8): dá para se afastar andando
 const RETREAT_SPEED := 2.6
-const MIN_GAP := 2.5  # não chega mais perto que isso
+const CATCH_RANGE := 1.2  # chegando a essa distância, ele alcançou
 const SIGHT := 22.0  # até onde encarar o segura
 ## Encarar: o alvo olha para ele dentro deste ângulo. Os giros são de 45°,
 ## então 30° para cada lado garantem que sempre há uma direção que serve.
@@ -63,7 +65,8 @@ func _init(the_world: WorldGen) -> void:
 ## Passo da simulação. "players" é id -> { "pos": Vector2, "heading": int };
 ## "fires" são os pontos (Vector2, em casas) das fogueiras acesas.
 ## Devolve mensagens para os clientes: [peer, tipo, argumentos], com tipo
-## "at" ([id, posição, modo]) ou "gone" ([id]).
+## "at" ([id, posição, modo]), "gone" ([id]) ou "caught" ([id]): este último
+## só vai ao alvo, que foi alcançado (o Calado some e descansa).
 func update(now_ms: int, players: Dictionary, fires: Array) -> Array:
 	var out := []
 	var delta := 0.0 if _last_ms < 0 else clampf((now_ms - _last_ms) / 1000.0, 0.0, 1.0)
@@ -144,6 +147,27 @@ static func fire_near(point: Vector2, fires: Array) -> bool:
 	return false
 
 
+## O ponto seguro mais próximo de "from": a Origem ou algum dos "shelters"
+## (pontos, em casas, de fogueiras acesas e povoados).
+static func nearest_shelter(from: Vector2, shelters: Array) -> Vector2:
+	var best := WorldGen.origin_point()
+	for point: Vector2 in shelters:
+		if point.distance_to(from) < best.distance_to(from):
+			best = point
+	return best
+
+
+## Onde o alvo reaparece: um ponto livre perto de "point", fora das casas em
+## "blocked" (construções). Se não achar, o próprio ponto.
+static func landing_spot(world: WorldGen, point: Vector2, blocked: Array) -> Vector2:
+	for radius in [1.6, 2.4, 3.2]:
+		for i in 8:
+			var spot: Vector2 = point + Vector2.from_angle(PI * 0.5 + TAU * i / 8.0) * radius
+			if world.is_free(spot) and not blocked.has(WorldGen.cell_of(spot)):
+				return spot
+	return point
+
+
 # --- Comportamento -------------------------------------------------------------
 
 func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dictionary, fires: Array, out: Array) -> void:
@@ -190,9 +214,11 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		horror["mode"] = Mode.HELD
 		return
 	horror["mode"] = Mode.STALK
-	if distance > MIN_GAP:
-		var step := minf(STALK_SPEED * delta, distance - MIN_GAP)
-		horror["pos"] = pos + (target - pos).normalized() * step
+	var step := minf(STALK_SPEED * delta, distance)
+	horror["pos"] = pos + (target - pos).normalized() * step
+	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE:
+		out.append([peer, "caught", [horror["id"]]])
+		_remove(horror, now_ms, out)
 
 
 func _remove(horror: Dictionary, now_ms: int, out: Array) -> void:

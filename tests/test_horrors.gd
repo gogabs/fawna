@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_appears_when_exposed()
 	_test_safe_places()
 	_test_stalks_from_behind()
+	_test_caught_consequences()
 	_test_stare_holds_and_repels()
 	_test_fire_and_company_repel()
 	_test_trail_holds()
@@ -72,6 +73,14 @@ func _run(horrors: Horrors, players: Dictionary, fires: Array, from_ms: int, sec
 	return all
 
 
+## Anda a simulação até o Calado aparecer (ele alcança depressa quem não se mexe).
+func _run_until_appears(horrors: Horrors, players: Dictionary, from_ms: int, seconds: float) -> void:
+	var t := from_ms
+	while t < from_ms + int(seconds * 1000.0) and horrors.horrors.is_empty():
+		horrors.update(t, players, [])
+		t += 250
+
+
 func _test_appears_when_exposed() -> void:
 	var world := WorldGen.new(42)
 	var horrors := Horrors.new(world)
@@ -80,7 +89,7 @@ func _test_appears_when_exposed() -> void:
 	var players := {1: _player(spot)}
 	_run(horrors, players, [], 0, Horrors.EXPOSURE[0] - 5.0)
 	_check(horrors.horrors.is_empty(), "o Calado não deveria aparecer antes do tempo mínimo de exposição")
-	_run(horrors, players, [], int((Horrors.EXPOSURE[0] - 5.0) * 1000.0), Horrors.EXPOSURE[1] - Horrors.EXPOSURE[0] + 10.0)
+	_run_until_appears(horrors, players, int((Horrors.EXPOSURE[0] - 5.0) * 1000.0), Horrors.EXPOSURE[1] - Horrors.EXPOSURE[0] + 10.0)
 	_check(horrors.horrors.size() == 1, "sozinho no bosque por tempo bastante, o Calado deveria aparecer")
 	if horrors.horrors.is_empty():
 		return
@@ -115,7 +124,7 @@ func _test_safe_places() -> void:
 					or world.is_trail(WorldGen.cell_of(meadow)):
 				continue
 			var open := Horrors.new(world)
-			_run(open, {1: _player(meadow)}, [], 0, long)
+			_run_until_appears(open, {1: _player(meadow)}, 0, long)
 			_check(not open.horrors.is_empty(), "na pradaria o Calado também deveria aparecer")
 			break
 	# No mar não.
@@ -144,10 +153,50 @@ func _test_stalks_from_behind() -> void:
 	_check(after < start - 3.0, "o Calado deveria se aproximar de quem não olha para ele (%.1f -> %.1f)" % [start, after])
 	_check(start - after <= Horrors.STALK_SPEED * 5.0 + 0.1, "o Calado não deveria andar mais rápido que a velocidade dele")
 	_check(Horrors.STALK_SPEED < 1.8, "o Calado deveria ser mais lento que a criatura andando")
-	_run(horrors, players, [], 5000, 60.0)
-	var close: float = (horror["pos"] as Vector2).distance_to(spot)
-	_check(absf(close - Horrors.MIN_GAP) < 0.05, "o Calado deveria parar a %.1f casas das costas (%.2f)" % [Horrors.MIN_GAP, close])
-	_check(horrors.horrors.has(id), "sem ser encarado, o Calado deveria continuar ali")
+	var messages := _run(horrors, players, [], 5000, 60.0)
+	var caught := messages.filter(func(m): return m[1] == "caught")
+	_check(caught.size() == 1 and caught[0][0] == 1, "sem ser encarado, o Calado deveria alcançar o alvo (uma vez só)")
+	_check(not horrors.horrors.has(id), "depois de alcançar, o Calado deveria sumir")
+	_check(messages.any(func(m): return m[1] == "gone" and m[0] == 1), "quem o ouvia deveria ser avisado de que ele sumiu")
+	_check(horrors.summon(1, players) > 0, "ele pode voltar a ser chamado (o sossego só vale para o sorteio)")
+	# Sossego depois de alcançar: não reaparece logo sozinho.
+	var calm := Horrors.new(world)
+	var calm_players := {1: _player(spot)}
+	calm.summon(1, calm_players)
+	_run(calm, calm_players, [], 0, 60.0)
+	_run(calm, calm_players, [], 60000, Horrors.COOLDOWN[0] - 70.0)
+	_check(calm.horrors.is_empty(), "depois de alcançar, o Calado deveria deixar a criatura em paz por um tempo")
+
+
+func _test_caught_consequences() -> void:
+	var world := WorldGen.new(42)
+	var origin := WorldGen.origin_point()
+	_check(Horrors.nearest_shelter(Vector2(500, 500), []) == origin, "sem abrigo nenhum, o ponto seguro é a Origem")
+	var fire := Vector2(520.5, 505.5)
+	_check(Horrors.nearest_shelter(Vector2(500, 500), [fire]) == fire, "uma fogueira mais perto que a Origem deveria ser o ponto seguro")
+	_check(Horrors.nearest_shelter(origin + Vector2(3, 3), [fire]) == origin, "a Origem mais perto deveria vencer")
+	var landed := Horrors.landing_spot(world, origin, [])
+	_check(world.is_free(landed) and landed.distance_to(origin) < 4.0, "deveria reaparecer num ponto livre ao lado do abrigo")
+	var blocked := Horrors.landing_spot(world, origin, [WorldGen.cell_of(origin + Vector2(0, 1.6))])
+	_check(WorldGen.cell_of(blocked) != WorldGen.cell_of(origin + Vector2(0, 1.6)), "não deveria reaparecer em cima de uma construção")
+	# A bolsa: recursos somem; machado (nas mãos ou guardado) e armas ficam.
+	var state := WorldState.new(42)
+	state.add_player(1, "Teste")
+	var inv := state.inventory_of(1)
+	inv["bambu"] = 3
+	inv["pedra_grande"] = 2
+	inv["frutas"] = 4
+	inv["lanca"] = 1
+	var lost := state.strip_resources(1)
+	_check(lost == {"bambu": 3, "pedra_grande": 2, "frutas": 4}, "deveria perder todos os recursos (%s)" % str(lost))
+	_check(inv == {"machado": 1, "lanca": 1}, "o machado e as armas deveriam ficar (%s)" % str(inv))
+	state.equip(1, "machado")
+	state.inventory_of(1)["argila"] = 2
+	state.strip_resources(1)
+	_check(state.wielding(1) == "machado" and state.inventory_of(1).get("argila", 0) == 0, "o que está nas mãos fica, a argila vai")
+	state.teleport(1, origin + Vector2(0, 3))
+	_check(state.players[1]["pos"] == origin + Vector2(0, 3), "teleport deveria mudar a posição")
+	_check(state.move_to(1, origin + Vector2(0, 3.3))["ok"], "depois de levado, andar a partir dali deveria valer")
 
 
 func _test_stare_holds_and_repels() -> void:
@@ -341,6 +390,14 @@ func _test_sound() -> void:
 	_check(absf(samples[0]) < 0.02 and absf(samples[samples.size() - 1]) < 0.02, "o loop deveria fechar em silêncio, sem estalo")
 	var stream := HorrorSounds.calado_breath()
 	_check(stream is AudioStreamWAV and (stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD, "a respiração gerada deveria tocar em loop")
+	var caught := HorrorSounds.caught_samples()
+	var relief := HorrorSounds.relief_samples()
+	_check(absf(caught[caught.size() - 1]) < 0.01 and absf(relief[relief.size() - 1]) < 0.01, "os sons de ser alcançado e de reaparecer deveriam fechar em silêncio")
+	for pair in [caught, relief]:
+		var top := 0.0
+		for value in pair:
+			top = maxf(top, absf(value))
+		_check(top > 0.2 and top <= 1.0, "os sons de ser alcançado e de reaparecer deveriam soar sem estourar (%.2f)" % top)
 	# Abafamento: nada de longe, tudo de perto, crescendo no caminho.
 	_check(Horrors.presence_at(30.0) == 0.0, "longe, o Calado não deveria abafar nada")
 	_check(Horrors.presence_at(2.0) == 1.0, "ao lado, o abafamento deveria ser total")

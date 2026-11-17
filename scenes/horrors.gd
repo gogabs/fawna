@@ -28,6 +28,7 @@ var _step := 0.0
 var _audio: SpatialAudio
 var _known := {}  # id -> { pos: Vector2, shown: Vector2, mode, seen: s }
 var _clock := 0.0
+var _caught := false
 var _presence := 0.0  # 0 (longe) a 1 (ao lado)
 var _breath: AudioStreamPlayer3D
 var _filter: AudioEffectLowPassFilter
@@ -95,8 +96,31 @@ func _server_step() -> void:
 				horror_at.rpc_id(peer, args[0], args[1], args[2])
 			"gone":
 				horror_gone.rpc_id(peer, args[0])
+			"caught":
+				_catch(peer)
 	if game.birds.aviary != null:
 		game.birds.aviary.hush = horrors.points()
+
+
+## O Calado alcançou o jogador: ele perde os recursos e reaparece no ponto
+## seguro mais próximo (fogueira acesa, povoado ou a Origem).
+func _catch(peer: int) -> void:
+	var game := get_parent()
+	var state: WorldState = game.state
+	if not state.players.has(peer):
+		return
+	var shelters := _lit_fires(state.builds)
+	for settlement: Dictionary in state.builds.settlements():
+		shelters.append(WorldGen.cell_center(settlement["cell"]))
+	var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
+	var from: Vector2 = state.players[peer]["pos"]
+	var spot := Horrors.landing_spot(state.world, Horrors.nearest_shelter(from, shelters), blocked)
+	var lost := state.strip_resources(peer)
+	state.teleport(peer, spot)
+	game.inventory_changed.rpc_id(peer, state.inventory_of(peer), "", "")
+	game.player_moved.rpc(peer, spot)
+	horror_caught.rpc_id(peer, spot, not lost.is_empty())
+	print("[servidor] Calado alcançou %s: levado a %s, perdeu %s" % [state.players[peer]["name"], spot, lost])
 
 
 func _lit_fires(builds: Builds) -> Array:
@@ -129,6 +153,31 @@ func horror_at(id: int, pos: Vector2, mode: int) -> void:
 @rpc("authority", "call_local", "reliable")
 func horror_gone(id: int) -> void:
 	_known.erase(id)
+
+
+## O Calado alcançou esta criatura: o som se fecha, ela é levada e reaparece
+## no ponto seguro. Só a fala diz que perdeu o que carregava, e só se perdeu.
+@rpc("authority", "call_local", "reliable")
+func horror_caught(spot: Vector2, lost_something: bool) -> void:
+	var game := get_parent()
+	if game.world == null or _caught:
+		return
+	_caught = true
+	_known.clear()
+	game._play(HorrorSounds.caught())
+	await get_tree().create_timer(HorrorSounds.CAUGHT_SECONDS).timeout
+	game._set_pos(spot)
+	game._last_sent = spot
+	game._play(HorrorSounds.relief())
+	await get_tree().create_timer(HorrorSounds.RELIEF_SECONDS).timeout
+	_caught = false
+	if lost_something:
+		Speech.say("Você perdeu o que carregava.")
+
+
+## Levada pelo Calado: a criatura não anda até reaparecer.
+func is_caught() -> bool:
+	return _caught
 
 
 # --- Som -----------------------------------------------------------------------

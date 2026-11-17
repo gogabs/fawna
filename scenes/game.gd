@@ -952,6 +952,8 @@ func _back_to_menu() -> void:
 
 ## Para onde as teclas mandam andar agora (em casas por segundo, no mundo).
 func _wanted_motion() -> Vector2:
+	if horrors.is_caught():
+		return Vector2.ZERO
 	if _auto_target != null:
 		var to_target: Vector2 = _auto_target - _pos
 		if to_target.length() < 0.1:
