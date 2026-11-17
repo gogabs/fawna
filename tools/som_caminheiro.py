@@ -4,12 +4,10 @@ batida.ogg: um coração ouvido de dentro, duas pancadas graves ("tum-tum") de
 um tambor bem abafado, com passa-baixa forte (só o gravão) e um reverb curto
 e escuro.
 
-camada.ogg: a camada que soa junto com a batida só quando a criatura está
-de frente para o cristal. Um brilho de cristal escuro e baixinho (um tom de
-vidro com parciais inarmônicas, como uma tigela de cristal tocada de leve)
-em cada pancada do "tum-tum", com um sopro de ar por cima. Tem médios e
-agudos que a batida não tem, então também deixa mais claro, pelo HRTF, que
-o som está bem à frente.
+suga.ogg: só toca quando a criatura está de frente para o cristal. Antes de
+cada uma das duas pancadas do "tum-tum" (a batida do jogo começa SUGA_SEGUNDOS
+depois), um ruído de caixa ao contrário, escuro, que sobe e some num fade
+suave, como se a batida puxasse o ar. É o sinal de "está na frente".
 
 Os efeitos são aplicados aqui, no arquivo; o jogo só toca o resultado.
 
@@ -91,54 +89,24 @@ def reverb(x, segundos, rng):
     return seco * (1 - REVERB_MISTURA) + molhado * REVERB_MISTURA
 
 
-CAMADA_TOM_HZ = 392.0  # sol: tom do cristal (as parciais são inarmônicas)
-CAMADA_PARCIAIS = [(1.0, 1.0, 4.5), (2.76, 0.45, 7.0), (5.40, 0.18, 11.0), (8.93, 0.07, 16.0)]
-CAMADA_CORTE_HZ = 600.0  # passa-baixa: onda quadrada abafada, só uma cor por cima do coração
 ## "Suga": antes de cada pancada, um ruído de caixa ao contrário que sobe e
 ## some num fade suave (sem ataque), como se a batida puxasse o ar.
 SUGA_SEGUNDOS = 0.15
 SUGA_PASSA_ALTA_HZ = 400.0
-SUGA_PASSA_BAIXA_HZ = 2500.0
+SUGA_PASSA_BAIXA_HZ = 1500.0
 SUGA_PICO = 0.8  # fração da duração em que o ruído chega ao máximo; depois cai num fade
-SUGA_GANHO = 0.2  # relativo à batida (pico 0,8)
 
 
-def brilho(n, inicio, volume, tom, rng):
-    """Um toque de cristal: parciais de tigela que decaem, ataque macio
-    (sem estalo) e um batimento lento entre duas cópias quase iguais."""
+
+def suga_arquivo():
+    """As duas suga: uma termina na 1ª pancada (em SUGA_SEGUNDOS) e a outra
+    na 2ª (0,24 s depois)."""
+    s1 = suga(1.0)
+    n = int(RATE * (0.24 + SUGA_SEGUNDOS))
     som = np.zeros(n)
-    t = np.arange(n - inicio) / RATE
-    ataque = np.minimum(t / 0.012, 1.0)
-    for razao, ganho, decai in CAMADA_PARCIAIS:
-        f = tom * razao
-        fase = rng.uniform(0, 2 * np.pi)
-        onda = np.sin(2 * np.pi * f * t + fase) + 0.6 * np.sin(2 * np.pi * (f + 1.3) * t + fase)
-        som[inicio:] += onda * ganho * np.exp(-t * decai)
-    ar = rng.uniform(-1, 1, len(t)) * np.exp(-t * 25.0) * 0.05
-    som[inicio:] = (som[inicio:] + ar) * ataque * volume
-    return som
-
-
-def quadrada(n, inicio, volume, tom):
-    """Um toque de onda quadrada com ataque macio e queda suave."""
-    som = np.zeros(n)
-    t = np.arange(n - inicio) / RATE
-    onda = np.sign(np.sin(2 * np.pi * tom * t))
-    som[inicio:] = onda * np.exp(-t * 8.0) * np.minimum(t / 0.012, 1.0) * volume
-    return som
-
-
-def camada():
-    rng = np.random.default_rng(1618)
-    n = int(RATE * 0.8)  # cabe entre as batidas (0,857 s a 70 bpm)
-    lead = int(RATE * SUGA_SEGUNDOS)  # a camada acompanha a pancada, que vem depois da suga
-    n += lead
-    som = quadrada(n, lead, 1.0, CAMADA_TOM_HZ) + quadrada(n, lead + int(RATE * 0.24), 0.6, CAMADA_TOM_HZ * 0.75)
-    som = passa_baixa(som, CAMADA_CORTE_HZ, 2)
-    fim = int(RATE * 0.12)
-    som[-fim:] *= np.linspace(1.0, 0.0, fim) ** 2
-    som = reverb(som, 0.5, rng)[:n]
-    som[-fim:] *= np.linspace(1.0, 0.0, fim)
+    som[:len(s1)] += s1
+    desloc = int(RATE * 0.24)
+    som[desloc:desloc + len(s1)] += s1
     return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)
 
 
@@ -158,22 +126,13 @@ def suga(ganho):
     return x / np.max(np.abs(x)) * ganho
 
 
-def batida(corte=CORTE_HZ, ganho_suga=0.0):
-    """ganho_suga > 0: acrescenta a suga antes de cada pancada (a batida
-    começa SUGA_SEGUNDOS depois do início do arquivo)."""
+def batida(corte=CORTE_HZ):
     rng = np.random.default_rng(2718)
-    lead = int(RATE * SUGA_SEGUNDOS) if ganho_suga > 0 else 0
-    n = int(RATE * 0.7) + lead
-    som = pancada(n, lead, 1.0, rng) + pancada(n, lead + int(RATE * 0.24), 0.75, rng)
+    n = int(RATE * 0.7)
+    som = pancada(n, 0, 1.0, rng) + pancada(n, int(RATE * 0.24), 0.75, rng)
     som = passa_baixa(som, corte)
     som = reverb(som, REVERB_SEGUNDOS, rng)
     som = passa_baixa(som, corte * 1.6, 1)  # tira o que o reverb clareou
-    if ganho_suga > 0:
-        # A suga fica fora do passa-baixa grave e do reverb; some antes da pancada.
-        pico = np.max(np.abs(som))
-        s1 = suga(ganho_suga * pico / 0.8)
-        for inicio in (0, int(RATE * 0.24)):
-            som[inicio:inicio + len(s1)] += s1
     fim = int(RATE * 0.02)
     som[-fim:] *= np.linspace(1.0, 0.0, fim)
     return (som / np.max(np.abs(som)) * 0.8).astype(np.float32)  # folga contra distorção
@@ -182,11 +141,9 @@ def batida(corte=CORTE_HZ, ganho_suga=0.0):
 def main():
     os.makedirs(DIR, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        sons = [("batida", lambda: batida(CORTE_HZ, SUGA_GANHO)), ("camada", camada)]
+        sons = [("batida", batida), ("suga", suga_arquivo)]
         for i, corte in enumerate(CORTES_ABAFADOS_HZ):
-            # nível 0 sem suga; 1 e 2 com suga crescente (raiz da abertura)
-            ganho = SUGA_GANHO * ((i / 3.0) ** 0.5)
-            sons.append(("batida_abafada_%d" % i, lambda corte=corte, ganho=ganho: batida(corte, ganho)))
+            sons.append(("batida_abafada_%d" % i, lambda corte=corte: batida(corte)))
         for nome, gerar in sons:
             raw = os.path.join(tmp, nome + ".f32")
             gerar().tofile(raw)

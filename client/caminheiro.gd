@@ -7,8 +7,9 @@ extends Node
 ## pelas trilhas, estradas e pontes). Enquanto está aceso:
 ##   - o beacon atual bate como um coração, um tambor bem abafado que vem da
 ##     direção dele, a 70 batidas por minuto;
-##   - de frente para ele, a batida ganha uma camada de brilho de cristal por
-##     cima; fora de frente, a batida soa um pouco mais baixa;
+##   - de frente para ele, cada pancada é precedida por uma "suga" (um ruído
+##     escuro ao contrário, que sobe e some suave); fora de frente, a batida
+##     fica mais baixa e abafada, e abre até o normal perto da frente;
 ##   - ao chegar num beacon, um woosh sai de perto da criatura e voa na
 ##     direção do próximo, e as batidas recomeçam de lá;
 ##   - no destino, o cristal se apaga.
@@ -24,9 +25,10 @@ const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com
 const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
 const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
 const BEAT_BEHIND_DB := -7.0  # bem atrás, a batida cai e fica abafada; abre até o normal conforme vira para a frente
-const LAYER_DB := -17.0  # camada de cristal, bem baixinha: só uma cor por cima da batida, de frente
-const LAYER_FADE_DB := -9.0  # a camada entra mais baixa na borda da zona de frente
-const LAYER_ZONE_DEG := 45.0  # a camada começa a surgir a partir daqui e chega ao volume cheio em FACING_TOLERANCE_DEG
+const SUCK_DB := -12.0  # a suga, escura e baixinha, só de frente
+## A batida começa isto depois da suga (a suga termina na primeira pancada);
+## vale para todas as batidas, de frente ou não, para o ritmo não mudar ao virar.
+const SUCK_LEAD := 0.15
 ## Abertura da batida: de frente (até FACING_TOLERANCE_DEG) é o timbre e o
 ## volume normais; daí até CLOSED_DEG, vai abafando e baixando; além, fica no
 ## mais abafado.
@@ -58,7 +60,7 @@ var _beat_timer := 0.0
 ## dura mais que o intervalo, e reiniciar a mesma fonte cortaria a cauda.
 var _beat_players: Array[AudioStreamPlayer3D] = []
 var _next_beat := 0
-## A camada de cristal, também em rodízio, na mesma posição da batida.
+## A suga, também em rodízio, na mesma posição da batida.
 var _layer_players: Array[AudioStreamPlayer3D] = []
 var _forward := Vector2.ZERO  # para onde a criatura olha (zero: não se sabe)
 var _woosh_player: AudioStreamPlayer3D
@@ -78,12 +80,12 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 				player.name = "Caminheiro_batida_%d" % i
 				player.stream = Sounds.heartbeat()
 				_beat_players.append(player)
-		var layer_stream := Sounds.heartbeat_layer()
+		var layer_stream := Sounds.heartbeat_suck()
 		if layer_stream != null:
 			for i in 2:
 				var player := audio.make_far_voice(BEAT_DISTANCE + 6.0)
 				if player != null:
-					player.name = "Caminheiro_camada_%d" % i
+					player.name = "Caminheiro_suga_%d" % i
 					player.stream = layer_stream
 					_layer_players.append(player)
 		_woosh_player = audio.make_far_voice(WOOSH_TO + 6.0)
@@ -208,13 +210,15 @@ func _beat(pos: Vector2, beacon: Vector2) -> void:
 	player.position = where
 	player.stream = Sounds.heartbeat_level(roundi(openness * (BEAT_LEVELS - 1)))
 	player.volume_db = BEAT_DB + _gain() + (1.0 - openness) * BEAT_BEHIND_DB
-	player.stop()
-	player.play()
-	if _forward != Vector2.ZERO and off <= LAYER_ZONE_DEG and index < _layer_players.size():
+	# A batida entra depois da suga.
+	get_tree().create_timer(SUCK_LEAD).timeout.connect(func():
+		if active:
+			player.stop()
+			player.play())
+	if _forward != Vector2.ZERO and off <= FACING_TOLERANCE_DEG + 0.0001 and index < _layer_players.size():
 		var layer := _layer_players[index]
 		layer.position = where
-		var near := 1.0 - clampf((off - FACING_TOLERANCE_DEG) / (LAYER_ZONE_DEG - FACING_TOLERANCE_DEG), 0.0, 1.0)
-		layer.volume_db = LAYER_DB + _gain() + (1.0 - near) * LAYER_FADE_DB
+		layer.volume_db = SUCK_DB + _gain()
 		layer.stop()
 		layer.play()
 
