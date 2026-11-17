@@ -4,8 +4,8 @@ extends Node
 ##
 ## No servidor, roda a simulação (Horrors) e manda a cada jogador onde estão
 ## os horrores perto dele. No cliente, cuida do som: quanto mais perto o
-## Calado, mais o mundo inteiro fica abafado e baixo; segurando o Tab, dá
-## para ouvir a respiração dele, no lugar onde ele está, e ela se cala
+## Calado, mais o mundo inteiro fica abafado e baixo; segurando o Tab, a
+## respiração dele soa no lugar onde ele está, e ela se cala
 ## quando a criatura vira de frente para ele.
 
 const STEP_SECONDS := 0.25  # passo da simulação no servidor
@@ -156,9 +156,9 @@ func horror_gone(id: int) -> void:
 
 
 ## O Calado alcançou esta criatura: o som se fecha, ela é levada e reaparece
-## no ponto seguro. Só a fala diz que perdeu o que carregava, e só se perdeu.
+## no ponto seguro. Ao voltar a si, uma fala curta.
 @rpc("authority", "call_local", "reliable")
-func horror_caught(spot: Vector2, lost_something: bool) -> void:
+func horror_caught(spot: Vector2, _lost_something: bool) -> void:
 	var game := get_parent()
 	if game.world == null or _caught:
 		return
@@ -171,8 +171,7 @@ func horror_caught(spot: Vector2, lost_something: bool) -> void:
 	game._play(HorrorSounds.relief())
 	await get_tree().create_timer(HorrorSounds.RELIEF_SECONDS).timeout
 	_caught = false
-	if lost_something:
-		Speech.say("Você perdeu o que carregava.")
+	Speech.say("Você acorda em outro lugar, sem lembrança do que aconteceu.")
 
 
 ## Levada pelo Calado: a criatura não anda até reaparecer.
@@ -235,8 +234,8 @@ func _apply_hush() -> void:
 		AudioServer.set_bus_volume_db(_master(), Music.MASTER_DB + HUSHED_DB * _presence)
 
 
-## A respiração só existe para quem escuta com atenção, e some quando a
-## criatura encara o Calado: é assim que se descobre onde ele está.
+## A respiração soa no silêncio que o próprio Calado causa, sem o Tab, e some
+## quando a criatura o encara: é assim que se descobre onde ele está.
 func _update_breath(nearest: Dictionary, delta: float) -> void:
 	if _breath == null:
 		return
@@ -248,7 +247,7 @@ func _update_breath(nearest: Dictionary, delta: float) -> void:
 		_breath.position = Aviary.to_3d(pos, BREATH_HEIGHT)
 		if Horrors.is_facing(game._pos, game._heading, pos):
 			rate = BREATH_CUT
-		elif game._focus:
+		else:
 			# Compensa o que o próprio abafamento tira dela.
 			target = BREATH_DB - HUSHED_DB * _presence + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
 	_breath.volume_db = move_toward(_breath.volume_db, target, rate * delta)
