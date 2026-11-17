@@ -101,31 +101,21 @@ theme_override_font_sizes/font_size = 36
 text = "Opções"
 horizontal_alignment = 1
 
-[node name="NameLabel" type="Label" parent="Center/Card/Pages/OptionsPage"]
-layout_mode = 2
-text = "Seu nome"
-
-[node name="NameEdit" type="LineEdit" parent="Center/Card/Pages/OptionsPage"]
-unique_name_in_owner = true
-layout_mode = 2
-accessibility_name = "Seu nome"
-placeholder_text = "Como sua criatura se chama?"
-max_length = 24
-
-[node name="ServerLabel" type="Label" parent="Center/Card/Pages/OptionsPage"]
-layout_mode = 2
-text = "Servidor"
-
-[node name="ServerEdit" type="LineEdit" parent="Center/Card/Pages/OptionsPage"]
-unique_name_in_owner = true
-layout_mode = 2
-accessibility_name = "Servidor"
-placeholder_text = "ip ou ip:porta"
-
 [node name="VsyncCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "VSync"
+
+[node name="GraphicsCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Desligar os gráficos"
+
+[node name="NavButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Navegação dos menus: Horizontal"
+alignment = 0
 
 [node name="BackButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
