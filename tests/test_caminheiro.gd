@@ -19,6 +19,7 @@ func _ready() -> void:
 	_test_menu_open_at()
 	_test_region_change()
 	_test_facing()
+	_test_beat_openness()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -322,3 +323,28 @@ func _test_region_change() -> void:
 	_check(not GameScript.region_changed(world, region, border + Vector2i(1, 0)), "a primeira casa da vizinha ainda não conta")
 	_check(GameScript.region_changed(world, region, border + Vector2i(2, 0)), "a segunda, sim")
 	_check(SoundBank.region_change().get_length() > 0.5, "o som de mudança de região existe")
+
+
+## A batida abre de atrás (abafada) até a frente (normal), e o estéreo alarga
+## sem mexer na frente nem no atrás.
+func _test_beat_openness() -> void:
+	_check(is_equal_approx(Caminheiro.openness_at(0.0), 1.0), "de frente, batida normal")
+	_check(is_equal_approx(Caminheiro.openness_at(22.5), 1.0), "na borda da frente, ainda normal")
+	_check(is_equal_approx(Caminheiro.openness_at(180.0), 0.0), "atrás, bem abafada")
+	var previous := 1.0
+	for off in range(23, 181, 4):
+		var value := Caminheiro.openness_at(off)
+		_check(value <= previous + 0.0001, "a abertura só diminui ao virar para trás (%d°)" % off)
+		previous = value
+	var forward := Vector2(0, -1)
+	_check(Caminheiro.widen_direction(forward, forward).distance_to(forward) < 0.0001, "frente não muda")
+	_check(Caminheiro.widen_direction(forward, -forward).distance_to(-forward) < 0.0001, "atrás não muda")
+	var side := Vector2(1, -1).normalized()
+	var wide := Caminheiro.widen_direction(forward, side)
+	_check(absf(forward.angle_to(wide)) > absf(forward.angle_to(side)), "45° vira mais de 45°")
+	_check(sign(forward.angle_to(wide)) == sign(forward.angle_to(side)), "continua do mesmo lado")
+	for k in 8:
+		var angle := k * PI / 4.0 - PI + 0.1
+		var dir := forward.rotated(angle)
+		var widened := Caminheiro.widen_direction(forward, dir)
+		_check(absf(angle_difference(dir.angle(), widened.angle())) < deg_to_rad(10.0), "ampliação pequena (%f)" % angle)
