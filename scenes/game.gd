@@ -1183,9 +1183,11 @@ func _interact() -> void:
 			Speech.say(_menu.open_at("Nome do povoado, primeira palavra", _name_nouns.bind(int(build["id"]))))
 		else:
 			request_build_work.rpc_id(1, int(build["id"]))
-	elif pile_distance <= target_distance and pile != WorldGen.NO_CELL:
-		# O jogador escolhe o que pegar: um monte vira bagunça rápido.
-		Speech.say(_menu.open_at("Pilha no chão", _pile_pick_items.bind(pile)))
+	elif pile != WorldGen.NO_CELL and (pile_distance <= target_distance or harvest.is_ready(target)):
+		# O jogador escolhe o que pegar: um monte vira bagunça rápido. O
+		# recurso coletável ao alcance entra na lista como mais um item, em
+		# vez de o jogo adivinhar qual dos dois o Espaço quis.
+		Speech.say(_menu.open_at("Pilha no chão", _pile_pick_items.bind(pile, target)))
 	elif target != WorldGen.NO_CELL:
 		request_collect.rpc_id(1, target)
 
@@ -1649,14 +1651,31 @@ func _pile_name(cell: Vector2i) -> String:
 
 
 ## O que pegar da pilha à frente: cada item dela (e tudo o que couber).
-func _pile_pick_items(cell: Vector2i) -> Array:
+## `resource`: o recurso coletável ao alcance (ou NO_CELL), que entra no fim.
+func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 	var items := []
 	var pile := ground.items_at(cell)
 	if pile.size() > 1:
 		items.append({"label": "Tudo que couber", "run": _pick_from.bind(cell, "")})
 	for key: String in pile:
 		items.append({"label": Economy.item_text(key, int(pile[key])), "run": _pick_from.bind(cell, key)})
+	if resource != WorldGen.NO_CELL and harvest.is_ready(resource):
+		items.append({"label": _resource_pick_label(resource), "run": _collect_resource.bind(resource)})
 	return items
+
+
+## "Argila no chão", "Bambu derrubado": o recurso como item da lista da pilha.
+func _resource_pick_label(cell: Vector2i) -> String:
+	var text := harvest.spoken_name(cell)
+	var thing := world.thing_at(cell)
+	if thing == WorldGen.Thing.ARGILA or thing == WorldGen.Thing.PEDRAS:
+		text += " no chão"
+	return text[0].to_upper() + text.substr(1)
+
+
+func _collect_resource(cell: Vector2i) -> String:
+	request_collect.rpc_id(1, cell)
+	return ""
 
 
 func _pick_from(cell: Vector2i, key: String) -> String:
