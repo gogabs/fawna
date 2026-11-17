@@ -103,6 +103,14 @@ static func chime() -> AudioStreamWAV:
 	return _cache["chime"]
 
 
+## Limite do menu flutuante (Baixo já na raiz): um toque curto e suave de
+## interface, sem nada de colisão.
+static func ui_limit() -> AudioStreamWAV:
+	if not _cache.has("ui_limit"):
+		_cache["ui_limit"] = _tone([330.0], 0.09, 0.3)
+	return _cache["ui_limit"]
+
+
 ## Clique da bússola (só se faltarem os arquivos de assets/sounds/bussola).
 static func compass(kind: String) -> AudioStreamWAV:
 	var key := "bussola_" + kind

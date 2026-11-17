@@ -75,7 +75,7 @@ const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
 const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
 ## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
 const BUMP_SLIDE_MIN := 0.5
-const MENU_LIMIT_DB := -8.0  # o toque de limite ao apertar Baixo na raiz do menu
+const MENU_LIMIT_DB := -6.0  # o toque de limite ao apertar Baixo na raiz do menu
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
 const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
@@ -1905,7 +1905,7 @@ func _on_menu_sound(kind: String) -> void:
 		"fechar":
 			_play(Sounds.ui_close())
 		"limite":  # Baixo já na raiz do menu: nada mais para voltar
-			_play(Sounds.bump(), false, MENU_LIMIT_DB)
+			_play(Sounds.ui_limit(), false, MENU_LIMIT_DB)
 
 
 # --- Testes automáticos ------------------------------------------------------
