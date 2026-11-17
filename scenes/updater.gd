@@ -69,13 +69,59 @@ func _process(_delta: float) -> void:
 		_update_progress()
 
 
+func _input(event: InputEvent) -> void:
+	# Sem Tab: a navegação é só pelas setas, igual aos outros menus (MenuNav).
+	if event.is_action("ui_focus_next") or event.is_action("ui_focus_prev"):
+		get_viewport().set_input_as_handled()
+		return
+	for input_action: String in MenuNav.ACTIONS:
+		if not event.is_action(input_action):
+			continue
+		get_viewport().set_input_as_handled()
+		if event.is_pressed():
+			_navigate(MenuNav.from_event(event))
+		return
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("repetir_fala"):
 		Speech.say(_status_sentence())
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("ui_cancel") and state != State.INSTALLING:
+	elif event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
-		_on_skip()
+		_navigate("voltar")
+
+
+func _visible_buttons() -> Array[Button]:
+	var items: Array[Button] = []
+	for button: Button in [primary_button, notes_button, skip_button]:
+		if button.is_visible_in_tree():
+			items.append(button)
+	return items
+
+
+## Escolher, confirmar e voltar. O foco fica sempre preso nos botões visíveis,
+## com volta ao fim, sem depender dos vizinhos do Godot.
+func _navigate(action: String) -> void:
+	match action:
+		"anterior", "proximo":
+			var items := _visible_buttons()
+			if items.is_empty():
+				return
+			var at := items.find(get_viewport().gui_get_focus_owner())
+			var next := 0 if at < 0 else posmod(at + (-1 if action == "anterior" else 1), items.size())
+			items[next].grab_focus()
+		"confirmar":
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused is Button and (focused as Button).is_visible_in_tree():
+				(focused as Button).pressed.emit()
+			else:
+				var items := _visible_buttons()
+				if not items.is_empty():
+					items[0].grab_focus()
+		"voltar":
+			if state != State.INSTALLING and state != State.CHECKING:
+				_on_skip()
 
 
 # --- Verificação --------------------------------------------------------------
@@ -151,15 +197,15 @@ func _show_available() -> void:
 	status_label.text = details
 	var notes := _notes()
 	notes_text.text = _notes_bbcode(notes) if not notes.is_empty() else "Esta versão não tem notas."
-	notes_text.show()
 	progress_bar.hide()
 	primary_button.text = "Baixar e instalar" if blocker.is_empty() else "Abrir página de download"
 	notes_button.text = "Ouvir novidades"
 	skip_button.text = "Pular"
+	notes_text.show()
 	_show_buttons([primary_button, notes_button, skip_button])
 	_play(Sounds.chime())
-	Speech.say("Atualização disponível. %s Escolha %s, Ouvir novidades ou Pular." % [
-		details.replace("\n", " "), primary_button.text])
+	Speech.say("Atualização disponível. %s Escolha %s, Ouvir novidades ou Pular. %s" % [
+		details.replace("\n", " "), primary_button.text, MenuNav.help()])
 	_focus(primary_button)
 
 
@@ -235,7 +281,7 @@ func _start_download() -> void:
 	http.timeout = 0.0
 	http.download_file = _download_path
 	var headers := ["Accept: application/octet-stream", "User-Agent: Fawna-Atualizador"]
-	Speech.say("Baixando. Aperte Esc para cancelar ou R para ouvir o progresso.")
+	Speech.say("Baixando. Para cancelar, volte. R ouve o progresso. " + MenuNav.help())
 	if http.request(str(asset.get("browser_download_url", "")), headers) != OK:
 		_fail("não deu para começar o download")
 
