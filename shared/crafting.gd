@@ -61,7 +61,7 @@ const BUILDS := {
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
 			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
-			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16},
+			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
 			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
 		],
 	},
@@ -169,6 +169,17 @@ static func stage_of(kind: String, index: int, size := 1) -> Dictionary:
 	for item: String in stage["materials"]:
 		materials[item] = maxi(1, ceili(float(stage["materials"][item]) * factor - 0.001))
 	return {"name": stage["name"], "materials": materials, "work": maxi(1, roundi(float(stage["work"]) * factor))}
+
+
+## As paredes de uma construção grande ficam de pé quando termina a etapa
+## marcada com "walls" (ou quando a obra termina); antes disso o terreno é
+## só um canteiro por onde se anda. Sem etapa marcada, nunca bloqueiam.
+static func walls_stage(kind: String) -> int:
+	var stages: Array = BUILDS[kind]["stages"]
+	for i in stages.size():
+		if stages[i].get("walls", false):
+			return i
+	return -1
 
 
 static func stage_count(kind: String) -> int:

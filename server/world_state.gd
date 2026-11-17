@@ -321,6 +321,33 @@ func start_site(id: int, kind: String, origin: Vector2i, size: int, entrance: St
 	return builds.start_site(kind, origin, size, entrance)
 
 
+## Tira do caminho quem estava dentro de uma parede que acabou de subir: cada
+## criatura vai para o ponto livre mais perto. Devolve [[id, posição nova], ...].
+func eject_from_walls(build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	var moved := []
+	for id in players:
+		var pos: Vector2 = players[id]["pos"]
+		if world.is_free(pos):
+			continue
+		var best := pos
+		var best_distance := INF
+		for ring in range(1, 8):
+			for dx in range(-ring, ring + 1):
+				for dy in range(-ring, ring + 1):
+					var point := pos + Vector2(dx, dy) * 0.5
+					var distance := point.distance_to(pos)
+					if distance < best_distance and world.is_free(point):
+						best_distance = distance
+						best = point
+			if best_distance < INF:
+				break
+		if best != pos:
+			players[id]["pos"] = best
+			moved.append([id, best])
+	return moved
+
+
 ## Dá nome ao povoado de um marco ao alcance (Builds.name_settlement).
 func name_settlement(id: int, build_id: int, noun_index: int, adjective_index: int) -> Dictionary:
 	if not players.has(id):

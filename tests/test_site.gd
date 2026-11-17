@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_posts_and_drying()
 	_test_persistence()
 	_test_server_and_tools()
+	_test_eject()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -173,9 +174,28 @@ func _test_full_flow() -> void:
 			last = builds.prep_hit(id, cell, "enxada")
 	_check(last["event"] == "fase" and last["next"] == "obra", "a última casa capinada abre as etapas")
 	_check(builds.phase_of(id) == "obra", "fase de obra")
-	# Parede bloqueia, porta e dentro passam.
+	# Enquanto as paredes não estão de pé, a obra é só um canteiro: não bloqueia.
 	var door := Builds.door_cell(rect.position, 4, "sul")
 	_check(door == rect.position + Vector2i(2, 3), "porta ao sul, no meio")
+	for cell: Vector2i in Builds.footprint_cells(rect.position, 4):
+		_check(world.is_passable(cell), "antes das paredes, tudo passa")
+	_check(builds.at(rect.position + Vector2i(1, 1))["id"] == id, "o interior pertence à obra")
+	# Etapas: chão, esteios e paredes; as paredes sobem ao fim da terceira.
+	var bag := {}
+	for item: String in Crafting.total_materials("abrigo", 4):
+		bag[item] = 999
+	var now_s := 1000.0
+	var raised := false
+	for stage_index in 3:
+		for i in 200:
+			now_s += 300.0
+			var r := builds.work(id, bag, now_s)
+			if r.get("event", "") == "etapa":
+				raised = r.get("walls", false)
+				break
+		if stage_index < 2:
+			_check(world.is_passable(rect.position), "esteios e chão: ainda sem paredes")
+	_check(raised, "o fim da etapa das paredes avisa que elas subiram")
 	_check(world.is_passable(door), "a porta deixa passar")
 	_check(world.is_passable(rect.position + Vector2i(1, 1)) and world.is_passable(rect.position + Vector2i(2, 2)), "dentro dá para andar")
 	_check(not world.is_passable(rect.position) and not world.is_passable(rect.position + Vector2i(3, 0)), "o canto é parede")
@@ -185,7 +205,6 @@ func _test_full_flow() -> void:
 		if not world.is_passable(cell):
 			walls += 1
 	_check(walls == 11, "4x4 tem 12 casas de borda, menos a porta: 11 (deu %d)" % walls)
-	_check(builds.at(rect.position + Vector2i(1, 1))["id"] == id, "o interior pertence à obra")
 	# Outra obra não cabe colada.
 	_check(builds.site_refusal("abrigo", rect.position + Vector2i(5, 0), 3, "sul") == "perto", "colado no abrigo não serve")
 	# Materiais e etapas escalam com o tamanho.
@@ -311,7 +330,7 @@ func _test_persistence() -> void:
 	_check(not b.is_empty() and b["size"] == 4 and b["entrance"] == "sul" and b["phase"] == "obra", "salvar e carregar mantém tamanho, porta e fase")
 	_check(b["posts"] == a["posts"], "e os canteiros")
 	_check(world.removed.size() == ctx["state"].world.removed.size(), "e o que foi arrancado")
-	_check(not world.is_passable(rect.position), "e as paredes bloqueiam no mundo carregado")
+	_check(world.is_passable(rect.position), "e o canteiro ainda não bloqueia no mundo carregado")
 	# Espelho da rede.
 	var mirror_world := WorldGen.new(173)
 	var mirror := Builds.new(mirror_world)
@@ -380,6 +399,33 @@ func _test_server_and_tools() -> void:
 	for step: Dictionary in Crafting.TOOLS["enxada"]["steps"]:
 		steps += int(step["knocks"])
 	_check(steps >= 12, "a enxada dá trabalho: %d batidas" % steps)
+
+
+func _test_eject() -> void:
+	var ctx := _ready_site()
+	var state: WorldState = ctx["state"]
+	var builds := state.builds
+	var id: int = ctx["id"]
+	var rect: Rect2i = ctx["rect"]
+	state.add_player(2, "Lua")
+	state.players[2]["pos"] = WorldGen.cell_center(rect.position)  # em cima de um canto
+	_check(state.world.is_free(state.players[2]["pos"]), "antes das paredes, o canto é livre")
+	var bag := {}
+	for item: String in Crafting.total_materials("abrigo", 4):
+		bag[item] = 999
+	var now_s := 1000.0
+	var raised := false
+	for i in 1000:
+		now_s += 300.0
+		var r := builds.work(id, bag, now_s)
+		if r.get("walls", false):
+			raised = true
+			break
+	_check(raised, "as paredes sobem")
+	_check(not state.world.is_free(state.players[2]["pos"]), "agora o canto bloqueia")
+	var moved := state.eject_from_walls(id)
+	_check(moved.size() == 1 and moved[0][0] == 2, "a criatura presa é tirada")
+	_check(state.world.is_free(state.players[2]["pos"]), "e fica num ponto livre")
 
 
 func world_thing(state: WorldState, cell: Vector2i) -> int:

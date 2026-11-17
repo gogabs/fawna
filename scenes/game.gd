@@ -466,10 +466,15 @@ func request_build_work(build_id: int) -> void:
 	if result["event"] in ["deposito", "abasteceu", "alimentou"]:
 		equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	var extra := {}
-	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry"]:
+	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry", "walls"]:
 		if result.has(key):
 			extra[key] = result[key]
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
+	if result.get("walls", false):
+		# As paredes subiram: quem estava no meio delas é levado para fora.
+		for entry in state.eject_from_walls(build_id):
+			move_corrected.rpc_id(int(entry[0]), entry[1])
+			player_moved.rpc(int(entry[0]), entry[1])
 
 
 ## Fabricar > Construções > (grande) > âncora, tamanho e porta: começa uma
@@ -780,7 +785,8 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"etapa":
 			var missing := builds.stage_missing(build_id)
 			var dry := float(extra.get("dry", 0.0))
-			Speech.say("Etapa concluída. %sAgora %s: %s." % [
+			Speech.say("Etapa concluída. %s%sAgora %s: %s." % [
+				"As paredes subiram: a porta fica ao %s. " % builds.get_build(build_id)["entrance"] if extra.get("walls", false) else "",
 				"A argila precisa secar uns %s; dá para trabalhar antes, mas rende metade. " % Builds._minutes_text(dry) if dry > 0.0 else "",
 				extra.get("next", ""), Crafting.missing_text(missing) if not missing.is_empty() else "Espaço para trabalhar"])
 		"pronta":

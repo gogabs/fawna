@@ -103,7 +103,7 @@ static func wall_cells(build: Dictionary) -> Array:
 	var size := int(build.get("size", 1))
 	if size <= 1:
 		return [build["cell"]]
-	if str(build.get("phase", "obra")) != "obra":
+	if not walls_up(build):
 		return []
 	var door := door_cell(build["cell"], size, str(build.get("entrance", "")))
 	var cells := []
@@ -112,6 +112,17 @@ static func wall_cells(build: Dictionary) -> Array:
 		if (inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1) and cell != door:
 			cells.append(cell)
 	return cells
+
+
+## As paredes já estão de pé? Só depois da etapa das paredes (ou da obra pronta);
+## antes, a obra é um canteiro por onde se anda e não bloqueia nada.
+static func walls_up(build: Dictionary) -> bool:
+	if bool(build.get("done", false)):
+		return true
+	if str(build.get("phase", "obra")) != "obra":
+		return false
+	var index := Crafting.walls_stage(str(build["kind"]))
+	return index >= 0 and int(build["stage"]) > index
 
 
 static func post_count(build: Dictionary) -> int:
@@ -522,7 +533,6 @@ func prep_hit(id: int, cell: Vector2i, tool: String) -> Dictionary:
 		else:
 			build["phase"] = "obra"
 			build["prep"] = {}
-			_register_walls(build)
 			result["next"] = "obra"
 		result["event"] = "fase"
 	return result
@@ -597,6 +607,9 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 	build["posts"] = _zero_posts(int(build["size"]))
 	if build["stage"] < Crafting.stage_count(build["kind"]):
 		var result := {"ok": true, "event": "etapa", "next": stage_def(build)["name"]}
+		if int(build["size"]) > 1 and Crafting.walls_stage(build["kind"]) == int(build["stage"]) - 1:
+			_register_walls(build)
+			result["walls"] = true
 		var dry := float(Crafting.BUILDS[build["kind"]]["stages"][int(build["stage"]) - 1].get("dry", 0.0))
 		if dry > 0.0:
 			if has_lit_fire(build["region"], at_time):
@@ -605,6 +618,7 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 			result["dry"] = dry
 		return result
 	build["done"] = true
+	_register_walls(build)
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		# A lenha da última etapa fica como o primeiro combustível.
 		var fuel := 0.0
