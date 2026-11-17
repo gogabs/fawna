@@ -107,6 +107,32 @@ func _confirm() -> String:
 	return said if said is String else ""
 
 
+## O mundo mudou por fora do menu (a bolsa, as mãos, o chão): atualiza as
+## opções de todos os níveis. Um nível que tinha opções e ficou vazio (o item
+## acabou) é fechado junto com os de dentro dele, e o foco volta ao menu pai
+## mais próximo que ainda existe. Devolve o texto a falar quando o foco subiu;
+## vazio se nada se moveu.
+func sync() -> String:
+	var kept := 1
+	_levels[0]["items"] = _root.call()
+	_levels[0]["index"] = clampi(_levels[0]["index"], 0, maxi(_levels[0]["items"].size() - 1, 0))
+	for i in range(1, _levels.size()):
+		var level: Dictionary = _levels[i]
+		if not level.has("source"):
+			break
+		var had_items: bool = not level["items"].is_empty()
+		var items: Array = level["source"].call()
+		if had_items and items.is_empty():
+			break
+		level["items"] = items
+		level["index"] = clampi(level["index"], 0, maxi(items.size() - 1, 0))
+		kept = i + 1
+	if kept == _levels.size():
+		return ""
+	_levels.resize(kept)
+	return _describe(_levels[-1])
+
+
 ## Baixo volta um nível; no primeiro, só toca o som de limite.
 func _back() -> String:
 	if _levels.size() <= 1:

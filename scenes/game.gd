@@ -581,6 +581,7 @@ func ground_snapshot(data: Dictionary) -> void:
 func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int, moved: Dictionary) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	ground.apply_pile(cell, items)
 	audio.set_piles(ground.cells())
 	var where := WorldGen.cell_center(cell)
@@ -716,6 +717,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 func crafted(new_bag: Dictionary, weapon: String) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_bag
 	for i in CRAFT_KNOCKS:
 		get_tree().create_timer(0.3 * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
@@ -728,6 +730,7 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}, extras := {}, kept := {}, left_over := {}) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_inventory
 	if verb.is_empty():
 		return
@@ -751,6 +754,7 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String, am
 func equipment_changed(new_bag: Dictionary, new_wielded: String, verb: String, item: String) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_bag
 	wielded = new_wielded
 	match verb:
@@ -1521,12 +1525,23 @@ func _bag_sizes(base: String) -> Array:
 func _bag_item_actions(item: String) -> Array:
 	var amount := int(inventory.get(item, 0))
 	var actions := []
+	if amount <= 0:
+		return actions  # o item acabou: o menu devolve o foco ao pai
 	if Bag.can_wield(item):
 		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
 	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
 	if amount > 1:
 		actions.append({"label": "Jogar tudo, %d" % amount, "run": _drop.bind(item, amount)})
 	return actions
+
+
+## A bolsa, as mãos ou o chão mudaram: atualiza o menu das setas. Se o item
+## em foco acabou, o foco sobe ao menu pai mais próximo que ainda exista e a
+## nova posição é falada, sem cortar o que já estava sendo dito. Chamado
+## adiado, para entrar depois da fala do próprio aviso.
+func _sync_menu() -> void:
+	if _menu != null:
+		Speech.say(_menu.sync(), false)
 
 
 ## Jogar passa pelo servidor; a resposta (ground_changed) é que fala e toca.
