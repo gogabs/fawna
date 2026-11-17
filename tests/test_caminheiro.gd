@@ -135,11 +135,12 @@ func _test_menu() -> void:
 	_check(menu.press("cima") == "Caminheiro. Origem", "cima entra no Caminheiro")
 	_check(menu.depth() == 2, "deveria estar no submenu")
 	_check(menu.press("cima") == "rumo à Origem" and ran == ["Origem"], "cima na Origem acende o cristal")
-	_check(menu.depth() == 1, "depois de executar, volta ao começo")
-	menu.press("cima")
+	_check(menu.depth() == 2, "depois de executar, o menu continua onde está")
 	_check(menu.press("direita") == "Apagar o cristal, 2 de 2", "aceso, aparece a opção de apagar")
 	_check(menu.press("baixo") == "Caminheiro", "baixo volta")
-	_check(menu.press("baixo").begins_with("Menu das setas"), "baixo no começo diz onde está")
+	var limits := [0]
+	menu.sound.connect(func(kind: String): limits[0] += 1 if kind == "limite" else 0)
+	_check(menu.press("baixo") == "" and limits[0] == 1, "baixo no começo só toca o som de limite")
 
 
 ## Menu Recursos: o cristal leva até o coletável mais próximo de cada tipo,
@@ -244,8 +245,8 @@ func _test_facing() -> void:
 func _test_menu_open_at() -> void:
 	var chosen := [""]
 	var adjectives := func(noun: String) -> Array:
-		return [{"label": noun + " Sombrio", "run": func(): chosen[0] = noun + " Sombrio"; return ""},
-			{"label": noun + " Antigo", "run": func(): chosen[0] = noun + " Antigo"; return ""}]
+		return [{"label": noun + " Sombrio", "run": func(): chosen[0] = noun + " Sombrio"; return "", "close": true},
+			{"label": noun + " Antigo", "run": func(): chosen[0] = noun + " Antigo"; return "", "close": true}]
 	var nouns := func() -> Array:
 		return [{"label": "Vale", "open": adjectives.bind("Vale")}, {"label": "Refúgio", "open": adjectives.bind("Refúgio")}]
 	var menu := FloatingMenu.new(func() -> Array: return [{"label": "Caminheiro", "info": "x"}, {"label": "Bolsa", "info": "y"}])

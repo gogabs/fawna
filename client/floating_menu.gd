@@ -12,7 +12,7 @@ extends RefCounted
 ##   "run":  Callable executado ao confirmar; o menu não fecha: o foco fica
 ##           onde está e as opções são atualizadas
 ##   "info": texto falado ao confirmar, sem sair do lugar (itens sem ação)
-## Opcionais: "empty" (o que dizer se o submenu vier vazio) e os sons do
+## Opcionais: "close" (com "run": fecha o menu depois, para o fim de um fluxo), "empty" (o que dizer se o submenu vier vazio) e os sons do
 ## submenu, no lugar dos genéricos: "open_sound" (ao entrar, em vez de
 ## "abrir"), "move_sound" (ao passar pelas opções, em vez de "mover") e
 ## "close_sound" (ao sair com Baixo, em vez de "fechar").
@@ -100,7 +100,9 @@ func _confirm() -> String:
 	# ação abriu outro menu (open_at), esse é que vale.
 	var depth_before := _levels.size()
 	var said: Variant = item["run"].call() if item.has("run") else ""
-	if _levels.size() == depth_before and is_same(_levels[-1], level):
+	if item.get("close", false):  # só para o fim de um fluxo (ex.: escolher o nome)
+		reset()
+	elif _levels.size() == depth_before and is_same(_levels[-1], level):
 		_refresh(level)
 	return said if said is String else ""
 

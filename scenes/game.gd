@@ -1829,7 +1829,7 @@ func _name_adjectives(build_id: int, noun: int) -> Array:
 	var items := []
 	for adjective: int in SettlementNames.options(world.world_seed, build_id)["adjectives"]:
 		items.append({"label": SettlementNames.compose(noun, adjective),
-			"run": _name_settlement.bind(build_id, noun, adjective)})
+			"run": _name_settlement.bind(build_id, noun, adjective), "close": true})
 	return items
 
 
