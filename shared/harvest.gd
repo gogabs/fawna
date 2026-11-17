@@ -63,9 +63,6 @@ const TAKEN_NAMES := {
 	WorldGen.Thing.ARBUSTO_FRUTAS: "arbusto",
 }
 
-## Tempo de rebrota que nunca chega: o bambu do bambuzal, uma vez cortado,
-## fica cortado, e a trilha aberta dura.
-const NEVER := 1.0e15
 ## Se alguém está em cima de uma fonte que ia rebrotar, ela espera este tempo
 ## (s) e tenta de novo, para ninguém ficar preso dentro do bambu.
 const HOLD_RETRY := 3.0
@@ -186,7 +183,6 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 	if left == 0:
 		return {"ok": false, "reason": "caido", "hits_left": 0, "felled": true}
 	_nodes[cell] = {"hits": _hits_done(cell, at) + 1, "regrow_at": 0.0, "struck_at": at}
-	_sync(cell)
 	left -= 1
 	_sync(cell, at)
 	return {"ok": true, "reason": "", "hits_left": left, "felled": left == 0}
@@ -315,7 +311,6 @@ func prune(at := -1.0, occupants := []) -> Array:
 		var forgotten := float(node["regrow_at"]) <= 0.0 and _hits_done(cell, at) == 0
 		if regrown or forgotten:
 			_nodes.erase(cell)
-			_sync(cell)
 			restored.append(cell)
 			_sync(cell, at)
 	return restored
@@ -353,19 +348,6 @@ func load_save(data: Array) -> void:
 		_sync(cell)
 	prune()
 	_sync_all()
-
-
-## Mantém world.cleared em dia com o estado de uma casa: fonte que abre
-## passagem (árvore) deixa de bloquear quando cai ou é recolhida, e volta a
-## bloquear se rebrotar.
-func _sync(cell: Vector2i) -> void:
-	var source: Dictionary = SOURCES.get(world.thing_at(cell), {})
-	var node: Dictionary = _nodes.get(cell, {})
-	if bool(source.get("opens", false)) and not node.is_empty() \
-			and (float(node["regrow_at"]) > 0.0 or int(node["hits"]) >= hits_needed(cell)):
-		world.cleared[cell] = true
-	else:
-		world.cleared.erase(cell)
 
 
 func _sync_all() -> void:
