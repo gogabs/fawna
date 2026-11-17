@@ -3,9 +3,10 @@ extends RefCounted
 ## Menu flutuante das setas, sempre ativo durante o jogo (as setas não
 ## movem a criatura; quem anda é W/A/S/D e quem gira é Q/E).
 ##
-##   Esquerda e Direita: passam pelas opções do nível atual
-##   Cima: confirma (entra na opção ou executa)
-##   Baixo: volta um nível
+## A orientação das setas é a das opções (Net.vertical_nav, ver MenuNav):
+##   Horizontal (padrão): Esquerda/Direita passam pelas opções do nível
+##     atual, Cima confirma (entra na opção ou executa), Baixo volta um nível
+##   Vertical: Cima/Baixo passam pelas opções, Direita confirma, Esquerda volta
 ##
 ## Cada opção é um dicionário com "label" e uma destas chaves:
 ##   "open": Callable que devolve as opções do submenu (Array de opções)
@@ -59,12 +60,14 @@ func current_label() -> String:
 ## "esquerda", "direita", "cima" ou "baixo". Devolve o texto a falar.
 func press(direction: String) -> String:
 	var text := ""
-	match direction:
-		"esquerda", "direita":
-			text = _move(-1 if direction == "esquerda" else 1)
-		"cima":
+	match MenuNav.action(direction):
+		"anterior":
+			text = _move(-1)
+		"proximo":
+			text = _move(1)
+		"confirmar":
 			text = _confirm()
-		"baixo":
+		"voltar":
 			text = _back()
 	return text
 
@@ -133,7 +136,7 @@ func sync() -> String:
 	return _describe(_levels[-1])
 
 
-## Baixo volta um nível; no primeiro, só toca o som de limite.
+## Voltar sobe um nível; no primeiro, só toca o som de limite.
 func _back() -> String:
 	if _levels.size() <= 1:
 		sound.emit("limite")

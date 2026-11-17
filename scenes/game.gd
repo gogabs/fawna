@@ -76,7 +76,7 @@ const CRAFT_TOOL_KNOCK := 0.55  # segundos entre as batidas de cada passo de uma
 const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
 ## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
 const BUMP_SLIDE_MIN := 0.5
-const MENU_LIMIT_DB := -6.0  # o toque de limite ao apertar Baixo na raiz do menu
+const MENU_LIMIT_DB := -6.0  # o toque de limite ao voltar na raiz do menu
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
 const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
@@ -144,6 +144,7 @@ var _sfx_voices: Array[AudioStreamPlayer] = []
 
 
 func _ready() -> void:
+	Net.apply_graphics(true)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -165,6 +166,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	Net.apply_graphics(false)
 	_save_world()
 	Sounds.clear()
 	BirdSongs.clear()
@@ -1465,7 +1467,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro; esquerda e direita escolhem, seta para cima confirma e seta para baixo volta. A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -2217,7 +2219,7 @@ func _on_menu_sound(kind: String) -> void:
 			_play(Sounds.ui_confirm())
 		"fechar":
 			_play(Sounds.ui_close())
-		"limite":  # Baixo já na raiz do menu: nada mais para voltar
+		"limite":  # voltar já na raiz do menu: nada mais para voltar
 			_play(Sounds.ui_limit(), false, MENU_LIMIT_DB)
 
 

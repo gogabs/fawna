@@ -22,6 +22,13 @@ var player_name := "Criatura"
 ## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
 ## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
 var vsync := false
+## Navegação dos menus (flutuante, Caminheiro, pilhas, principal e opções).
+## Horizontal (padrão): Esquerda/Direita navegam, Baixo volta, Cima confirma.
+## Vertical: Cima/Baixo navegam, Esquerda volta, Direita confirma.
+var vertical_nav := false
+## Gráficos desligados: dentro do jogo, para de desenhar (a janela fica parada;
+## som e fala continuam) e gasta bem menos processador. Escolhido em Opções.
+var graphics_off := false
 var world_seed := 0
 var seed_from_cmdline := false
 ## Onde o servidor salva o mundo. --novo-mundo ignora o save existente.
@@ -39,23 +46,23 @@ func _ready() -> void:
 	_parse_cmdline()
 
 
-## Nome e servidor escolhidos em Opções ficam salvos entre sessões.
+## Nome e opções escolhidos em Opções ficam salvos entre sessões.
 func load_settings() -> void:
 	var config := ConfigFile.new()
 	if config.load(SETTINGS_PATH) != OK:
 		return
 	player_name = config.get_value("jogador", "nome", player_name)
 	vsync = config.get_value("video", "vsync", vsync)
-	var server: String = config.get_value("conexao", "servidor", "")
-	if not server.is_empty():
-		set_server(server)
+	graphics_off = config.get_value("video", "sem_graficos", graphics_off)
+	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
 func save_settings() -> void:
 	var config := ConfigFile.new()
 	config.set_value("jogador", "nome", player_name)
-	config.set_value("conexao", "servidor", server_text())
 	config.set_value("video", "vsync", vsync)
+	config.set_value("video", "sem_graficos", graphics_off)
+	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
 
 
@@ -64,6 +71,14 @@ func apply_vsync() -> void:
 		return
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+
+
+## Só vale dentro do jogo (game.gd liga ao entrar e desfaz ao sair): os menus
+## nativos precisam de quadros para o leitor de tela receber o foco.
+func apply_graphics(in_game: bool) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	RenderingServer.render_loop_enabled = not (graphics_off and in_game)
 
 
 ## Aceita "ip" ou "ip:porta".
