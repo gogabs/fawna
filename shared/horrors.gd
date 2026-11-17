@@ -27,6 +27,7 @@ const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
 const COMPANY := 6.0  # outra criatura a até 9 m do alvo o espanta
 const ORIGIN_SAFE := 24.0  # perto da Origem ele não aparece
 const GIVE_UP_DISTANCE := 45.0
+const RESTALK_MAX := 70.0  # mais longe que isso (um salto), ele desiste de vez
 const GONE_DISTANCE := 30.0  # recuando, some quando fica longe assim de todos
 const RETREAT_MAX := 20.0  # ou depois desse tempo
 const HEARING := 30.0  # até onde um jogador fica sabendo dele
@@ -161,6 +162,16 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 	var target: Vector2 = players[peer]["pos"]
 	var distance := pos.distance_to(target)
 	if distance > GIVE_UP_DISTANCE:
+		# Ele é mais lento que a criatura: quem anda sem parar o deixa para trás.
+		# Se ela segue exposta no bosque, ele ressurge atrás dela, em vez de
+		# sumir e só voltar depois do sossego. Só desiste de um salto muito
+		# grande, ou se a criatura saiu do bosque.
+		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
+			var behind := -Compass.forward(int(players[peer].get("heading", 0)))
+			horror["pos"] = target + behind * SPAWN_DISTANCE
+			horror["stare"] = 0.0
+			horror["mode"] = Mode.STALK
+			return
 		_remove(horror, now_ms, out)
 		return
 	if fire_near(target, fires) or fire_near(pos, fires) or _has_company(peer, players):

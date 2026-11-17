@@ -237,6 +237,15 @@ func _test_gives_up_and_rests() -> void:
 	players[1]["pos"] = spot + Vector2(0, -(Horrors.GIVE_UP_DISTANCE + 30.0))
 	horrors.update(250, players, [])
 	_check(not horrors.horrors.has(id), "com o alvo longe demais, o Calado deveria desistir")
+	# Quem só se afasta andando (um pouco além de GIVE_UP_DISTANCE) não o perde: ele ressurge atrás.
+	var chased := Horrors.new(world)
+	var walker := {1: _player(spot)}
+	var chased_id := chased.summon(1, walker)
+	chased.update(0, walker, [])
+	walker[1]["pos"] = spot + Vector2(0, -(Horrors.GIVE_UP_DISTANCE + 5.0))
+	chased.update(250, walker, [])
+	_check(chased.horrors.has(chased_id) and (chased.horrors[chased_id]["pos"] as Vector2).distance_to(walker[1]["pos"]) <= Horrors.SPAWN_DISTANCE + 0.1,
+		"quem se afasta andando deveria ter o Calado ressurgindo atrás")
 	# Depois de uma visita, sossego: ele não volta antes do descanso mínimo.
 	players[1]["pos"] = spot
 	_run(horrors, players, [], 500, Horrors.COOLDOWN[0] - 5.0)
