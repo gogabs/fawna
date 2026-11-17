@@ -18,7 +18,8 @@ const MAX_PLAYERS := 128
 var mode := Mode.NONE
 var address := DEFAULT_ADDRESS
 var port := DEFAULT_PORT
-var player_name := "Criatura"
+## Vazio até a pessoa escolher o nome em Opções: sem nome não dá para entrar.
+var player_name := ""
 ## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
 ## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
 var vsync := false
@@ -30,6 +31,8 @@ var new_world := false
 
 ## Comandos automáticos para testes (ex.: --auto=N,N,L,ARREDORES,SAIR).
 var auto_commands: PackedStringArray = []
+
+var _lan_announcer: LanDiscovery
 
 
 func _ready() -> void:
@@ -45,6 +48,9 @@ func load_settings() -> void:
 	if config.load(SETTINGS_PATH) != OK:
 		return
 	player_name = config.get_value("jogador", "nome", player_name)
+	# "Criatura" era o nome padrão das versões antigas, gravado sem a pessoa escolher.
+	if player_name == "Criatura":
+		player_name = ""
 	vsync = config.get_value("video", "vsync", vsync)
 	var server: String = config.get_value("conexao", "servidor", "")
 	if not server.is_empty():
@@ -102,10 +108,24 @@ func start() -> Error:
 	if err != OK:
 		return err
 	multiplayer.multiplayer_peer = peer
+	if is_server():
+		_announce_on_lan()
 	return OK
 
 
+## Quem hospeda responde, na rede local, a quem procura jogos privados.
+func _announce_on_lan() -> void:
+	if DisplayServer.get_name() == "headless" and mode != Mode.SERVER:
+		return
+	_lan_announcer = LanDiscovery.new()
+	add_child(_lan_announcer)
+	_lan_announcer.start_announcing()
+
+
 func stop() -> void:
+	if _lan_announcer != null:
+		_lan_announcer.queue_free()
+		_lan_announcer = null
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
@@ -141,6 +161,9 @@ func _parse_cmdline() -> void:
 				new_world = true
 			"--auto":
 				auto_commands = value.split(",", false)
+	# Linha de comando e testes não passam pelo menu, então não exigem nome.
+	if mode != Mode.NONE and player_name.is_empty():
+		player_name = "Criatura"
 	# Sem tela, só faz sentido rodar como servidor dedicado ou em teste.
 	if DisplayServer.get_name() == "headless" and mode == Mode.NONE:
 		mode = Mode.SERVER
