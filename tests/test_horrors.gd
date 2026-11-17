@@ -1,0 +1,335 @@
+extends SceneTree
+## Testes do Calado: aparece atrás de quem anda sozinho pelo bosque, chega
+## devagar pelas costas, para quando é encarado e recua do olhar, do fogo e
+## da companhia; e os pássaros se calam e fogem perto dele.
+## Rodar: godot --headless --path . --script res://tests/test_horrors.gd
+## Com "-- --exportar=PASTA", também salva a respiração em .wav para ouvir.
+
+var _failures := 0
+
+
+func _init() -> void:
+	_test_appears_when_exposed()
+	_test_safe_places()
+	_test_stalks_from_behind()
+	_test_stare_holds_and_repels()
+	_test_fire_and_company_repel()
+	_test_trail_holds()
+	_test_gives_up_and_rests()
+	_test_watchers()
+	_test_birds_hush()
+	_test_sound()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--exportar="):
+			_export(arg.get_slice("=", 1))
+	if _failures == 0:
+		print("OK: horrores passaram")
+	quit(1 if _failures > 0 else 0)
+
+
+func _check(condition: bool, message: String) -> void:
+	if not condition:
+		_failures += 1
+		printerr("FALHOU: " + message)
+
+
+## Um ponto de bosque fora da trilha, longe da Origem, com bosque em volta
+## (para o Calado ter por onde vir sem o alvo estar numa trilha).
+func _forest_spot(world: WorldGen) -> Vector2:
+	for r in range(1, 40):
+		for region in [Vector2i(r, 0), Vector2i(-r, 0), Vector2i(0, r), Vector2i(0, -r)]:
+			if world.region_biome(region) != WorldGen.Biome.BOSQUE:
+				continue
+			var middle := WorldGen.cell_of(world.region_landmark(region))
+			for dy in range(-12, 13):
+				for dx in range(-12, 13):
+					var cell := middle + Vector2i(dx, dy)
+					var point := WorldGen.cell_center(cell)
+					if world.biome_at(cell) == WorldGen.Biome.BOSQUE and not _trail_within(world, cell, 3) \
+							and point.distance_to(WorldGen.origin_point()) > Horrors.ORIGIN_SAFE + 10.0:
+						return point
+	return Vector2.ZERO
+
+
+func _trail_within(world: WorldGen, cell: Vector2i, r: int) -> bool:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if world.is_trail(cell + Vector2i(dx, dy)):
+				return true
+	return false
+
+
+func _player(pos: Vector2, heading := 0) -> Dictionary:
+	return {"name": "Teste", "pos": pos, "heading": heading}
+
+
+func _run(horrors: Horrors, players: Dictionary, fires: Array, from_ms: int, seconds: float) -> Array:
+	var all := []
+	var t := from_ms
+	while t < from_ms + int(seconds * 1000.0):
+		all.append_array(horrors.update(t, players, fires))
+		t += 250
+	return all
+
+
+func _test_appears_when_exposed() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	_check(spot != Vector2.ZERO, "deveria haver um bosque fora da trilha para os testes")
+	var players := {1: _player(spot)}
+	_run(horrors, players, [], 0, Horrors.EXPOSURE[0] - 5.0)
+	_check(horrors.horrors.is_empty(), "o Calado não deveria aparecer antes do tempo mínimo de exposição")
+	_run(horrors, players, [], int((Horrors.EXPOSURE[0] - 5.0) * 1000.0), Horrors.EXPOSURE[1] - Horrors.EXPOSURE[0] + 10.0)
+	_check(horrors.horrors.size() == 1, "sozinho no bosque por tempo bastante, o Calado deveria aparecer")
+	if horrors.horrors.is_empty():
+		return
+	var horror: Dictionary = horrors.horrors.values()[0]
+	_check(horror["target"] == 1, "o Calado deveria perseguir quem ficou exposto")
+	# Olhando para o norte, "atrás" é o sul (y maior).
+	_check((horror["pos"] as Vector2).y > spot.y, "o Calado deveria nascer às costas do alvo")
+
+
+func _test_safe_places() -> void:
+	var world := WorldGen.new(42)
+	var spot := _forest_spot(world)
+	var long := Horrors.EXPOSURE[1] + 20.0
+	# Perto de uma fogueira acesa.
+	var by_fire := Horrors.new(world)
+	_run(by_fire, {1: _player(spot)}, [spot + Vector2(3, 0)], 0, long)
+	_check(by_fire.horrors.is_empty(), "perto de uma fogueira acesa o Calado não deveria aparecer")
+	# Com companhia.
+	var together := Horrors.new(world)
+	_run(together, {1: _player(spot), 2: _player(spot + Vector2(2, 0))}, [], 0, long)
+	_check(together.horrors.is_empty(), "com outra criatura ao lado o Calado não deveria aparecer")
+	# Na Origem.
+	var home := Horrors.new(world)
+	_run(home, {1: _player(WorldGen.origin_point() + Vector2(0, 1.5))}, [], 0, long)
+	_check(home.horrors.is_empty(), "na Origem o Calado não deveria aparecer")
+	# Fora do bosque.
+	for r in range(1, 40):
+		var region := Vector2i(r, 0)
+		if world.region_biome(region) == WorldGen.Biome.PRADARIA:
+			var meadow := world.region_landmark(region) + Vector2(6.5, 6.5)
+			if world.biome_at(WorldGen.cell_of(meadow)) != WorldGen.Biome.PRADARIA:
+				continue
+			var open := Horrors.new(world)
+			_run(open, {1: _player(meadow)}, [], 0, long)
+			_check(open.horrors.is_empty(), "na pradaria o Calado não deveria aparecer")
+			break
+
+
+func _test_stalks_from_behind() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: _player(spot)}
+	var id := horrors.summon(1, players)
+	_check(id > 0, "summon deveria criar o Calado")
+	_check(horrors.summon(1, players) == -1, "não deveria haver dois Calados atrás da mesma criatura")
+	var horror: Dictionary = horrors.horrors[id]
+	var start: float = (horror["pos"] as Vector2).distance_to(spot)
+	_check(is_equal_approx(start, Horrors.SPAWN_DISTANCE), "o Calado deveria nascer a %.0f casas" % Horrors.SPAWN_DISTANCE)
+	_run(horrors, players, [], 0, 5.0)
+	var after: float = (horror["pos"] as Vector2).distance_to(spot)
+	_check(after < start - 3.0, "o Calado deveria se aproximar de quem não olha para ele (%.1f -> %.1f)" % [start, after])
+	_check(start - after <= Horrors.STALK_SPEED * 5.0 + 0.1, "o Calado não deveria andar mais rápido que a velocidade dele")
+	_check(Horrors.STALK_SPEED < 1.8, "o Calado deveria ser mais lento que a criatura andando")
+	_run(horrors, players, [], 5000, 60.0)
+	var close: float = (horror["pos"] as Vector2).distance_to(spot)
+	_check(absf(close - Horrors.MIN_GAP) < 0.05, "o Calado deveria parar a %.1f casas das costas (%.2f)" % [Horrors.MIN_GAP, close])
+	_check(horrors.horrors.has(id), "sem ser encarado, o Calado deveria continuar ali")
+
+
+func _test_stare_holds_and_repels() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: _player(spot)}
+	var id := horrors.summon(1, players)
+	var horror: Dictionary = horrors.horrors[id]
+	_run(horrors, players, [], 0, 2.0)
+	# Vira para o sul: de frente para ele.
+	players[1]["heading"] = 4
+	_check(Horrors.is_facing(spot, 4, horror["pos"]), "virado para o sul, o alvo deveria estar encarando o Calado")
+	_check(not Horrors.is_facing(spot, 0, horror["pos"]), "virado para o norte, não")
+	var before: Vector2 = horror["pos"]
+	_run(horrors, players, [], 2000, 2.0)
+	_check(horror["mode"] == Horrors.Mode.HELD, "encarado, o Calado deveria parar")
+	_check((horror["pos"] as Vector2).is_equal_approx(before), "encarado, o Calado não deveria sair do lugar")
+	# Desvia o olhar: ele volta a andar, e o tempo encarado não se perde.
+	players[1]["heading"] = 0
+	_run(horrors, players, [], 4000, 1.0)
+	_check(horror["mode"] == Horrors.Mode.STALK, "sem o olhar, o Calado deveria voltar a se aproximar")
+	players[1]["heading"] = 4
+	_run(horrors, players, [], 5000, Horrors.STARE_SECONDS - 2.0 + 0.5)
+	_check(horror["mode"] == Horrors.Mode.RETREAT, "encarado por tempo bastante, o Calado deveria recuar")
+	var far: float = (horror["pos"] as Vector2).distance_to(spot)
+	var messages := _run(horrors, players, [], 12000, Horrors.RETREAT_MAX + 1.0)
+	_check(not horrors.horrors.has(id), "depois de recuar, o Calado deveria sumir")
+	_check(messages.any(func(m): return m[1] == "gone" and m[0] == 1), "quem o ouvia deveria ser avisado de que ele sumiu")
+	_check(far < Horrors.GONE_DISTANCE, "o recuo deveria começar de perto")
+	# Todos os giros de 45° têm de servir para encarar algo em qualquer direção.
+	for degrees in range(0, 360, 5):
+		var point := Vector2.from_angle(deg_to_rad(degrees)) * 10.0
+		var seen := false
+		for heading in Compass.STEPS:
+			seen = seen or Horrors.is_facing(Vector2.ZERO, heading, point)
+		_check(seen, "alguma das 8 direções deveria encarar um ponto a %d graus" % degrees)
+
+
+func _test_fire_and_company_repel() -> void:
+	var world := WorldGen.new(42)
+	var spot := _forest_spot(world)
+	var by_fire := Horrors.new(world)
+	var players := {1: _player(spot)}
+	var id := by_fire.summon(1, players)
+	_run(by_fire, players, [], 0, 3.0)
+	var before: float = (by_fire.horrors[id]["pos"] as Vector2).distance_to(spot)
+	# Acende uma fogueira ao lado do alvo.
+	_run(by_fire, players, [spot + Vector2(2, 0)], 3000, 3.0)
+	_check(by_fire.horrors[id]["mode"] == Horrors.Mode.RETREAT, "fogueira acesa perto do alvo deveria fazer o Calado recuar")
+	_check((by_fire.horrors[id]["pos"] as Vector2).distance_to(spot) > before, "recuando, o Calado deveria se afastar")
+	_check(not Horrors.fire_near(spot, [spot + Vector2(Horrors.FIRE_SAFE + 1.0, 0)]), "fogueira longe demais não protege")
+
+	var together := Horrors.new(world)
+	players = {1: _player(spot)}
+	id = together.summon(1, players)
+	_run(together, players, [], 0, 3.0)
+	players[2] = _player(spot + Vector2(3, 0))
+	_run(together, players, [], 3000, 1.0)
+	_check(together.horrors[id]["mode"] == Horrors.Mode.RETREAT, "outra criatura ao lado do alvo deveria fazer o Calado recuar")
+
+
+func _test_trail_holds() -> void:
+	var world := WorldGen.new(42)
+	var spot := _forest_spot(world)
+	# Uma casa de trilha perto dali.
+	var trail := Vector2.INF
+	var here := WorldGen.cell_of(spot)
+	for r in range(1, 60):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if trail == Vector2.INF and world.is_trail(here + Vector2i(dx, dy)):
+					trail = WorldGen.cell_center(here + Vector2i(dx, dy))
+		if trail != Vector2.INF:
+			break
+	_check(trail != Vector2.INF, "deveria haver uma trilha perto do bosque")
+	var horrors := Horrors.new(world)
+	var players := {1: _player(trail)}
+	var id := horrors.summon(1, players)
+	var before: Vector2 = horrors.horrors[id]["pos"]
+	_run(horrors, players, [], 0, 5.0)
+	_check(horrors.horrors[id]["mode"] == Horrors.Mode.HELD, "com o alvo na trilha, o Calado deveria esperar")
+	_check((horrors.horrors[id]["pos"] as Vector2).is_equal_approx(before), "com o alvo na trilha, o Calado não deveria avançar")
+	_run(horrors, players, [], 5000, Horrors.TRAIL_PATIENCE)
+	_check(not horrors.horrors.has(id) or horrors.horrors[id]["mode"] == Horrors.Mode.RETREAT, "esperando demais, o Calado deveria desistir")
+
+
+func _test_gives_up_and_rests() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: _player(spot)}
+	var id := horrors.summon(1, players)
+	horrors.update(0, players, [])
+	# O alvo vai parar muito longe de uma vez.
+	players[1]["pos"] = spot + Vector2(0, -(Horrors.GIVE_UP_DISTANCE + 30.0))
+	horrors.update(250, players, [])
+	_check(not horrors.horrors.has(id), "com o alvo longe demais, o Calado deveria desistir")
+	# Depois de uma visita, sossego: ele não volta antes do descanso mínimo.
+	players[1]["pos"] = spot
+	_run(horrors, players, [], 500, Horrors.COOLDOWN[0] - 5.0)
+	_check(horrors.horrors.is_empty(), "o Calado não deveria voltar antes do descanso")
+	# Quem sai do jogo leva o seu Calado embora.
+	var other := Horrors.new(world)
+	players = {1: _player(spot)}
+	other.summon(1, players)
+	other.update(0, players, [])
+	other.update(250, {}, [])
+	_check(other.horrors.is_empty(), "sem o alvo no jogo, o Calado deveria sumir")
+
+
+func _test_watchers() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: _player(spot), 2: _player(spot + Vector2(0, -(Horrors.HEARING + 30.0)))}
+	var id := horrors.summon(1, players)
+	var messages := horrors.update(0, players, [])
+	_check(messages.any(func(m): return m[0] == 1 and m[1] == "at" and m[2][0] == id), "o alvo deveria saber onde o Calado está")
+	_check(not messages.any(func(m): return m[0] == 2), "quem está longe não deveria saber do Calado")
+	_check(horrors.points().size() == 1, "points deveria listar o Calado para os pássaros")
+
+
+func _test_birds_hush() -> void:
+	var world := WorldGen.new(42)
+	var aviary := Aviary.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: spot}
+	# Sem horror: os pássaros cantam.
+	var t := 0
+	var sings := 0
+	while t < 120000:
+		sings += aviary.update(t, players).filter(func(m): return m[1] == "sing").size()
+		t += 250
+	_check(sings > 3, "sem o Calado, os pássaros deveriam cantar (%d)" % sings)
+	# Com um horror no meio deles: fogem assustados e ninguém canta.
+	var landed := aviary.birds.values().filter(func(b): return not b["flying"])
+	_check(not landed.is_empty(), "deveria haver pássaros pousados")
+	if landed.is_empty():
+		return
+	var dread: Vector2 = landed[0]["pos"]
+	aviary.hush = [dread]
+	var hushed_sings := 0
+	var scared := 0
+	while t < 240000:
+		for message in aviary.update(t, players):
+			var bird: Dictionary = aviary.birds.get(message[2][0], {})
+			if bird.is_empty():
+				continue
+			var near := aviary.position_of(bird, t).distance_to(dread) <= Horrors.HUSH_RADIUS - 1.0
+			if message[1] == "sing" and near:
+				hushed_sings += 1
+			if message[1] == "fly" and message[2][6] == true:
+				scared += 1
+		t += 250
+	_check(hushed_sings == 0, "perto do Calado nenhum pássaro deveria cantar (%d)" % hushed_sings)
+	_check(scared > 0, "o Calado deveria espantar os pássaros por perto")
+	# O susto não se repete sem parar: no máximo um por grupo a cada HUSH_FLEE_EVERY.
+	var most := aviary.birds.size() * int(120.0 / Aviary.HUSH_FLEE_EVERY + 1.0)
+	_check(scared <= most, "os pássaros não deveriam fugir sem parar (%d sustos)" % scared)
+
+
+func _test_sound() -> void:
+	var samples := HorrorSounds.calado_breath_samples()
+	_check(samples.size() == int(HorrorSounds.BREATH_SECONDS * HorrorSounds.RATE), "a respiração deveria ter o tamanho do ciclo")
+	var peak := 0.0
+	for value in samples:
+		peak = maxf(peak, absf(value))
+	_check(peak > 0.2 and peak <= 1.0, "a respiração deveria soar sem estourar (pico %.2f)" % peak)
+	_check(absf(samples[0]) < 0.02 and absf(samples[samples.size() - 1]) < 0.02, "o loop deveria fechar em silêncio, sem estalo")
+	var stream := HorrorSounds.calado_breath()
+	_check(stream is AudioStreamWAV and (stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD, "a respiração gerada deveria tocar em loop")
+	# Abafamento: nada de longe, tudo de perto, crescendo no caminho.
+	_check(Horrors.presence_at(30.0) == 0.0, "longe, o Calado não deveria abafar nada")
+	_check(Horrors.presence_at(2.0) == 1.0, "ao lado, o abafamento deveria ser total")
+	_check(Horrors.presence_at(8.0) > Horrors.presence_at(14.0), "o abafamento deveria crescer conforme ele chega")
+
+
+func _export(folder: String) -> void:
+	DirAccess.make_dir_recursive_absolute(folder)
+	var one := HorrorSounds.calado_breath_samples()
+	var three := PackedFloat32Array()
+	for i in 3:
+		three.append_array(one)
+	var data := PackedByteArray()
+	data.resize(three.size() * 2)
+	for i in three.size():
+		data.encode_s16(i * 2, int(clampf(three[i], -1.0, 1.0) * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = HorrorSounds.RATE
+	wav.data = data
+	wav.save_to_wav(folder.path_join("calado_respiracao.wav"))
+	print("respiração salva em %s" % folder)

@@ -20,7 +20,7 @@ var world: WorldGen
 var harvest: Harvest
 ## Construções (marcos, fogueiras). Ver Builds e Crafting.
 var builds: Builds
-## id do peer -> { "name": String, "pos": Vector2 }
+## id do peer -> { "name": String, "pos": Vector2, "heading": int }
 var players := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
 var inventories := {}
@@ -44,7 +44,7 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if clean_name.is_empty():
 		clean_name = "Criatura %d" % (players.size() + 1)
 	var pos := _spawn_point()
-	players[id] = {"name": clean_name, "pos": pos}
+	players[id] = {"name": clean_name, "pos": pos, "heading": 0}
 	if not inventories.has(clean_name):
 		inventories[clean_name] = {}
 	if not equipment.has(clean_name):
@@ -59,6 +59,12 @@ func remove_player(id: int) -> void:
 	_last_move.erase(id)
 	_last_strike.erase(id)
 	_last_build.erase(id)
+
+
+## Para onde o jogador olha (0 norte, 1 nordeste...; ver Compass).
+func set_heading(id: int, heading: int) -> void:
+	if players.has(id):
+		players[id]["heading"] = posmod(heading, Compass.STEPS)
 
 
 func inventory_of(id: int) -> Dictionary:
