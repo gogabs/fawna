@@ -76,7 +76,7 @@ const CRAFT_TOOL_KNOCK := 0.55  # segundos entre as batidas de cada passo de uma
 const REGION_CHANGE_DB := -4.0  # o sopro ao passar de uma região para outra (a -14 sumia sob o vento)
 ## Ao esbarrar de viés, o deslize que ainda conta como andar, em fração do passo.
 const BUMP_SLIDE_MIN := 0.5
-const MENU_LIMIT_DB := -8.0  # o toque de limite ao apertar Baixo na raiz do menu
+const MENU_LIMIT_DB := -6.0  # o toque de limite ao apertar Baixo na raiz do menu
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
 const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
 const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
@@ -636,6 +636,7 @@ func ground_snapshot(data: Dictionary) -> void:
 func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int, moved: Dictionary) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	ground.apply_pile(cell, items)
 	audio.set_piles(ground.cells())
 	var where := WorldGen.cell_center(cell)
@@ -826,6 +827,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 func crafted(new_bag: Dictionary, weapon: String) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_bag
 	var recipe := Crafting.recipe(weapon)
 	var done_text := "Você fabricou %s %s. Está na bolsa: empunhe pela Bolsa, no menu das setas." % [
@@ -852,6 +854,7 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 func inventory_changed(new_inventory: Dictionary, verb: String, item: String, amount := 1, parts := {}, extras := {}, kept := {}, left_over := {}) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_inventory
 	if verb.is_empty():
 		return
@@ -875,6 +878,7 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String, am
 func equipment_changed(new_bag: Dictionary, new_wielded: String, verb: String, item: String) -> void:
 	if world == null:
 		return
+	_sync_menu.call_deferred()
 	inventory = new_bag
 	wielded = new_wielded
 	match verb:
@@ -1689,12 +1693,23 @@ func _bag_sizes(base: String) -> Array:
 func _bag_item_actions(item: String) -> Array:
 	var amount := int(inventory.get(item, 0))
 	var actions := []
+	if amount <= 0:
+		return actions  # o item acabou: o menu devolve o foco ao pai
 	if Bag.can_wield(item):
 		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
 	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
 	if amount > 1:
 		actions.append({"label": "Jogar tudo, %d" % amount, "run": _drop.bind(item, amount)})
 	return actions
+
+
+## A bolsa, as mãos ou o chão mudaram: atualiza o menu das setas. Se o item
+## em foco acabou, o foco sobe ao menu pai mais próximo que ainda exista e a
+## nova posição é falada, sem cortar o que já estava sendo dito. Chamado
+## adiado, para entrar depois da fala do próprio aviso.
+func _sync_menu() -> void:
+	if _menu != null:
+		Speech.say(_menu.sync(), false)
 
 
 ## Jogar passa pelo servidor; a resposta (ground_changed) é que fala e toca.
@@ -2203,7 +2218,7 @@ func _on_menu_sound(kind: String) -> void:
 		"fechar":
 			_play(Sounds.ui_close())
 		"limite":  # Baixo já na raiz do menu: nada mais para voltar
-			_play(Sounds.bump(), false, MENU_LIMIT_DB)
+			_play(Sounds.ui_limit(), false, MENU_LIMIT_DB)
 
 
 # --- Testes automáticos ------------------------------------------------------
