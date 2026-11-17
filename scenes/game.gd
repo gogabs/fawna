@@ -72,6 +72,8 @@ const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
 const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
 const TRAIL_NOTICE_MS := 4000  # sair e voltar à trilha logo depois não repete o aviso
+const BAMBUZAL_CLOSED := "Bambuzal fechado. Siga a trilha, ou empunhe o machado para abrir caminho."
+const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir caminho, ou siga a trilha."
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
 }
@@ -95,6 +97,7 @@ var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
 var _swing_cooldown := 0.0
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
 var _harvest_timer := 0.0
+var _server_harvest_timer := 0.0
 var builds: Builds  # espelho das construções (o servidor manda)
 var _burn_timer := 0.0  # servidor: fogueiras que apagaram
 var _name_prompt: NamePrompt  # caixinha para dar nome ao marco
@@ -165,6 +168,15 @@ func _process(delta: float) -> void:
 		if _save_timer >= SAVE_INTERVAL:
 			_save_timer = 0.0
 			_save_world()
+		_server_harvest_timer += delta
+		if _server_harvest_timer >= HARVEST_CHECK:
+			_server_harvest_timer = 0.0
+			# Bambu que rebrota sob uma criatura espera (Harvest.prune).
+			var where := []
+			for id in state.players:
+				where.append(state.players[id]["pos"])
+			if not state.harvest.prune(-1.0, where).is_empty():
+				_dirty = true
 		_burn_timer += delta
 		if _burn_timer >= BURN_CHECK:
 			_burn_timer = 0.0
@@ -185,7 +197,10 @@ func _process(delta: float) -> void:
 	_harvest_timer += delta
 	if _harvest_timer >= HARVEST_CHECK:
 		_harvest_timer = 0.0
-		if not harvest.prune().is_empty():
+		var occupants := []
+		for id in players:
+			occupants.append(players[id]["pos"])
+		if not harvest.prune(-1.0, occupants).is_empty():
 			audio.refresh_resources()
 	if _tab_down_ms >= 0 and not _focus and Time.get_ticks_msec() - _tab_down_ms >= int(FOCUS_HOLD * 1000.0):
 		_set_focus(true)
@@ -930,14 +945,22 @@ func _bump(target: Vector2) -> void:
 			_last_bump_thing = -2 - int(build["id"])
 			Speech.say(builds.spoken_name(int(build["id"])).left(1).to_upper() + builds.spoken_name(int(build["id"])).substr(1))
 		return
+	# Bambuzal fechado: bate de leve nos colmos e explica como seguir.
+	var wall := thing == WorldGen.Thing.BAMBU and world.biome_at(cell) == WorldGen.Biome.BAMBUZAL
 	if _bump_sound_cooldown <= 0.0:
 		_bump_sound_cooldown = BUMP_SOUND_COOLDOWN
 		var where := WorldGen.cell_center(cell) if thing != WorldGen.Thing.NADA else target
-		audio.play_at_point(where, Sounds.bump(thing))
+		if wall:
+			audio.play_at_point(where, Sounds.bamboo_knock(), -4.0, true, true)
+		else:
+			audio.play_at_point(where, Sounds.bump(thing))
 	if _bump_speech_cooldown <= 0.0 or thing != _last_bump_thing:
 		_bump_speech_cooldown = BUMP_SPEECH_COOLDOWN
 		_last_bump_thing = thing
-		Speech.say("Fim do caminho." if thing == WorldGen.Thing.NADA else WorldGen.THING_NAMES[thing])
+		if wall:
+			Speech.say(BAMBUZAL_CLOSED_WIELDING if wielded == "machado" else BAMBUZAL_CLOSED)
+		else:
+			Speech.say("Fim do caminho." if thing == WorldGen.Thing.NADA else WorldGen.THING_NAMES[thing])
 
 
 ## Gira 45° (step -1 para a esquerda, 1 para a direita), com o clique da

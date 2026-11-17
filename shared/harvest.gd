@@ -9,6 +9,10 @@ extends RefCounted
 ## atualizado pelo servidor, para saber o que soa, o que a fala anuncia e o que
 ## dá para coletar.
 ##
+## Fontes com "opens" (o bambu) bloqueiam a passagem enquanto de pé; derrubadas
+## ou recolhidas viram passagem (WorldGen.cleared), e é assim que se abre
+## caminho pelo bambuzal.
+##
 ## Ciclo de cada fonte:
 ##   de pé -> (bambu: golpes com o machado até cair) -> pronta para recolher
 ##   -> recolhida (some: sem som, sem fala) -> rebrota depois de "regrow" s.
@@ -21,7 +25,7 @@ extends RefCounted
 ##   extra_hits: até quantos golpes a mais uma fonte pode pedir (varia por lugar);
 ##   regrow: segundos até voltar depois de recolhida.
 const SOURCES := {
-	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0},
+	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0, "opens": true},
 	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
@@ -44,6 +48,13 @@ const TAKEN_NAMES := {
 	WorldGen.Thing.ARBUSTO: "arbusto",
 	WorldGen.Thing.ARBUSTO_FRUTAS: "arbusto",
 }
+
+## Tempo de rebrota que nunca chega: o bambu do bambuzal, uma vez cortado,
+## fica cortado, e a trilha aberta dura.
+const NEVER := 1.0e15
+## Se alguém está em cima de uma fonte que ia rebrotar, ela espera este tempo
+## (s) e tenta de novo, para ninguém ficar preso dentro do bambu.
+const HOLD_RETRY := 3.0
 
 ## Golpes dados num bambu que ninguém terminou de cortar se perdem depois
 ## deste tempo (a touceira "se recompõe").
@@ -93,6 +104,30 @@ func spoken_name(cell: Vector2i, at := -1.0) -> String:
 	return WorldGen.THING_NAMES[thing]
 
 
+## Segundos até a fonte desta casa voltar depois de recolhida. O bambu do
+## bambuzal não volta (NEVER): o caminho aberto fica aberto.
+func regrow_time(cell: Vector2i) -> float:
+	var thing := world.thing_at(cell)
+	if thing == WorldGen.Thing.BAMBU and world.biome_at(cell) == WorldGen.Biome.BAMBUZAL:
+		return NEVER
+	return float(SOURCES[thing]["regrow"])
+
+
+## Atualiza WorldGen.cleared para esta casa: fonte que "abre" e já foi
+## derrubada ou recolhida deixa passar.
+func _sync(cell: Vector2i, at := -1.0) -> void:
+	var source: Dictionary = SOURCES.get(world.thing_at(cell), {})
+	if source.is_empty() or not bool(source.get("opens", false)):
+		world.cleared.erase(cell)
+		return
+	if at < 0.0:
+		at = now()
+	if not is_available(cell, at) or hits_left(cell, at) == 0:
+		world.cleared[cell] = true
+	else:
+		world.cleared.erase(cell)
+
+
 ## Golpes que esta fonte pede no total (o bambu de cada lugar é um pouco mais
 ## duro ou mais mole). 0 para o que se recolhe com a mão.
 func hits_needed(cell: Vector2i) -> int:
@@ -138,6 +173,7 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 		return {"ok": false, "reason": "caido", "hits_left": 0, "felled": true}
 	_nodes[cell] = {"hits": _hits_done(cell, at) + 1, "regrow_at": 0.0, "struck_at": at}
 	left -= 1
+	_sync(cell, at)
 	return {"ok": true, "reason": "", "hits_left": left, "felled": left == 0}
 
 
@@ -186,7 +222,8 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	var left := hits_left(cell, at)
 	if left > 0:
 		return {"ok": false, "reason": "golpear", "item": source["item"], "hits_left": left}
-	_nodes[cell] = {"hits": 0, "regrow_at": at + float(source["regrow"]), "struck_at": 0.0}
+	_nodes[cell] = {"hits": 0, "regrow_at": at + regrow_time(cell), "struck_at": 0.0}
+	_sync(cell, at)
 	var amount := int(source["amount"])
 	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
 		"parts": _roll_parts(cell, source["item"], amount)}
@@ -219,6 +256,7 @@ func apply_info(cell: Vector2i, data: Dictionary, at := -1.0) -> void:
 		_nodes.erase(cell)
 	else:
 		_nodes[cell] = node
+	_sync(cell, at)
 
 
 ## Tudo o que difere do mundo intocado, para quem acabou de entrar.
@@ -233,25 +271,43 @@ func snapshot(at := -1.0) -> Dictionary:
 
 
 func apply_snapshot(data: Dictionary, at := -1.0) -> void:
+	var old := _nodes.keys()
 	_nodes.clear()
+	for cell: Vector2i in old:
+		_sync(cell, at)
 	for cell in data:
 		apply_info(cell, data[cell], at)
 
 
 ## Esquece o que já rebrotou e os golpes velhos. Devolve as casas que voltaram
-## ao normal.
-func prune(at := -1.0) -> Array:
+## ao normal. "occupants": posições de criaturas; uma fonte que ia rebrotar
+## debaixo de alguém espera mais um pouco (HOLD_RETRY), para ninguém ficar
+## preso dentro do bambu.
+func prune(at := -1.0, occupants := []) -> Array:
 	if at < 0.0:
 		at = now()
 	var restored := []
 	for cell in _nodes.keys():
 		var node: Dictionary = _nodes[cell]
 		var regrown := float(node["regrow_at"]) > 0.0 and at >= float(node["regrow_at"])
+		if regrown and _occupied(cell, occupants):
+			node["regrow_at"] = at + HOLD_RETRY
+			continue
 		var forgotten := float(node["regrow_at"]) <= 0.0 and _hits_done(cell, at) == 0
 		if regrown or forgotten:
 			_nodes.erase(cell)
 			restored.append(cell)
+			_sync(cell, at)
 	return restored
+
+
+## Alguém pisa nesta casa (o círculo da criatura encosta nela)?
+static func _occupied(cell: Vector2i, occupants: Array) -> bool:
+	for pos: Vector2 in occupants:
+		var closest := Vector2(clampf(pos.x, cell.x, cell.x + 1), clampf(pos.y, cell.y, cell.y + 1))
+		if pos.distance_to(closest) < WorldGen.PLAYER_RADIUS + 0.05:
+			return true
+	return false
 
 
 func to_save() -> Array:
@@ -264,6 +320,8 @@ func to_save() -> Array:
 
 
 func load_save(data: Array) -> void:
+	for old_cell: Vector2i in _nodes.keys():
+		world.cleared.erase(old_cell)
 	_nodes.clear()
 	for entry in data:
 		if typeof(entry) != TYPE_ARRAY or entry.size() < 5:
@@ -271,6 +329,8 @@ func load_save(data: Array) -> void:
 		_nodes[Vector2i(int(entry[0]), int(entry[1]))] = {
 			"hits": int(entry[2]), "regrow_at": float(entry[3]), "struck_at": float(entry[4]),
 		}
+	for cell: Vector2i in _nodes:
+		_sync(cell)
 	prune()
 
 
@@ -278,6 +338,7 @@ func _hits_done(cell: Vector2i, at: float) -> int:
 	var node: Dictionary = _nodes.get(cell, {})
 	if node.is_empty() or float(node["regrow_at"]) > 0.0:
 		return 0
-	if at - float(node["struck_at"]) > STRIKE_MEMORY:
+	# Bambu que já caiu continua caído até recolherem: a passagem não fecha sozinha.
+	if at - float(node["struck_at"]) > STRIKE_MEMORY and int(node["hits"]) < hits_needed(cell):
 		return 0
 	return int(node["hits"])

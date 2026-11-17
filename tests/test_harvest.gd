@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_placement()
 	_test_edges_and_water()
 	_test_bamboo_needs_strikes()
+	_test_clearing_paths()
 	_test_direct_collect_and_regrow()
 	_test_strike_memory()
 	_test_network_info()
@@ -125,9 +126,94 @@ func _test_edges_and_water() -> void:
 		_check(edge_bushes > bushes * 0.75, "a maioria dos arbustos deveria estar na orla do bosque (%d de %d)" % [edge_bushes, bushes])
 		_check(bamboo > 0, "deveria haver bambu na beira da água (semente %d)" % world_seed)
 		_check(grove["orla"] > 0 and grove["miolo"] > 0, "o bambuzal deveria ter bambu na orla e no miolo (semente %d)" % world_seed)
-		var edge_rate := float(grove["orla"]) / maxi(1, grove["casas_orla"])
-		var inside_rate := float(grove["miolo"]) / maxi(1, grove["casas_miolo"])
-		_check(edge_rate > inside_rate * 2.0, "a orla do bambuzal deveria ser bem mais cheia que o miolo (%.3f contra %.3f)" % [edge_rate, inside_rate])
+		# Fechado: no bambuzal só há chão livre perto de trilha ou de água.
+		var loose := 0
+		for y in range(-SEARCH, SEARCH):
+			for x in range(-SEARCH, SEARCH):
+				var cell := Vector2i(x, y)
+				if world.biome_at(cell) == WorldGen.Biome.BAMBUZAL and world.thing_at(cell) == WorldGen.Thing.NADA \
+						and not _near_ground(world, cell, 3):
+					loose += 1
+		_check(loose == 0, "bambuzal deveria ser parede: %d casas livres longe de trilha (semente %d)" % [loose, world_seed])
+
+
+func _near_ground(world: WorldGen, cell: Vector2i, r: int) -> bool:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var t := world.thing_at(cell + Vector2i(dx, dy))
+			if t == WorldGen.Thing.TRILHA or t == WorldGen.Thing.PONTE or t == WorldGen.Thing.ORIGEM \
+					or t == WorldGen.Thing.LAGO or t == WorldGen.Thing.RIACHO:
+				return true
+	return false
+
+
+## Acha uma touceira de bambu dentro de um bambuzal (ou, sem "grove", fora).
+func _find_bamboo(world: WorldGen, grove: bool) -> Vector2i:
+	for y in range(-SEARCH, SEARCH):
+		for x in range(-SEARCH, SEARCH):
+			var cell := Vector2i(x, y)
+			if world.thing_at(cell) == WorldGen.Thing.BAMBU and (world.biome_at(cell) == WorldGen.Biome.BAMBUZAL) == grove:
+				return cell
+	return WorldGen.NO_CELL
+
+
+## Derrubar bambu abre passagem; recolher também. No bambuzal ela fica; na
+## beira da água o bambu volta, mas não debaixo de quem está ali.
+func _test_clearing_paths() -> void:
+	var world := WorldGen.new(42)
+	var harvest := Harvest.new(world)
+	var cell := _find_bamboo(world, true)
+	_check(cell != WorldGen.NO_CELL, "há bambu em bambuzal")
+	_check(not world.is_passable(cell) and not world.is_free(WorldGen.cell_center(cell)), "bambu de pé fecha")
+	var t := 1000.0
+	var needed := harvest.hits_needed(cell)
+	for i in needed - 1:
+		harvest.strike(cell, t + i)
+		_check(not world.is_passable(cell), "bambu ainda de pé fecha (golpe %d)" % (i + 1))
+	harvest.strike(cell, t + needed)
+	_check(world.is_passable(cell) and world.is_free(WorldGen.cell_center(cell)), "bambu derrubado deixa passar")
+	# A passagem não fecha sozinha enquanto o bambu caído não for recolhido.
+	_check(harvest.hits_left(cell, t + 10000.0) == 0, "caído continua caído")
+	harvest.prune(t + 10000.0)
+	_check(world.is_passable(cell), "e a passagem continua aberta")
+	var got := harvest.take(cell, t + 10001.0)
+	_check(got["ok"] and world.is_passable(cell), "recolhido, segue aberto")
+	harvest.prune(t + 10001.0 + 1.0e6)
+	_check(world.is_passable(cell) and not harvest.is_available(cell, t + 10001.0 + 1.0e6), "bambu do bambuzal não rebrota")
+	# Bambu da beira da água rebrota e fecha de novo.
+	var wet := _find_bamboo(world, false)
+	_check(wet != WorldGen.NO_CELL, "há bambu fora do bambuzal")
+	for i in harvest.hits_needed(wet):
+		harvest.strike(wet, 2000.0 + i)
+	harvest.take(wet, 2100.0)
+	_check(world.is_passable(wet), "recolhido, o bambu da água deixa passar")
+	var regrow := 2100.0 + float(Harvest.SOURCES[WorldGen.Thing.BAMBU]["regrow"])
+	# Alguém em cima: espera.
+	harvest.prune(regrow + 1.0, [WorldGen.cell_center(wet)])
+	_check(world.is_passable(wet), "não fecha debaixo de uma criatura")
+	harvest.prune(regrow + 1.0 + Harvest.HOLD_RETRY + 0.1, [])
+	_check(not world.is_passable(wet), "sem ninguém, rebrota e fecha")
+	# Rede e salvamento levam a passagem junto.
+	var server := Harvest.new(world)
+	var other_world := WorldGen.new(42)
+	var client := Harvest.new(other_world)
+	for i in server.hits_needed(cell):
+		server.strike(cell, 5000.0 + i)
+	client.apply_snapshot(server.snapshot(5010.0), 9000.0)
+	_check(other_world.is_passable(cell), "o cliente também passa pelo bambu caído")
+	client.apply_snapshot({}, 9001.0)
+	_check(not other_world.is_passable(cell), "retrato vazio fecha de novo")
+	var state := WorldState.new(42)
+	var spot := _find_bamboo(state.world, true)
+	state.players[1] = {"name": "Lua", "pos": WorldGen.cell_center(spot + Vector2i(0, 1))}
+	_check(state.harvest.take(spot) .get("reason") == "golpear", "de pé não se recolhe")
+	for i in state.harvest.hits_needed(spot):
+		state.harvest.strike(spot)
+	var path := "user://teste_bambuzal.json"
+	WorldSave.save_state(state, path)
+	var loaded := WorldSave.load_state(path)
+	_check(loaded.world.is_passable(spot), "a trilha aberta sobrevive ao salvamento")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 func _biome_within(world: WorldGen, cell: Vector2i, biomes: Array, r: int) -> bool:

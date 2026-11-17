@@ -85,9 +85,10 @@ const BIOME_WEIGHTS := {Biome.BOSQUE: 0.4, Biome.PRADARIA: 0.37, Biome.LAGOA: 0.
 ##   em que um bioma fechado (FOREST_BIOMES) encosta num aberto (OPEN_BIOMES).
 ##   Mais cheios do lado de dentro da mata, e ainda alguns passos campo adentro.
 ##   Longe da orla só há um ou outro arbusto perdido.
-## - Bambu cresce em dois lugares: no bambuzal, com as touceiras fechando a orla
-##   e mais ralas no miolo (para dar para andar lá dentro), e na beira da água,
-##   em moitas ao longo das margens das lagoas e dos riachos.
+## - Bambu cresce em dois lugares: no bambuzal, onde é denso e fechado (toda
+##   casa fora das trilhas é uma touceira: só se passa pelas trilhas ou abrindo
+##   caminho com o machado, ver Harvest), e na beira da água, em moitas ao longo
+##   das margens das lagoas e dos riachos.
 ##
 ## Biomas novos só precisam entrar em FOREST_BIOMES ou OPEN_BIOMES para ganhar
 ## a orla de arbustos.
@@ -106,11 +107,12 @@ const BUSH_OPEN_EDGE_CHANCE := 0.12
 ## Arbustos perdidos, longe de qualquer orla.
 const BUSH_STRAY_CHANCE := {Biome.BOSQUE: 0.002, Biome.PRADARIA: 0.004, Biome.LAGOA: 0.004}
 ## Bambuzal: orla de BAMBOO_BAND casas, de BAMBOO_EDGE_CHANCE na divisa até
-## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE.
+## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE. Todas em 1,0: o bambuzal é
+## uma parede contínua, sem frestas por onde uma criatura caiba.
 const BAMBOO_BAND := 4.0
-const BAMBOO_EDGE_CHANCE := 0.16
-const BAMBOO_EDGE_FADE := 0.07
-const BAMBOO_INSIDE_CHANCE := 0.025
+const BAMBOO_EDGE_CHANCE := 1.0
+const BAMBOO_EDGE_FADE := 1.0
+const BAMBOO_INSIDE_CHANCE := 1.0
 ## Bambu na beira da água: só onde o ruído das moitas deixa (mais ou menos
 ## metade das margens), para formar moitas com espaços entre elas. Na lagoa, de
 ## BAMBOO_LAKE_FROM a BAMBOO_LAKE_TO casas além da margem (a argila fica mais
@@ -150,6 +152,10 @@ var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 ## Casas ocupadas por construções (marco, fogueira): não deixam passar.
 ## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
 var built := {}
+## Casas de bambu (ou outra fonte que "abre", ver Harvest) já derrubadas ou
+## recolhidas: viraram passagem. Quem mantém é Harvest; aqui só a colisão
+## consulta. Vector2i -> true.
+var cleared := {}
 
 
 func _init(new_seed: int) -> void:
@@ -259,7 +265,7 @@ static func _chunk_index(cell: Vector2i) -> int:
 
 
 func is_passable(cell: Vector2i) -> bool:
-	return in_bounds(cell) and not BLOCKING.has(thing_at(cell)) and not built.has(cell)
+	return in_bounds(cell) and not built.has(cell) and (cleared.has(cell) or not BLOCKING.has(thing_at(cell)))
 
 
 func is_trail(cell: Vector2i) -> bool:
