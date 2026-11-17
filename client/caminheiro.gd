@@ -24,7 +24,7 @@ const OFF_ROUTE_DISTANCE := 9.0  # casas longe da rota: traça de novo
 const BEAT_DISTANCE := 1.0  # casas: a batida soa a 1,5 m (sem perder volume com a distância), na direção do beacon
 const BEAT_INTERVAL := 60.0 / 70.0  # 70 batidas por minuto
 const BEAT_DB := 2.0  # o arquivo já vem forte; mais que isso distorce
-const BEAT_BEHIND_DB := -7.0  # bem atrás, a batida cai e fica abafada; abre até o normal conforme vira para a frente
+const BEAT_BEHIND_DB := -14.0  # bem atrás, a batida cai e fica abafada; abre até o normal conforme vira para a frente
 const SUCK_DB := -12.0  # a suga, escura e baixinha, só de frente
 ## A batida começa isto depois da suga (a suga termina na primeira pancada);
 ## vale para todas as batidas, de frente ou não, para o ritmo não mudar ao virar.
