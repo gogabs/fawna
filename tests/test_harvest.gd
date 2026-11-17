@@ -338,7 +338,21 @@ func _test_dense_forest() -> void:
 	# Golpes soltos se esquecem, mas a árvore caída não se levanta sozinha.
 	_check(world.is_passable(cell) and harvest.hits_left(cell, t + 99999.0) == 0, "árvore caída continua caída")
 	var got := harvest.take(cell, t + 100000.0)
-	_check(got["ok"] and got["item"] == "lenha" and got["parts"].get("lenha_grande", 0) == 3, "árvore dá 3 lenhas grandes (%s)" % got)
+	_check(got["ok"] and got["item"] == "madeira" and got["amount"] == 2 and got["parts"].is_empty(), "árvore dá 2 madeiras (%s)" % got)
+	_check(got["extras"] == {"lenha_grande": 2}, "e 2 lenhas grandes, separadas da madeira")
+	_check(Economy.haul_text("madeira", 2, {}, {"lenha_grande": 2}) == "2 madeiras e 2 lenhas grandes", "fala: %s" % Economy.haul_text("madeira", 2, {}, {"lenha_grande": 2}))
+	_check(Bag.entry_label("madeira", 2, {"madeira": 2}) == "Madeira, 2", "madeira na bolsa")
+	# No servidor, tudo vai para a bolsa.
+	var state := WorldState.new(42)
+	state.add_player(1, "Lua")
+	var spot := _find(state.world, WorldGen.Thing.ARVORE)
+	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
+	for i in state.harvest.hits_needed(spot[1]):
+		state._last_strike[1] = -100000
+		state.strike(1, spot[1])
+	state.collect(1, spot[1])
+	var inv: Dictionary = state.inventories["Lua"]
+	_check(inv.get("madeira") == 2 and inv.get("lenha_grande") == 2, "madeira e lenha grande na bolsa (%s)" % inv)
 	_check(world.is_passable(cell), "recolhida, a casa segue livre")
 	_check(not harvest.is_available(cell, t + 1.0e9), "árvore não rebrota")
 	# Cliente: o espelho recebido do servidor também abre a passagem.

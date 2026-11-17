@@ -115,7 +115,8 @@ apaga o cristal.
 
 1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu e as frutas têm um som baixinho e próprio, em 3D:
    - **Touceira de bambu** (bosque e lagoa; rara na pradaria): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos.
-   - **Arbusto com gravetos**: quase todo arbusto dá gravetos para lenha (2 lenhas, cada uma média ou pequena; lenha grande só virá das árvores). Não tem som próprio: soa como os outros arbustos.
+   - **Árvore** (bosque fechado): derrubada a machadadas (J), abre passagem para sempre; dá 2 madeiras (para as construções grandes que virão) e 2 lenhas grandes (para o fogo), itens separados. Os últimos golpes fazem o tronco ranger, e a queda se ouve de longe. Trocar de volta para "tudo lenha" é uma linha em `Harvest.SOURCES`.
+   - **Arbusto com gravetos**: quase todo arbusto dá gravetos para lenha (2 lenhas, cada uma média ou pequena; lenha grande só vem das árvores). Não tem som próprio: soa como os outros arbustos.
    - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
    - **Pedras** soltas, pelo mundo todo e bem mais comuns na beira dos riachos e lagoas. Dão 3 pedras, cada uma grande, média ou pequena (1/3 de chance cada); na beira da água saem mais pequenas (60% pequenas, 25% médias, 15% grandes). Não têm som próprio.
    - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.

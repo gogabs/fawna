@@ -33,7 +33,7 @@ const NAMES := {
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas"]
+const FEMININE := ["lanca", "clava", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".
