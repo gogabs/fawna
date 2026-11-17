@@ -10,6 +10,8 @@ extends RefCounted
 const RATE := 32000
 const DIR := "res://assets/sounds/horrores/"
 const BREATH_SECONDS := 5.2
+const CAUGHT_SECONDS := 2.2  # o som de ser alcançado, até o corte
+const RELIEF_SECONDS := 1.8  # o som de reaparecer, até a criatura poder andar
 
 static var _cache := {}
 
@@ -97,4 +99,73 @@ static func _to_loop(samples: PackedFloat32Array) -> AudioStreamWAV:
 	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	wav.loop_begin = 0
 	wav.loop_end = samples.size()
+	return wav
+
+
+## Ser alcançado: um baque grave no peito, o mundo sugado para dentro (ar que
+## cai de tom e some) e um silêncio total no fim.
+static func caught() -> AudioStream:
+	if not _cache.has("alcancado"):
+		_cache["alcancado"] = _to_one_shot(caught_samples())
+	return _cache["alcancado"]
+
+
+static func caught_samples() -> PackedFloat32Array:
+	var count := int(CAUGHT_SECONDS * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(count)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3313
+	var low := 0.0
+	var band := 0.0
+	var phase := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var x := t / CAUGHT_SECONDS
+		# Baque: seno grave que cai.
+		var thump := sin(TAU * (70.0 - 30.0 * minf(t * 3.0, 1.0)) * t) * exp(-t * 9.0) * 0.8
+		# Sucção: ruído filtrado cujo centro cai e cuja força some.
+		var freq := lerpf(900.0, 120.0, x)
+		var f := 2.0 * sin(PI * freq / RATE)
+		var high := rng.randf_range(-1.0, 1.0) - low - 0.3 * band
+		band += f * high
+		low += f * band
+		var env := pow(sin(PI * minf(maxf((x - 0.04) / 0.96, 0.0), 1.0)), 0.8) * (1.0 - x)
+		# Um zumbido grave que também cai, para dar peso.
+		phase += TAU * lerpf(55.0, 30.0, x) / RATE
+		var hum := sin(phase) * env * 0.3
+		var fade := minf((1.0 - x) / 0.08, 1.0)  # fecha em silêncio
+		buf[i] = (thump + band * env * 0.35 + hum) * fade
+	return buf
+
+
+## Reaparecer em lugar seguro: um sopro quente que sobe e uma nota baixa e
+## macia, como o ar voltando.
+static func relief() -> AudioStream:
+	if not _cache.has("alivio"):
+		_cache["alivio"] = _to_one_shot(relief_samples())
+	return _cache["alivio"]
+
+
+static func relief_samples() -> PackedFloat32Array:
+	var count := int(RELIEF_SECONDS * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(count)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3314
+	var air := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var x := t / RELIEF_SECONDS
+		air = lerpf(rng.randf_range(-1.0, 1.0), air, 0.97)
+		var swell := pow(sin(PI * x), 2.0)
+		var note := sin(TAU * 196.0 * t) + 0.4 * sin(TAU * 392.0 * t)
+		var enter := minf(t / 0.12, 1.0)
+		buf[i] = (air * 0.5 * swell + note * 0.22 * exp(-t * 1.6)) * enter * minf((1.0 - x) / 0.1, 1.0)
+	return buf
+
+
+static func _to_one_shot(samples: PackedFloat32Array) -> AudioStreamWAV:
+	var wav := _to_loop(samples)
+	wav.loop_mode = AudioStreamWAV.LOOP_DISABLED
 	return wav

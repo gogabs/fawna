@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_save_round_trip()
 	_test_grouped_labels()
 	_test_menu_info_and_empty()
+	_test_menu_sync_focus_up()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -88,3 +89,33 @@ func _test_menu_info_and_empty() -> void:
 	menu.press("baixo")
 	menu.press("direita")
 	_check(menu.press("cima") == "Equipamento: mãos livres.", "equipamento vazio diz mãos livres")
+
+
+## Quando o item em foco some, o foco sobe ao menu pai mais próximo que existe.
+func _test_menu_sync_focus_up() -> void:
+	var bag := {"lenha_media": 2, "argila": 1}
+	var root := func() -> Array: return [{"label": "Bolsa", "open": func() -> Array: return _bag_menu(bag)}]
+	var menu := FloatingMenu.new(root)
+	menu.press("cima")  # Bolsa
+	menu.press("cima")  # Lenha, ou o item em foco
+	menu.press("cima")  # ações do item
+	_check(menu.depth() == 4, "desceu até as ações (profundidade %d)" % menu.depth())
+	bag.erase("lenha_media")
+	_check(menu.sync() != "" and menu.depth() == 2, "sem o item, o foco volta à bolsa (profundidade %d)" % menu.depth())
+	bag.clear()
+	_check(menu.sync() != "" and menu.depth() == 1, "bolsa vazia: o foco volta ao primeiro nível (profundidade %d)" % menu.depth())
+	_check(menu.sync() == "", "sem mudança, sync não fala")
+
+
+func _bag_menu(bag: Dictionary) -> Array:
+	var items := []
+	if bag.has("lenha_media"):
+		items.append({"label": "Lenha", "open": func() -> Array:
+			var sizes := []
+			if bag.has("lenha_media"):
+				sizes.append({"label": "Média", "open": func() -> Array:
+					return [{"label": "Jogar 1", "run": func() -> String: return ""}] if bag.has("lenha_media") else []})
+			return sizes})
+	if bag.has("argila"):
+		items.append({"label": "Argila", "info": "x"})
+	return items
