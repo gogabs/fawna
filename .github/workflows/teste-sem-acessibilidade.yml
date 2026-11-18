@@ -6,6 +6,8 @@ name: Teste sem acessibilidade
 
 on:
   workflow_dispatch:
+  push:
+    branches: [claude/teste-sem-acessibilidade]
 
 env:
   GODOT_VERSION: "4.7.2"
