@@ -935,8 +935,9 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 					"Espaço nele para dar nome ao povoado." if builds.can_name(build_id) else
 					"Com uma fogueira nesta região, o lugar vira um povoado."))
 			elif Crafting.is_large(build["kind"]):
-				Speech.say("%s está pronto: %d por %d casas, com a porta para o %s." % [
-					Crafting.build_title(build["kind"]), int(build["size"]), int(build["size"]), build["entrance"]])
+				Speech.say("%s está pront%s: %d por %d casas, com a porta para o %s.%s" % [
+					Crafting.build_title(build["kind"]), Crafting.BUILDS[build["kind"]]["article"], int(build["size"]), int(build["size"]), build["entrance"],
+					" " + Builds.furniture_hint(build) if Crafting.has_furniture(build["kind"]) else ""])
 			else:
 				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 				Speech.say("A fogueira está pronta, com lenha para uns %d minuto%s. Espaço bate as pedras para acender.%s" % [
@@ -1153,6 +1154,8 @@ func action_failed(reason: String, detail: String) -> void:
 		"arma_faltam":
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
+		"arma_sem_bancada":
+			Speech.say("Isso só se faz na bancada de uma oficina: chegue junto dela e aperte Espaço.")
 		"arma_cheio":
 			Speech.say("Você já carrega o máximo de %s." % Crafting.recipe(detail.split("|")[0])["name"][1])
 		_:
@@ -1543,7 +1546,13 @@ func _interact() -> void:
 		elif build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty():
 			# O marco do povoado: de onde partem as obras grandes.
 			Speech.say(_menu.open_at("Obras do povoado %s" % build["name"], _site_kinds))
-		elif Builds.stores(build) and _pos.distance_to(WorldGen.cell_center(Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])))) > Builds.DOOR_REACH:
+		elif Builds.has_furniture(build) and not Builds.furniture_near(build, _pos).is_empty():
+			# Oficina: junto da bancada abre as receitas; junto das prateleiras, o armazenamento.
+			if Builds.furniture_near(build, _pos) == "bancada":
+				Speech.say(_menu.open_at("Bancada de trabalho", _bench_root))
+			else:
+				Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
+		elif Builds.stores(build) and not Builds.has_furniture(build) and _pos.distance_to(WorldGen.cell_center(Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])))) > Builds.DOOR_REACH:
 			# Longe da porta, o Espaço abre o armazenamento; perto, abre e fecha a porta.
 			Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
 		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
@@ -2283,6 +2292,16 @@ func _craft_root() -> Array:
 		{"label": "Armas", "open": _weapon_kinds},
 		{"label": "Ferramentas", "open": _tool_kinds},
 	]
+
+
+## A bancada de uma oficina: as receitas que só se fazem nela (Crafting.WORKSHOP_ORDER).
+func _bench_root() -> Array:
+	var items := []
+	for recipe: String in Crafting.WORKSHOP_ORDER:
+		items.append({"label": Crafting.weapon_title(recipe), "open": _weapon_actions.bind(recipe)})
+	if items.is_empty():
+		items.append({"label": "Ainda sem receitas", "info": "A bancada ainda não tem receitas."})
+	return items
 
 
 func _build_kinds() -> Array:

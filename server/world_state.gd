@@ -554,6 +554,8 @@ func _storage_check(id: int, build_id: int) -> Dictionary:
 		return {"ok": false, "reason": "desconhecida"}
 	if Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH:
 		return {"ok": false, "reason": "longe"}
+	if Builds.has_furniture(build) and Builds.furniture_near(build, players[id]["pos"]) != "prateleiras":
+		return {"ok": false, "reason": "longe"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
@@ -568,6 +570,8 @@ func craft(id: int, weapon: String) -> Dictionary:
 		return {"ok": false, "reason": "desconhecido"}
 	if Crafting.recipe(weapon).is_empty():
 		return {"ok": false, "reason": "desconhecida"}
+	if Crafting.needs_bench(weapon) and not builds.bench_near(players[id]["pos"]):
+		return {"ok": false, "reason": "sem_bancada", "item": weapon}
 	var inv := inventory_of(id)
 	var materials: Dictionary = Crafting.recipe(weapon)["materials"]
 	var missing := Crafting.missing(inv, materials)

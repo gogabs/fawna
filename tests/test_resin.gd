@@ -150,6 +150,13 @@ func _test_recipes() -> void:
 	inv["resina"] = 2
 	inv["fibra"] = 2
 	inv["cipo"] = 1
+	# A tocha só se faz na bancada de uma oficina pronta.
+	_check(state.craft(2, "tocha")["reason"] == "sem_bancada", "tocha fora da bancada não sai")
+	var shop_cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
+	var shop := state.builds._fill(state.builds._new_build(9, "oficina", shop_cell, 5, "sul"), {"size": 5, "entrance": "sul"}, 0.0)
+	shop["done"] = true
+	state.builds._add(shop)
+	state.players[2]["pos"] = WorldGen.cell_center(Builds.furniture_cells(shop)["bancada"]) + Vector2(0, -1.0)
 	_check(state.craft(2, "tocha")["ok"] and int(inv.get("tocha", 0)) == 1 and not inv.has("resina"), "tocha: lenha média, 2 resinas, 2 fibras, 1 cipó")
 	_check(Crafting.materials_text({"resina": 2, "cipo": 1}) == "1 cipó e 2 resinas", "materiais falados: " + Crafting.materials_text({"resina": 2, "cipo": 1}))
 
