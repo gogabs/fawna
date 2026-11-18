@@ -90,7 +90,7 @@ func _server_step() -> void:
 	var game := get_parent()
 	if game.state == null:
 		return
-	for message in horrors.update(Time.get_ticks_msec(), game.state.players, _lit_fires(game.state.builds)):
+	for message in horrors.update(Time.get_ticks_msec(), game.state.players, _lit_fires(game.state.builds) + game.state.lit_torches()):
 		var peer: int = message[0]
 		var args: Array = message[2]
 		match message[1]:

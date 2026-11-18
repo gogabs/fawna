@@ -162,13 +162,15 @@ func _test_fire() -> void:
 	result = builds.work(id, inv, out_at)
 	_check(result["event"] == "abasteceu" and is_equal_approx(builds.fuel_left(id, out_at), Crafting.FUEL_SECONDS["lenha_pequena"]), "lenha numa fogueira apagada fica guardada")
 	result = builds.work(id, inv, out_at)
-	_check(not result["ok"] and result["reason"] == "sem_silex", "reacender sem sílex na bolsa não dá")
+	_check(not result["ok"] and result["reason"] == "sem_silex", "apagada, com lenha e sem sílex na bolsa: avisa")
 	inv["silex"] = 1
+	result = builds.work(id, inv, out_at)
+	_check(result["event"] == "silex" and not inv.has("silex"), "Espaço põe o sílex na fogueira")
 	for i in Crafting.SPARKS_TO_LIGHT - 1:
 		result = builds.work(id, inv, out_at)
-		_check(result["event"] == "faisca", "com lenha e sílex, Espaço volta a bater")
+		_check(result["event"] == "faisca", "com lenha e sílex dentro, Espaço bate as pedras")
 	result = builds.work(id, inv, out_at)
-	_check(result["event"] == "acesa" and not inv.has("silex"), "reacender gasta o sílex da bolsa")
+	_check(result["event"] == "acesa" and int(builds.get_build(id)["flint"]) == 0, "o sílex vira parte da fogueira e se gasta ao acender")
 
 
 func _test_weapons() -> void:

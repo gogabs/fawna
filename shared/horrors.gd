@@ -24,6 +24,7 @@ const SIGHT := 22.0  # até onde encarar o segura
 ## então 30° para cada lado garantem que sempre há uma direção que serve.
 const FACING_COS := 0.866
 const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
+const TORCH_SAFE := 5.0  # tocha acesa na mão: espanta a até 7,5 m
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
 const ORIGIN_SAFE := 6.0  # onde se reaparece depois de levado: ele não nasce ali
 const GIVE_UP_DISTANCE := 45.0
@@ -138,9 +139,13 @@ static func is_facing(player_pos: Vector2, heading: int, point: Vector2) -> bool
 
 
 ## Há fogueira acesa a até FIRE_SAFE deste ponto?
+## Cada item de "fires" é um Vector2 (fogueira, alcance FIRE_SAFE) ou um
+## Vector3 (x, y, alcance: uma tocha acesa na mão de alguém).
 static func fire_near(point: Vector2, fires: Array) -> bool:
-	for fire: Vector2 in fires:
-		if fire.distance_to(point) <= FIRE_SAFE:
+	for fire in fires:
+		var at: Vector2 = Vector2(fire.x, fire.y)
+		var reach: float = float(fire.z) if fire is Vector3 else FIRE_SAFE
+		if at.distance_to(point) <= reach:
 			return true
 	return false
 

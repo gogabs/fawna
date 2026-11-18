@@ -25,7 +25,7 @@ extends RefCounted
 ## para a argila secar (Crafting, "dry"): dá para trabalhar antes, mas cada
 ## batida vale metade; uma fogueira acesa na região seca em metade do tempo.
 ## Fogueira pronta:
-##   apagada com lenha -> batidas de pedra (faíscas; reacender gasta 1 sílex da bolsa) -> acesa -> queima a
+##   apagada com lenha -> batidas de pedra (faíscas; reacender pede lenha e 1 sílex dentro da fogueira) -> acesa -> queima a
 ##   lenha com o tempo -> apagada. Espaço com ela acesa (ou sem lenha) põe
 ##   mais uma lenha.
 
@@ -401,7 +401,7 @@ func start(kind: String, cell: Vector2i) -> Dictionary:
 
 func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: String) -> Dictionary:
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
-		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false,
+		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
 		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true}
 
@@ -687,18 +687,23 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 		build["fuel"] = minf(float(build["fuel"]) + seconds, Crafting.MAX_FUEL)
 		return {"ok": true, "event": "abasteceu", "item": wood}
 	# A primeira vez usa o sílex que entrou na obra. Reacender (depois que o fogo
-	# já pegou uma vez) pede um sílex na bolsa, gasto só quando pega fogo.
+	# já pegou uma vez) pede lenha e um sílex dentro da fogueira: Espaço põe a
+	# lenha, depois o sílex (que passa a fazer parte dela) e só então acende,
+	# gastando esse sílex.
 	var relight := bool(build.get("ignited", false))
-	if relight and int(bag.get("silex", 0)) <= 0:
-		return {"ok": false, "reason": "sem_silex"}
+	if relight and int(build.get("flint", 0)) <= 0:
+		if int(bag.get("silex", 0)) <= 0:
+			return {"ok": false, "reason": "sem_silex"}
+		bag["silex"] = int(bag["silex"]) - 1
+		if int(bag["silex"]) <= 0:
+			bag.erase("silex")
+		build["flint"] = 1
+		return {"ok": true, "event": "silex"}
 	build["sparks"] = int(build["sparks"]) + 1
 	if int(build["sparks"]) < Crafting.SPARKS_TO_LIGHT:
 		return {"ok": true, "event": "faisca", "sparks_left": Crafting.SPARKS_TO_LIGHT - int(build["sparks"])}
 	build["sparks"] = 0
-	if relight:
-		bag["silex"] = int(bag["silex"]) - 1
-		if int(bag["silex"]) <= 0:
-			bag.erase("silex")
+	build["flint"] = 0
 	build["ignited"] = true
 	build["burn_until"] = at_time + float(build["fuel"])
 	build["fuel"] = 0.0
@@ -746,7 +751,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"id": id, "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 		"stage": build["stage"], "deposited": build["deposited"].duplicate(), "work": build["work"],
 		"done": build["done"], "fuel": build["fuel"], "sparks": build["sparks"], "name": build["name"],
-		"ignited": build["ignited"],
+		"ignited": build["ignited"], "flint": build["flint"],
 		"burn_left": maxf(0.0, float(build["burn_until"]) - at_time) if float(build["burn_until"]) > 0.0 else 0.0,
 		"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
@@ -769,7 +774,7 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 		"stage": int(data.get("stage", 0)), "deposited": deposited, "work": int(data.get("work", 0)),
 		"done": bool(data.get("done", false)), "fuel": float(data.get("fuel", 0.0)),
 		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0)),
-		"ignited": bool(data.get("ignited", false)),
+		"ignited": bool(data.get("ignited", false)), "flint": int(data.get("flint", 0)),
 		"name": str(data.get("name", ""))}, data, at_time + dry_left if dry_left > 0.0 else 0.0))
 
 
@@ -799,7 +804,7 @@ func to_save() -> Dictionary:
 			"id": build["id"], "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 			"stage": build["stage"], "deposited": build["deposited"], "work": build["work"],
 			"done": build["done"], "fuel": build["fuel"], "burn_until": build["burn_until"],
-			"sparks": build["sparks"], "name": build["name"], "ignited": build["ignited"],
+			"sparks": build["sparks"], "name": build["name"], "ignited": build["ignited"], "flint": build["flint"],
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
@@ -820,7 +825,7 @@ func load_save(data: Dictionary) -> void:
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
 			"burn_until": float(entry.get("burn_until", 0.0)), "sparks": int(entry.get("sparks", 0)),
-			"ignited": bool(entry.get("ignited", false)),
+			"ignited": bool(entry.get("ignited", false)), "flint": int(entry.get("flint", 0)),
 			# Mundos antigos davam o nome ao começar o marco: em obra, ele some.
 			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""},
 			entry, float(entry.get("dry_until", 0.0))))
@@ -957,9 +962,12 @@ func status_text(id: int, at_time := -1.0) -> String:
 		var minutes := ceili(fuel_left(id, at_time) / 60.0)
 		if is_lit(id, at_time):
 			return "%s acesa, com lenha para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
+		var needs_flint: bool = bool(build.get("ignited", false)) and int(build.get("flint", 0)) <= 0
 		if float(build["fuel"]) > 0.0:
-			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate o sílex para reacender (gasta 1 sílex)." % [title, minutes, "" if minutes == 1 else "s"]
-		return "%s apagada e sem lenha. Espaço põe uma lenha." % title
+			if needs_flint:
+				return "%s apagada, com lenha para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
+			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
+		return "%s apagada e sem lenha%s. Espaço põe uma lenha." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
 		return "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]

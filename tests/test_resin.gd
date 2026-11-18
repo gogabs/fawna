@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_world_state()
 	_test_recipes()
 	_test_save()
+	_test_torch()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -160,6 +161,37 @@ func _test_save() -> void:
 		state.resin.tap(tree)
 	var back := WorldState.from_save(state.to_save())
 	_check(back.resin.is_dead(tree), "árvore seca sobrevive ao salvamento")
+
+
+func _test_torch() -> void:
+	var state := WorldState.new(42)
+	state.add_player(2, "Lua")
+	var inv := state.inventory_of(2)
+	inv["tocha"] = 2
+	_check(Bag.is_offhand("tocha") and Bag.can_wield("tocha"), "tocha é equipamento de mão não dominante")
+	_check(state.equip(2, "machado")["ok"] and state.wielding(2) == "machado", "machado na mão principal")
+	var result := state.equip(2, "tocha")
+	_check(result["ok"] and result["slot"] == "offhand" and state.offhand_of(2) == "tocha" and state.wielding(2) == "machado", "a tocha vai para a outra mão sem tirar o machado")
+	_check(int(inv["tocha"]) == 1, "tira uma da bolsa")
+	_check(state.light_torch(2)["reason"] == "sem_fogo", "sem fogueira acesa por perto, não acende")
+	var cell := _find(state.world, WorldGen.Thing.NADA, Vector2i(30, 30))
+	var fire: int = state.builds.start("fogueira", cell)["id"]
+	var build: Dictionary = state.builds.get_build(fire)
+	build["done"] = true
+	build["burn_until"] = Builds.now() + 1000.0
+	state.players[2]["pos"] = WorldGen.cell_center(cell) + Vector2(0, 1.0)
+	var lit := state.light_torch(2)
+	_check(lit["ok"] and state.torch_left(2) > 800.0, "perto de fogueira acesa, a tocha acende")
+	_check(state.light_torch(2)["reason"] == "ja_acesa", "já acesa")
+	_check(state.stow_offhand(2)["reason"] == "tocha_acesa" and state.equip(2, "tocha")["reason"] == "tocha_acesa", "tocha acesa não se guarda nem se troca")
+	var torches := state.lit_torches()
+	var pos: Vector2 = state.players[2]["pos"]
+	_check(torches.size() == 1 and Horrors.fire_near(pos + Vector2(Horrors.TORCH_SAFE - 0.5, 0), torches), "a tocha espanta o Calado perto")
+	_check(not Horrors.fire_near(pos + Vector2(Horrors.TORCH_SAFE + 1.0, 0), torches), "mas só dentro do alcance dela")
+	var back := WorldState.from_save(state.to_save())
+	_check(back.offhand.get("Lua", "") == "tocha" and float(back.torch_until.get("Lua", 0.0)) > 0.0, "tocha acesa sobrevive ao salvamento")
+	_check(state.expire_torches(Resin.now() + 2000.0) == [2] and state.offhand_of(2) == "" and state.torch_left(2) == 0.0, "a tocha queima até o fim e some")
+	_check(Bag.load_of({"machado": 1}, "machado", "tocha") == 3 + 3 + Bag.weight_of("tocha"), "a tocha pesa na carga")
 
 
 func _unused() -> void:
