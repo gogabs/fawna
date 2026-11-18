@@ -38,7 +38,7 @@ godot --path . -- --host --name=Gabs
 godot --path . -- --join=10.0.0.5 --name=Lua
 ```
 
-Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `--seed=N` e `--auto=N,L,ARREDORES,SAIR` (comandos automáticos, usados nos testes).
+Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `--seed=N` e `--auto=N,L,ARREDORES,RADAR,SAIR` (comandos automáticos, usados nos testes).
 
 ## Controles
 
@@ -52,8 +52,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Ouvir os arredores | Tab (toque curto) |
-| Escutar com atenção: vento, fundo e música baixam, recursos sobem | segurar Tab |
+| Radar: alvo do Caminheiro com a distância e o recurso mais próximo do último tipo rastreado (sem nada rastreado, os arredores) | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
 | Onde estou | C |
 | Quem está no mundo | P |

@@ -60,12 +60,7 @@ const BED_VOLUME_DB := -22.0  # fundo do bioma
 const WIND_OPEN_DB := -12.0
 const WIND_FIELD_DB := -24.0
 const WIND_SHELTER_DB := -36.0
-## Escutar com atenção (segurar Tab): o vento, o fundo do bioma e a música
-## baixam, e os sons dos recursos sobem. Um toque curto no Tab continua
-## falando os arredores.
-const FOCUS_HOLD := 0.35  # segundos segurando até virar escuta
-const FOCUS_DUCK_DB := -14.0
-const FOCUS_FADE := 0.4
+const WIND_FADE := 2.5  # segundos para o vento mudar de volume
 const WIND_LAKE_RADIUS := 4
 const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
 const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
@@ -131,11 +126,14 @@ var _bed_biome := -1
 var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
 var _bed_tween: Tween
-var _tab_down_ms := -1  # quando o Tab foi apertado (-1: solto)
-var _focus := false  # escutando com atenção
-var _focus_changed_now := false  # o vento acompanha a escuta mais rápido
 var _caminheiro: Caminheiro
 var _tracked_resource := WorldGen.NO_CELL  # recurso que o cristal procura (NO_CELL: um lugar)
+var _tracked_destination := Vector2.ZERO  # para onde o cristal leva (vale com ele aceso)
+## O último recurso pedido ao Caminheiro (coisas do mundo e nome com artigo),
+## que o Tab usa para achar o mais próximo. Continua valendo com o cristal
+## apagado.
+var _radar_things: Array = []
+var _radar_place := ""
 var _menu: FloatingMenu
 ## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
 ## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
@@ -215,8 +213,6 @@ func _process(delta: float) -> void:
 			occupants.append(players[id]["pos"])
 		if not harvest.prune(-1.0, occupants).is_empty():
 			audio.refresh_resources()
-	if _tab_down_ms >= 0 and not _focus and Time.get_ticks_msec() - _tab_down_ms >= int(FOCUS_HOLD * 1000.0):
-		_set_focus(true)
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta, Compass.forward(_heading))
 	_send_timer += delta
@@ -227,8 +223,8 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world != null and event.is_action("ouvir_arredores") and not event.is_echo():
-		_on_listen_key(event.is_pressed())
+	if world != null and event.is_action_pressed("ouvir_arredores") and not event.is_echo():
+		_say_radar()
 		get_viewport().set_input_as_handled()
 		return
 	if world == null or not event.is_pressed():
@@ -1467,42 +1463,26 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, ouve os arredores. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
-## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
-## soltar.
-func _on_listen_key(pressed: bool) -> void:
-	if pressed:
-		_tab_down_ms = Time.get_ticks_msec()
-		return
-	if _tab_down_ms < 0:
-		return
-	_tab_down_ms = -1
-	if _focus:
-		_set_focus(false)
-	else:
+## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o
+## cristal estiver aceso) e, depois, o recurso mais próximo do tipo que o
+## Caminheiro rastreou por último. Sem nada disso, fala os arredores.
+func _say_radar() -> void:
+	var parts := PackedStringArray()
+	if _caminheiro.active:
+		parts.append("Caminheiro, rumo %s: %s." % [Narrator.contract("a", _caminheiro.place_name), Compass.describe(_tracked_destination - _pos, _heading)])
+	if not _radar_things.is_empty():
+		var cell := nearest_collectable(world, harvest, _pos, _radar_things, RESOURCE_SEARCH_RADIUS)
+		if cell == WorldGen.NO_CELL:
+			parts.append("Não há %s por perto." % _radar_place.substr(_radar_place.find(" ") + 1))
+		elif not (_caminheiro.active and cell == _tracked_resource):
+			parts.append("Mais perto, %s: %s." % [_radar_place, Compass.describe(WorldGen.cell_center(cell) - _pos, _heading)])
+	if parts.is_empty():
 		_say_surroundings()
-
-
-func _set_focus(on: bool) -> void:
-	if _focus == on:
-		return
-	_focus = on
-	_focus_changed_now = true
-	audio.set_resource_focus(on, FOCUS_FADE)
-	Music.set_duck(FOCUS_DUCK_DB if on else 0.0, FOCUS_FADE)
-	if _bed != null:
-		if _bed_tween != null:
-			_bed_tween.kill()
-		_bed_tween = create_tween()
-		_bed_tween.tween_property(_bed, "volume_db", _bed_target_db(), FOCUS_FADE)
-	_update_wind()
-	_focus_changed_now = false
-
-
-func _bed_target_db() -> float:
-	return BED_VOLUME_DB + (FOCUS_DUCK_DB if _focus else 0.0)
+	else:
+		Speech.say(" ".join(parts))
 
 
 func _say_surroundings() -> void:
@@ -1584,7 +1564,7 @@ func _update_biome_bed() -> void:
 	if _bed_tween != null:
 		_bed_tween.kill()
 	_bed_tween = create_tween()
-	_bed_tween.tween_property(_bed, "volume_db", _bed_target_db(), 1.5)
+	_bed_tween.tween_property(_bed, "volume_db", BED_VOLUME_DB, 1.5)
 	var tween := create_tween()
 	if old != null:
 		tween.tween_property(old, "volume_db", -40.0, 1.5)
@@ -1612,12 +1592,10 @@ func _update_wind() -> void:
 		target = WIND_OPEN_DB
 	elif world.is_forest(cell):
 		target = WIND_SHELTER_DB  # numa clareira o vento volta a entrar
-	if _focus:
-		target += FOCUS_DUCK_DB
 	if _wind_tween != null:
 		_wind_tween.kill()
 	_wind_tween = create_tween()
-	_wind_tween.tween_property(_wind, "volume_db", target, FOCUS_FADE if _focus_changed_now else 2.5)
+	_wind_tween.tween_property(_wind, "volume_db", target, WIND_FADE)
 
 
 func _near_lake(cell: Vector2i) -> bool:
@@ -1875,6 +1853,8 @@ func _caminheiro_resources() -> Array:
 
 ## Acende o cristal rumo ao recurso coletável mais próximo destes tipos.
 func _track_resource(things: Array, place: String) -> String:
+	_radar_things = things
+	_radar_place = place
 	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS, true)
 	if cell == WorldGen.NO_CELL:
 		return "Não há %s por perto." % place.substr(place.find(" ") + 1)
@@ -1931,6 +1911,7 @@ func _track(destination: Vector2, place: String, resource := WorldGen.NO_CELL) -
 	if _caminheiro.active and _caminheiro.place_name == place:
 		return _stop_tracking()
 	_tracked_resource = resource
+	_tracked_destination = destination
 	if _pos.distance_to(destination) <= Caminheiro.ARRIVE_RADIUS:
 		_caminheiro.stop()
 		_tracked_resource = WorldGen.NO_CELL
@@ -2260,6 +2241,8 @@ func _run_auto_commands() -> void:
 				Speech.say("Olhando para o %s." % Compass.name_of(_heading))
 			"ARREDORES":
 				_say_surroundings()
+			"RADAR":
+				_say_radar()
 			"ONDE":
 				Speech.say(Narrator.where_am_i(world, _pos, _heading))
 			"QUEM":
