@@ -896,6 +896,26 @@ func is_free(pos: Vector2, radius := PLAYER_RADIUS) -> bool:
 	return blocker_at(pos, radius) == NO_CELL
 
 
+## O ponto livre mais perto de "pos" (procura em anéis de meia casa). Devolve
+## o próprio "pos" se já está livre ou se não achou nada num raio de 4 casas.
+func nearest_free(pos: Vector2) -> Vector2:
+	if is_free(pos):
+		return pos
+	var best := pos
+	var best_distance := INF
+	for ring in range(1, 8):
+		for dx in range(-ring, ring + 1):
+			for dy in range(-ring, ring + 1):
+				var point := pos + Vector2(dx, dy) * 0.5
+				var distance := point.distance_to(pos)
+				if distance < best_distance and is_free(point):
+					best_distance = distance
+					best = point
+		if best_distance < INF:
+			break
+	return best
+
+
 # --- Aleatório fixo ------------------------------------------------------------
 
 ## Número entre 0 e 1, fixo para cada casa, rótulo e semente (ex.: a dureza

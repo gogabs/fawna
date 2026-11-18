@@ -352,18 +352,7 @@ func eject_from_walls(build_id: int) -> Array:
 		var pos: Vector2 = players[id]["pos"]
 		if world.is_free(pos):
 			continue
-		var best := pos
-		var best_distance := INF
-		for ring in range(1, 8):
-			for dx in range(-ring, ring + 1):
-				for dy in range(-ring, ring + 1):
-					var point := pos + Vector2(dx, dy) * 0.5
-					var distance := point.distance_to(pos)
-					if distance < best_distance and world.is_free(point):
-						best_distance = distance
-						best = point
-			if best_distance < INF:
-				break
+		var best := world.nearest_free(pos)
 		if best != pos:
 			players[id]["pos"] = best
 			moved.append([id, best])

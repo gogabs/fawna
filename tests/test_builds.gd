@@ -6,6 +6,7 @@ var _failures := 0
 
 
 func _init() -> void:
+	_test_player_inside_new_build()
 	_test_marco_stages()
 	_test_refusals()
 	_test_fire()
@@ -57,6 +58,18 @@ func _state_with_player(cell: Vector2i) -> WorldState:
 func _work(state: WorldState, build_id: int) -> Dictionary:
 	state._last_build.erase(2)  # sem esperar o intervalo entre batidas
 	return state.work_build(2, build_id)
+
+
+func _test_player_inside_new_build() -> void:
+	var probe := WorldGen.new(173)
+	var cell := _free_cell(probe)
+	var state := _state_with_player(cell)
+	var started := state.start_build(2, "marco", cell)
+	# Posição do servidor atrasada: a criatura já andou para dentro da casa.
+	state.players[2]["pos"] = WorldGen.cell_center(cell)
+	_check(not state.world.is_free(state.players[2]["pos"]), "dentro da obra não é livre")
+	var moved := state.eject_from_walls(started["id"])
+	_check(moved.size() == 1 and state.world.is_free(state.players[2]["pos"]), "quem ficou dentro da obra é levado para fora")
 
 
 func _test_marco_stages() -> void:
