@@ -603,6 +603,34 @@ func request_name_settlement(build_id: int, noun_index: int, adjective_index: in
 	build_changed.rpc(state.builds.info(build_id), "nomeado", id, {})
 
 
+## Espaço longe da porta de um armazém ou abrigo pronto: guarda itens da bolsa.
+@rpc("any_peer", "call_local", "reliable")
+func request_store(build_id: int, item: String, amount: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_storage(id, build_id, state.store_in_build(id, build_id, item, amount), "guardou")
+
+
+## O contrário: pega do estoque para a bolsa.
+@rpc("any_peer", "call_local", "reliable")
+func request_fetch(build_id: int, item: String, amount: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_storage(id, build_id, state.fetch_from_build(id, build_id, item, amount), "pegou_estoque")
+
+
+func _finish_storage(id: int, build_id: int, result: Dictionary, event: String) -> void:
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] in ["nao_aceita", "nao_tem", "cheio", "carga", "nao_guarda"]:
+			action_failed.rpc_id(id, "estoque_" + result["reason"], "%s|%s" % [result.get("item", ""), state.builds.title_of(build_id)])
+		return
+	_dirty = true
+	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
+	build_changed.rpc(state.builds.info(build_id), event, id, {"item": result["item"], "amount": result["amount"]})
+
+
 ## Fabricar > Armas: faz uma arma com o que está na bolsa.
 @rpc("any_peer", "call_local", "reliable")
 func request_craft(weapon: String) -> void:
@@ -826,6 +854,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"limpando": Sounds.build_knock(), "limpo": Sounds.build_stage(), "capinando": Sounds.build_knock(),
 		"capinado": Sounds.build_deposit(), "fase": Sounds.build_stage(), "secou": Sounds.build_stage(),
 		"porta": Sounds.door(bool(extra.get("open", true))) if event == "porta" else null,
+		"guardou": Sounds.build_deposit(), "pegou_estoque": Sounds.build_deposit(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
@@ -872,6 +901,12 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 					"" if Bag.count(inventory, "enxada") + (1 if wielded == "enxada" else 0) > 0 else "Você ainda não tem uma: ela se fabrica em Fabricar, Ferramentas."))
 			else:
 				Speech.say("Terreno pronto. %s" % builds.status_text(build_id).trim_prefix(title + " em obra. "))
+		"guardou", "pegou_estoque":
+			var what := Crafting.material_text(str(extra["item"]), int(extra["amount"]))
+			Speech.say("%s %s %s. %s." % ["Guardou" if event == "guardou" else "Pegou", what,
+				"no " + Crafting.build_name(build["kind"]) if event == "guardou" else "do " + Crafting.build_name(build["kind"]),
+				Builds.stock_label(build)], false)
+			_sync_menu.call_deferred()
 		"deposito":
 			var put := "Você colocou %s." % Crafting.materials_text(extra.get("deposited", {}))
 			var missing: Dictionary = extra.get("missing", {})
@@ -1104,6 +1139,17 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Este povoado já tem nome.")
 		"nome_sem_fogueira":
 			Speech.say("Falta uma fogueira pronta nesta região.")
+		"estoque_nao_aceita":
+			var parts := detail.split("|")
+			Speech.say("%s não guarda %s." % [parts[1], Bag.spoken_name(parts[0])])
+		"estoque_nao_guarda":
+			Speech.say("Aqui não se guarda nada.")
+		"estoque_nao_tem":
+			Speech.say("Não há isso aí.")
+		"estoque_cheio":
+			Speech.say("%s está cheio: não cabe mais %s." % [detail.split("|")[1], Bag.spoken_name(detail.split("|")[0])])
+		"estoque_carga":
+			Speech.say("Sua carga está no limite, %d de %d. Guarde ou jogue algo antes de pegar mais." % [Bag.load_of(inventory, wielded), Bag.CAPACITY])
 		"arma_faltam":
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
@@ -1497,6 +1543,9 @@ func _interact() -> void:
 		elif build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty():
 			# O marco do povoado: de onde partem as obras grandes.
 			Speech.say(_menu.open_at("Obras do povoado %s" % build["name"], _site_kinds))
+		elif Builds.stores(build) and _pos.distance_to(WorldGen.cell_center(Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])))) > Builds.DOOR_REACH:
+			# Longe da porta, o Espaço abre o armazenamento; perto, abre e fecha a porta.
+			Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
 		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
 			Speech.say(builds.status_text(int(build["id"])))
 		else:
@@ -2260,6 +2309,74 @@ func _build_actions(kind: String) -> Array:
 ## O lugar é a casa que está à frente quando a criatura escolhe Iniciar.
 func _start_build(kind: String) -> String:
 	request_build_start.rpc_id(1, kind, _front_cell())
+	return ""
+
+
+## Armazenamento de uma construção pronta: guardar da bolsa e pegar do estoque,
+## só do que ela aceita (Crafting.STORAGE).
+func _storage_root(build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return []
+	return [
+		{"label": "Guardar da bolsa", "open": _storage_put_items.bind(build_id)},
+		{"label": "Pegar do estoque", "open": _storage_take_items.bind(build_id)},
+		{"label": Builds.stock_label(build), "info": "%s guarda %s. %s. %s" % [
+			Crafting.build_title(build["kind"]), Crafting.STORAGE[build["kind"]]["label"],
+			Builds.stock_label(build), Bag.load_label(inventory, wielded)]},
+	]
+
+
+func _storage_put_items(build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	var items := []
+	if build.is_empty():
+		return items
+	var keys := inventory.keys()
+	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
+	for key: String in keys:
+		if int(inventory[key]) > 0 and Builds.accepts(build, key):
+			items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _storage_amounts.bind(build_id, key, true)})
+	if items.is_empty():
+		items.append({"label": "Nada na bolsa que caiba aqui", "info": "Este lugar guarda só %s." % Crafting.STORAGE[build["kind"]]["label"]})
+	return items
+
+
+func _storage_take_items(build_id: int) -> Array:
+	var build := builds.get_build(build_id)
+	var items := []
+	if build.is_empty():
+		return items
+	var keys: Array = build["stock"].keys()
+	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
+	for key: String in keys:
+		items.append({"label": "%s, %d" % [Bag.display_name(key), int(build["stock"][key])], "open": _storage_amounts.bind(build_id, key, false)})
+	if items.is_empty():
+		items.append({"label": "Vazio", "info": "Não há nada guardado aqui."})
+	return items
+
+
+func _storage_amounts(build_id: int, item: String, putting: bool) -> Array:
+	var build := builds.get_build(build_id)
+	var amount := int(inventory.get(item, 0)) if putting else int(build.get("stock", {}).get(item, 0))
+	var actions := []
+	if amount <= 0:
+		return actions
+	var verb := "Guardar" if putting else "Pegar"
+	actions.append({"label": "%s 1" % verb, "run": _storage_move.bind(build_id, item, 1, putting)})
+	if amount > 5:
+		actions.append({"label": "%s 5" % verb, "run": _storage_move.bind(build_id, item, 5, putting)})
+	if amount > 1:
+		actions.append({"label": "%s tudo, %d" % [verb, amount], "run": _storage_move.bind(build_id, item, amount, putting)})
+	return actions
+
+
+## A resposta do servidor (build_changed) é que fala e toca.
+func _storage_move(build_id: int, item: String, amount: int, putting: bool) -> String:
+	if putting:
+		request_store.rpc_id(1, build_id, item, amount)
+	else:
+		request_fetch.rpc_id(1, build_id, item, amount)
 	return ""
 
 

@@ -415,7 +415,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -663,6 +663,81 @@ func _pick_post(build: Dictionary, id: int, pos: Vector2) -> int:
 	return best
 
 
+# --- Armazenamento ------------------------------------------------------------------
+
+## Esta construção guarda itens?
+static func stores(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and Crafting.STORAGE.has(str(build.get("kind", "")))
+
+
+## Quanto peso a construção guarda no total.
+static func capacity(build: Dictionary) -> int:
+	var size := int(build.get("size", 1))
+	return int(Crafting.STORAGE.get(str(build["kind"]), {}).get("per_cell", 0)) * size * size
+
+
+## Peso guardado agora.
+static func stock_load(build: Dictionary) -> int:
+	return Bag.weight_of_items(build.get("stock", {}))
+
+
+## Esta construção aceita o item (pela categoria)?
+static func accepts(build: Dictionary, item: String) -> bool:
+	return Crafting.STORAGE.get(str(build["kind"]), {}).get("accepts", []).has(Bag.category_of(item))
+
+
+## "Armazém, 12 de 128" (peso guardado e capacidade).
+static func stock_label(build: Dictionary) -> String:
+	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build), capacity(build)]
+
+
+## Guarda itens da bolsa "bag" (muda a bolsa). Devolve { ok, reason, item,
+## amount }. reason: "desconhecida", "nao_guarda" (a construção não guarda
+## nada), "nao_aceita" (categoria errada), "nao_tem", "cheio".
+func store(id: int, bag: Dictionary, item: String, amount: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not stores(build):
+		return {"ok": false, "reason": "nao_guarda"}
+	if not accepts(build, item):
+		return {"ok": false, "reason": "nao_aceita", "item": item}
+	var have := int(bag.get(item, 0))
+	if have <= 0 or amount <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var room := (capacity(build) - stock_load(build)) / maxi(1, Bag.weight_of(item))
+	var moved := mini(mini(amount, have), room)
+	if moved <= 0:
+		return {"ok": false, "reason": "cheio", "item": item}
+	bag[item] = have - moved
+	if int(bag[item]) <= 0:
+		bag.erase(item)
+	build["stock"][item] = int(build["stock"].get(item, 0)) + moved
+	return {"ok": true, "item": item, "amount": moved}
+
+
+## Tira itens do estoque para a bolsa "bag", até onde cabe na carga. Devolve
+## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda",
+## "nao_tem" (não há isso lá), "carga" (a criatura não aguenta mais peso).
+func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not stores(build):
+		return {"ok": false, "reason": "nao_guarda"}
+	var have := int(build["stock"].get(item, 0))
+	if have <= 0 or amount <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item))
+	if moved <= 0:
+		return {"ok": false, "reason": "carga", "item": item}
+	build["stock"][item] = have - moved
+	if int(build["stock"][item]) <= 0:
+		build["stock"].erase(item)
+	bag[item] = int(bag.get(item, 0)) + moved
+	return {"ok": true, "item": item, "amount": moved}
+
+
 ## Espaço perto da porta de uma construção grande pronta: abre ou fecha.
 ## Recusa "porta_longe" (com "side": o lado da porta) se está longe dela.
 func _use_door(build: Dictionary, pos: Vector2) -> Dictionary:
@@ -769,6 +844,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
+		"stock": build["stock"].duplicate(),
 	}
 
 
@@ -820,6 +896,7 @@ func to_save() -> Dictionary:
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
+			"stock": build["stock"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -869,6 +946,11 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 	build["dry_until"] = dry_until
 	build["slack"] = false
 	build["door_open"] = bool(data.get("door_open", true))
+	var stock := {}
+	for item in data.get("stock", {}):
+		if int(data["stock"][item]) > 0:
+			stock[str(item)] = int(data["stock"][item])
+	build["stock"] = stock
 	return build
 
 
@@ -981,8 +1063,12 @@ func status_text(id: int, at_time := -1.0) -> String:
 			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
 		return "%s apagada e sem lenha%s. Espaço põe uma lenha." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
-		return "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
+		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]
+		if stores(build):
+			text += " Guarda %s: %s. Espaço longe da porta abre o armazenamento." % [
+				Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
+		return text
 	if build["kind"] == "marco":
 		if not str(build["name"]).is_empty():
 			return "Marco do povoado %s." % build["name"]

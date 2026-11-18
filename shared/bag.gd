@@ -48,6 +48,22 @@ const WEIGHTS := {
 }
 const DEFAULT_WEIGHT := 1
 
+## Categoria de cada recurso ou item (pela chave sem tamanho: "pedra_grande"
+## vale como "pedra"). Decide onde cada coisa pode ser guardada (Crafting.STORAGE).
+## O que não estiver aqui é "material".
+const CATEGORIES := {
+	"machado": "ferramenta",
+	"enxada": "ferramenta",
+	"lanca": "arma",
+	"clava": "arma",
+	"frutas": "comida",
+}
+const DEFAULT_CATEGORY := "material"
+
+
+static func category_of(item: String) -> String:
+	return str(CATEGORIES.get(Economy.base_of(item), DEFAULT_CATEGORY))
+
 ## Itens que podem ser empunhados (vão para o Equipamento) e a dica falada
 ## ao empunhar.
 const WIELDABLE := {

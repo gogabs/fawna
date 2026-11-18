@@ -69,10 +69,31 @@ const BUILDS := {
 			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
 		],
 	},
+	"armazem": {
+		"name": ["armazém", "armazéns"],
+		"article": "o",
+		"settlement": true,
+		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
+		"stages": [
+			{"name": "o chão", "materials": {"pedra_grande": 4, "argila": 6}, "work": 8, "dry": 240.0},
+			{"name": "os esteios", "materials": {"madeira": 6}, "work": 10},
+			{"name": "as paredes", "materials": {"bambu": 14, "argila": 6}, "work": 14, "walls": true},
+			{"name": "o telhado", "materials": {"bambu": 10, "lenha_media": 4}, "work": 10},
+		],
+	},
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo"]
+const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem"]
+
+## Armazenamento: construções grandes prontas guardam itens, cada uma só de
+## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
+## terreno (um 4 por 4 com 8 guarda 128, o tamanho 6 por 6 guarda 288). Para
+## uma oficina guardar ferramentas, basta acrescentá-la aqui.
+const STORAGE := {
+	"armazem": {"accepts": ["material"], "per_cell": 8, "label": "materiais"},
+	"abrigo": {"accepts": ["roupa"], "per_cell": 4, "label": "roupas"},
+}
 
 ## Construções grandes (as de BUILDS com "size"): ocupam um quadrado de lados
 ## "size" (em casas) em vez de uma casa só. O lugar é escolhido por âncoras
