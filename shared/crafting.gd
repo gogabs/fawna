@@ -26,6 +26,10 @@ const MATERIAL_NAMES := {
 	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
+	"silex": ["sílex", "sílex"],
+	"cipo": ["cipó", "cipós"],
+	"fibra": ["fibra vegetal", "fibras vegetais"],
+	"resina": ["resina", "resinas"],
 }
 
 ## Construções. Cada etapa: "name" (falado), "materials" (item -> quantidade)
@@ -121,8 +125,29 @@ const TOOLS := {
 			{"say": "Você afeiçoa o cabo de bambu.", "knocks": 5, "sound": "madeira"},
 			{"say": "Você encaixa o cabo na pedra furada.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Dois sílex: um vira a lâmina, o outro se perde nas lascas.
+	"faca": {"name": ["faca bruta de sílex", "facas brutas de sílex"], "article": "a",
+		"materials": {"silex": 2, "lenha_pequena": 1},
+		"steps": [
+			{"say": "Você lasca o sílex contra a pedra, até sair um fio.", "knocks": 6, "sound": "pedra"},
+			{"say": "Você afeiçoa o cabo de lenha.", "knocks": 3, "sound": "madeira"},
+			{"say": "Você prende a lâmina no cabo.", "knocks": 2, "sound": "encaixe"},
+		]},
 }
-const TOOL_ORDER := ["enxada"]
+const TOOL_ORDER := ["enxada", "faca"]
+
+## Receitas da bancada da oficina (ainda sem o menu da bancada: quem faz a
+## oficina liga aqui). Mesmo formato das ferramentas; Crafting.recipe as acha.
+const WORKSHOP := {
+	"tocha": {"name": ["tocha", "tochas"], "article": "a",
+		"materials": {"lenha_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
+		"steps": [
+			{"say": "Você enrola a fibra na ponta da lenha.", "knocks": 4, "sound": "madeira"},
+			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
+			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
+		]},
+}
+const WORKSHOP_ORDER := ["tocha"]
 
 
 static func material_text(item: String, amount: int) -> String:
@@ -198,6 +223,8 @@ static func build_title(kind: String) -> String:
 static func weapon_name(kind: String) -> String:
 	if TOOLS.has(kind):
 		return TOOLS[kind]["name"][0]
+	if WORKSHOP.has(kind):
+		return WORKSHOP[kind]["name"][0]
 	return WEAPONS[kind]["name"][0] if WEAPONS.has(kind) else kind
 
 
@@ -205,15 +232,17 @@ static func weapon_name(kind: String) -> String:
 static func recipe(kind: String) -> Dictionary:
 	if WEAPONS.has(kind):
 		return WEAPONS[kind]
+	if WORKSHOP.has(kind):
+		return WORKSHOP[kind]
 	return TOOLS.get(kind, {})
 
 
 static func is_tool_recipe(kind: String) -> bool:
-	return TOOLS.has(kind)
+	return TOOLS.has(kind) or WORKSHOP.has(kind)
 
 
 static func weapon_title(kind: String) -> String:
-	var text := weapon_name(kind) if WEAPONS.has(kind) else str(TOOLS.get(kind, {}).get("name", [kind])[0])
+	var text := weapon_name(kind)
 	return text.left(1).to_upper() + text.substr(1)
 
 

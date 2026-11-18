@@ -39,6 +39,12 @@ const WEIGHTS := {
 	"lanca": 2,
 	"clava": 4,
 	"enxada": 3,
+	"silex": 2,
+	"cipo": 1,
+	"fibra": 1,
+	"resina": 1,
+	"faca": 2,
+	"tocha": 2,
 }
 const DEFAULT_WEIGHT := 1
 
@@ -49,6 +55,8 @@ const WIELDABLE := {
 	"lanca": "J para golpear.",
 	"clava": "J para golpear.",
 	"enxada": "J para capinar a grama de uma obra.",
+	"faca": "J no tronco de uma árvore, poucas vezes, para tirar resina.",
+	"tocha": "Uma tocha apagada: acender virá depois.",
 }
 
 ## Nomes dos itens da bolsa que ainda não estão em Economy.ITEM_NAMES.
@@ -57,11 +65,13 @@ const NAMES := {
 	"lanca": ["lança de bambu", "lanças de bambu"],
 	"clava": ["clava de pedra", "clavas de pedra"],
 	"enxada": ["enxada", "enxadas"],
+	"faca": ["faca bruta de sílex", "facas brutas de sílex"],
+	"tocha": ["tocha", "tochas"],
 }
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira"]
+const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira", "faca", "tocha", "fibra", "resina"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".
