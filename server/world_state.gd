@@ -401,6 +401,39 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	return builds.work(build_id, inventory_of(id), -1.0, pos)
 
 
+## Guarda itens da bolsa numa construção que armazena (armazém, abrigo).
+## Devolve o resultado de Builds.store, ou { ok: false, reason: "longe" | "devagar" }.
+func store_in_build(id: int, build_id: int, item: String, amount: int) -> Dictionary:
+	var check := _storage_check(id, build_id)
+	if not check.is_empty():
+		return check
+	return builds.store(build_id, inventory_of(id), item, amount)
+
+
+## Pega itens do estoque de uma construção para a bolsa, até onde cabe na carga.
+func fetch_from_build(id: int, build_id: int, item: String, amount: int) -> Dictionary:
+	var check := _storage_check(id, build_id)
+	if not check.is_empty():
+		return check
+	return builds.fetch(build_id, inventory_of(id), wielding(id), item, amount)
+
+
+## Vazio se a criatura pode mexer no estoque agora; senão, a recusa.
+func _storage_check(id: int, build_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_drop[id] = now
+	return {}
+
+
 ## Fabrica uma arma com o que está na bolsa. Devolve { ok, reason, item,
 ## missing }.
 func craft(id: int, weapon: String) -> Dictionary:
