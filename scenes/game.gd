@@ -2769,7 +2769,7 @@ func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
 	var at_door := Builds.walls_up(build) and cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"]))
 	var old_door := not old_build.is_empty() and Builds.walls_up(old_build) \
 			and old_cell == Builds.door_cell(old_build["cell"], int(old_build["size"]), str(old_build["entrance"]))
-	var same_build := not old_build.is_empty() and old_build["id"] == build["id"]
+	var same_build: bool = not old_build.is_empty() and old_build["id"] == build["id"]
 	var sector := Builds.sector_name(build, cell)
 	# Dentro da mesma obra e zona, só fala ao passar de uma parte a outra.
 	if same_build and old_door == at_door:
