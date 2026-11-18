@@ -108,6 +108,15 @@ func torch_left(id: int, at := -1.0) -> float:
 	return maxf(0.0, float(torch_until.get(players[id]["name"], 0.0)) - (Time.get_unix_time_from_system() if at < 0.0 else at))
 
 
+## Ids de quem leva uma tocha acesa.
+func lit_torch_ids() -> Array:
+	var out := []
+	for id in players:
+		if torch_left(id) > 0.0:
+			out.append(id)
+	return out
+
+
 ## Posições (Vector3: x, y, raio) de quem leva uma tocha acesa: o Calado respeita.
 func lit_torches() -> Array:
 	var out := []

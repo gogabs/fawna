@@ -102,6 +102,7 @@ var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
 var offhand := ""  # a segunda peça de equipamento, na mão não dominante (a tocha)
+var torch_bearers: Array = []  # ids de quem leva uma tocha acesa (o servidor manda)
 var _torch_ends := 0.0  # hora (Unix) em que a tocha acesa se apaga; 0 = apagada
 var _swing_cooldown := 0.0
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
@@ -195,9 +196,12 @@ func _process(delta: float) -> void:
 			for build_id: int in state.builds.burn_out():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "apagou", 0, {})
-			for torch_id: int in state.expire_torches():
+			var burned := state.expire_torches()
+			for torch_id: int in burned:
 				_dirty = true
 				offhand_changed.rpc_id(torch_id, state.inventory_of(torch_id), "", 0.0, "queimou", "tocha")
+			if not burned.is_empty():
+				_broadcast_torches()
 			for build_id: int in state.builds.dried():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "secou", 0, {})
@@ -212,6 +216,7 @@ func _process(delta: float) -> void:
 	_step_clock += delta
 	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
+	_update_torch_sounds()
 	_harvest_timer += delta
 	if _harvest_timer >= HARVEST_CHECK:
 		_harvest_timer = 0.0
@@ -289,6 +294,7 @@ func request_join(player_name: String) -> void:
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), state.torch_left(id), "", "")
+	torches_changed.rpc_id(id, state.lit_torch_ids())
 	harvest_snapshot.rpc_id(id, state.harvest.snapshot())
 	build_snapshot.rpc_id(id, state.builds.snapshot())
 	ground_snapshot.rpc_id(id, state.ground.snapshot())
@@ -456,6 +462,7 @@ func request_light_torch() -> void:
 		return
 	_dirty = true
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), float(result["seconds"]), "acendeu", "tocha")
+	_broadcast_torches()
 	_tell_others_handled(id, "fabricou")
 
 
@@ -978,6 +985,16 @@ func equipment_changed(new_bag: Dictionary, new_wielded: String, verb: String, i
 		"guardou":
 			_play(Sounds.stow())
 			Speech.say("Você guardou %s na bolsa." % Bag.with_article(item))
+
+
+## Quem leva uma tocha acesa mudou (acendeu, queimou, entrou no mundo).
+@rpc("authority", "call_local", "reliable")
+func torches_changed(ids: Array) -> void:
+	torch_bearers = ids
+
+
+func _broadcast_torches() -> void:
+	torches_changed.rpc(state.lit_torch_ids())
 
 
 ## A mão não dominante mudou (a tocha). "lit_left": segundos de tocha acesa.
@@ -1547,6 +1564,19 @@ func _nearest_resource(reach: float, accepts: Callable, prefer_ready: bool) -> V
 				best_score = score
 				best = cell
 	return best
+
+
+## O crepitar das tochas acesas: a sua, na mão esquerda (a não dominante),
+## e as dos outros, onde eles estão.
+func _update_torch_sounds() -> void:
+	var points := []
+	if _torch_ends > Time.get_unix_time_from_system() and not offhand.is_empty():
+		var left := Compass.forward(_heading).rotated(-PI / 2.0)
+		points.append(_pos + left * 0.4)
+	for id: int in torch_bearers:
+		if id != my_id and players.has(id):
+			points.append(players[id]["pos"])
+	audio.set_torches(points)
 
 
 func _say_inventory() -> void:
