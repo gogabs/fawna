@@ -39,6 +39,9 @@ const SOURCES := {
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
 	WorldGen.Thing.PEDRAS: {"item": "pedra", "amount": 3, "hits": 0, "regrow": 600.0},
+	WorldGen.Thing.CIPO: {"item": "cipo", "amount": 1, "hits": 0, "regrow": 1200.0},
+	WorldGen.Thing.FIBRA: {"item": "fibra", "amount": 2, "hits": 0, "regrow": 900.0},
+	WorldGen.Thing.SILEX: {"item": "silex", "amount": 1, "hits": 0, "regrow": 1800.0},
 }
 
 ## Recursos com tamanho (Economy.SIZES): a chance de cada peça recolhida

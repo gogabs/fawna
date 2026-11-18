@@ -96,6 +96,9 @@ var _server_version := ""  # vem do servidor ao entrar; vazio: servidor antigo, 
 var players := {}  # id -> { "name", "pos": Vector2 }
 var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
+var offhand := ""  # a segunda peça de equipamento, na mão não dominante (a tocha)
+var torch_bearers: Array = []  # ids de quem leva uma tocha acesa (o servidor manda)
+var _torch_ends := 0.0  # hora (Unix) em que a tocha acesa se apaga; 0 = apagada
 var _swing_cooldown := 0.0
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
 var _harvest_timer := 0.0
@@ -191,6 +194,12 @@ func _process(delta: float) -> void:
 			for build_id: int in state.builds.burn_out():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "apagou", 0, {})
+			var burned := state.expire_torches()
+			for torch_id: int in burned:
+				_dirty = true
+				offhand_changed.rpc_id(torch_id, state.inventory_of(torch_id), "", 0.0, "queimou", "tocha")
+			if not burned.is_empty():
+				_broadcast_torches()
 			for build_id: int in state.builds.dried():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "secou", 0, {})
@@ -205,6 +214,7 @@ func _process(delta: float) -> void:
 	_step_clock += delta
 	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
+	_update_torch_sounds()
 	_harvest_timer += delta
 	if _harvest_timer >= HARVEST_CHECK:
 		_harvest_timer = 0.0
@@ -279,6 +289,8 @@ func request_join(player_name: String) -> void:
 	server_version.rpc_id(id, Updater.current_version())
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
+	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), state.torch_left(id), "", "")
+	torches_changed.rpc_id(id, state.lit_torch_ids())
 	harvest_snapshot.rpc_id(id, state.harvest.snapshot())
 	build_snapshot.rpc_id(id, state.builds.snapshot())
 	ground_snapshot.rpc_id(id, state.ground.snapshot())
@@ -380,6 +392,25 @@ func request_strike(cell: Vector2i) -> void:
 	# Golpe em bambu já caído ou já recolhido: só o som do machado, sem fala.
 
 
+## Um golpe de faca no tronco de uma árvore (tecla J, com a faca empunhada):
+## algumas vezes faz a resina escorrer; demais seca a árvore (Resin).
+@rpc("any_peer", "call_local", "reliable")
+func request_tap(cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	if state.wielding(id) != "faca":
+		return
+	_tell_others_handled(id, "golpeou")
+	var result := state.tap_tree(id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] == "seca":
+			resin_tapped.rpc(cell, "seca", id)
+		return
+	_dirty = true
+	resin_tapped.rpc(cell, result["event"], id)
+
+
 @rpc("any_peer", "call_local", "reliable")
 func request_equip(item: String) -> void:
 	if not multiplayer.is_server():
@@ -391,8 +422,44 @@ func request_equip(item: String) -> void:
 			action_failed.rpc_id(id, result["reason"], result.get("item", ""))
 		return
 	_dirty = true
-	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "empunhou", item)
+	if result.get("slot", "") == "offhand":
+		offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), 0.0, "empunhou", item)
+	else:
+		equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "empunhou", item)
 	_tell_others_handled(id, "empunhou")
+
+
+## Equipamento > Tocha > Guardar (só com a tocha apagada).
+@rpc("any_peer", "call_local", "reliable")
+func request_stow_offhand() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.stow_offhand(id)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, result["reason"], result.get("item", ""))
+		return
+	_dirty = true
+	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), 0.0, "guardou", result["item"])
+	_tell_others_handled(id, "guardou")
+
+
+## Equipamento > Tocha > Acender: perto de uma fogueira acesa.
+@rpc("any_peer", "call_local", "reliable")
+func request_light_torch() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.light_torch(id)
+	if not result["ok"]:
+		if state.players.has(id):
+			action_failed.rpc_id(id, "tocha_" + result["reason"], "")
+		return
+	_dirty = true
+	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), float(result["seconds"]), "acendeu", "tocha")
+	_broadcast_torches()
+	_tell_others_handled(id, "fabricou")
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -467,7 +534,7 @@ func request_build_work(build_id: int) -> void:
 		action_failed.rpc_id(id, "obra_" + result["reason"], detail)
 		return
 	_dirty = true
-	if result["event"] in ["deposito", "abasteceu", "alimentou"]:
+	if result["event"] in ["deposito", "abasteceu", "alimentou", "silex"]:
 		equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	var extra := {}
 	for key in ["deposited", "missing", "work_left", "next", "item", "sparks_left", "post", "post_left", "slow", "counted", "dry", "walls", "open"]:
@@ -651,11 +718,11 @@ func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int
 		return
 	match event:
 		"largou":
-			Speech.say("Você largou %s no chão. %s." % [Economy.items_text(moved), Bag.load_label(inventory, wielded)])
+			Speech.say("Você largou %s no chão. %s." % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand)])
 		"pegou":
 			_play(Sounds.pickup(Economy.base_of(moved.keys()[0])))
 			var rest := "" if items.is_empty() else " Ficou %s no chão: a carga não aguenta." % Economy.items_text(items)
-			Speech.say("Você pegou %s. %s.%s" % [Economy.items_text(moved), Bag.load_label(inventory, wielded), rest])
+			Speech.say("Você pegou %s. %s.%s" % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand), rest])
 		"sobrou":
 			pass  # quem coletou já ouviu o que ficou no chão (inventory_changed)
 
@@ -692,6 +759,32 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
+
+
+## Um golpe de faca numa árvore: o som sai do tronco e quem golpeou ouve os
+## avisos (a resina em si vem por inventory_changed).
+@rpc("authority", "call_local", "reliable")
+func resin_tapped(cell: Vector2i, event: String, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.tree_knock(), 0.0, true, true)
+		if event in ["range", "secou", "seca"]:
+			audio.play_at_point(where, Sounds.tree_creak(), 0.0, true, true)
+	if by_id != my_id:
+		return
+	match event:
+		"descanso":
+			Speech.say("A resina ainda não voltou: a árvore precisa descansar. Mais golpes só a machucam.")
+		"escorre":
+			Speech.say("A resina começa a escorrer. Pare de golpear: ela leva cerca de um minuto para secar, e então Espaço recolhe.")
+		"range":
+			Speech.say("O tronco range. Pare, ou a árvore seca.")
+		"secou":
+			Speech.say("A árvore secou. Não dá mais resina.")
+		"seca":
+			Speech.say("Esta árvore está seca. Não dá mais resina.")
 
 
 ## As construções que já existem, para quem acabou de entrar.
@@ -819,6 +912,8 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"acesa":
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 			Speech.say("A fogueira pegou fogo, com lenha para uns %d minuto%s. Espaço põe mais lenha." % [minutes, "" if minutes == 1 else "s"])
+		"silex":
+			Speech.say("Você pôs um sílex na fogueira. Agora Espaço bate as pedras para acender.")
 		"abasteceu", "alimentou":
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 			Speech.say("Você pôs uma %s. Lenha para uns %d minuto%s." % [
@@ -893,6 +988,41 @@ func equipment_changed(new_bag: Dictionary, new_wielded: String, verb: String, i
 			Speech.say("Você guardou %s na bolsa." % Bag.with_article(item))
 
 
+## Quem leva uma tocha acesa mudou (acendeu, queimou, entrou no mundo).
+@rpc("authority", "call_local", "reliable")
+func torches_changed(ids: Array) -> void:
+	torch_bearers = ids
+
+
+func _broadcast_torches() -> void:
+	torches_changed.rpc(state.lit_torch_ids())
+
+
+## A mão não dominante mudou (a tocha). "lit_left": segundos de tocha acesa.
+## verb: "empunhou", "guardou", "acendeu", "queimou" ou "" (só sincroniza).
+@rpc("authority", "call_local", "reliable")
+func offhand_changed(new_bag: Dictionary, new_offhand: String, lit_left: float, verb: String, item: String) -> void:
+	if world == null:
+		return
+	_sync_menu.call_deferred()
+	inventory = new_bag
+	offhand = new_offhand
+	_torch_ends = Time.get_unix_time_from_system() + lit_left if lit_left > 0.0 else 0.0
+	match verb:
+		"empunhou":
+			_play(Sounds.wield())
+			Speech.say("Você empunha %s na mão não dominante. %s" % [Bag.with_article(item), Bag.WIELDABLE.get(item, "")])
+		"guardou":
+			_play(Sounds.stow())
+			Speech.say("Você guardou %s na bolsa." % Bag.with_article(item))
+		"acendeu":
+			_play(Sounds.fire_spark())
+			Speech.say("A tocha acende. Ela queima por uns %d minutos e afasta o Calado." % ceili(lit_left / 60.0))
+		"queimou":
+			_play(Sounds.stow())
+			Speech.say("A tocha queimou até o fim e virou cinza.")
+
+
 ## Outra criatura empunhou, guardou ou golpeou: o som sai de onde ela está.
 @rpc("authority", "call_local", "reliable")
 func player_handled(id: int, verb: String) -> void:
@@ -908,10 +1038,20 @@ func action_failed(reason: String, detail: String) -> void:
 	if world == null:
 		return
 	match reason:
+		"arvore":
+			Speech.say(detail)
+		"tocha_acesa":
+			Speech.say("Tocha acesa não se guarda nem se troca: ela queima até o fim.")
+		"tocha_sem_fogo":
+			Speech.say("Para acender a tocha, chegue perto de uma fogueira acesa.")
+		"tocha_ja_acesa":
+			Speech.say("A tocha já está acesa.")
+		"tocha_sem_tocha":
+			Speech.say("Você não tem uma tocha na mão não dominante.")
 		"golpear":
 			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
-			Speech.say("Sua carga está no limite, %d de %d. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded), Bag.CAPACITY])
+			Speech.say("Sua carga está no limite, %d de %d. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.CAPACITY])
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -948,6 +1088,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Para esta fase, empunhe %s pela Bolsa." % Bag.with_article(detail) if not detail.is_empty() else "Empunhe a ferramenta certa.")
 		"preparo_fase":
 			pass
+		"obra_sem_silex":
+			Speech.say("A fogueira apagada pede um sílex, e não há nenhum na sua bolsa.")
 		"obra_sem_lenha":
 			Speech.say("A fogueira está sem lenha, e não há lenha na sua bolsa.")
 		"obra_sem_lenha_bolsa":
@@ -1435,8 +1577,23 @@ func _nearest_resource(reach: float, accepts: Callable, prefer_ready: bool) -> V
 	return best
 
 
+## O crepitar das tochas acesas: a sua, na mão esquerda (a não dominante),
+## e as dos outros, onde eles estão.
+func _update_torch_sounds() -> void:
+	var points := []
+	if _torch_ends > Time.get_unix_time_from_system() and not offhand.is_empty():
+		var left := Compass.forward(_heading).rotated(-PI / 2.0)
+		points.append(_pos + left * 0.4)
+	for id: int in torch_bearers:
+		if id != my_id and players.has(id):
+			points.append(players[id]["pos"])
+	audio.set_torches(points)
+
+
 func _say_inventory() -> void:
 	var hands := "Mãos livres." if wielded.is_empty() else "Nas mãos: %s." % Bag.spoken_name(wielded)
+	if not offhand.is_empty():
+		hands += " Na mão não dominante: %s, %s." % [Bag.spoken_name(offhand), "acesa" if _torch_ends > Time.get_unix_time_from_system() else "apagada"]
 	var labels: PackedStringArray = []
 	for entry: Array in Bag.entries(inventory):
 		labels.append(Bag.entry_label(entry[0], entry[1], inventory))
@@ -1462,6 +1619,17 @@ func _swing() -> void:
 			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
 			return
+	if wielded == "faca":
+		# A faca só serve para sangrar o tronco de uma árvore.
+		var tree := _nearest_resource(STRIKE_REACH, func(cell: Vector2i):
+			return world.thing_at(cell) == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() \
+					and harvest.is_available(cell) and harvest.hits_left(cell) > 0, false)
+		if tree != WorldGen.NO_CELL:
+			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
+			request_tap.rpc_id(1, tree)
+		else:
+			request_swing.rpc_id(1)
+		return
 	if wielded != "machado":
 		# Armas ainda não acertam nada (os horrores virão): só o golpe no ar.
 		request_swing.rpc_id(1)
@@ -1478,7 +1646,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, acenda-a perto de uma fogueira acesa e ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
 
 
 ## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o
@@ -1682,8 +1850,8 @@ func _bag_items() -> Array:
 		else:
 			items.append({"label": label, "open": _bag_sizes.bind(item)})
 	if not items.is_empty():
-		items.append({"label": Bag.load_label(inventory, wielded),
-			"info": "%s. Cabem mais %d de peso." % [Bag.load_label(inventory, wielded), Bag.free_space(inventory, wielded)]})
+		items.append({"label": Bag.load_label(inventory, wielded, offhand),
+			"info": "%s. Cabem mais %d de peso." % [Bag.load_label(inventory, wielded, offhand), Bag.free_space(inventory, wielded, offhand)]})
 	return items
 
 
@@ -1725,9 +1893,37 @@ func _drop(item: String, amount: int) -> String:
 
 ## O que está nas mãos, com o botão Guardar.
 func _equipment_items() -> Array:
-	if wielded.is_empty():
+	var items := []
+	if not wielded.is_empty():
+		items.append({"label": Bag.display_name(wielded), "open": _equipment_actions})
+	if not offhand.is_empty():
+		var lit := _torch_ends > Time.get_unix_time_from_system()
+		items.append({"label": "%s, mão não dominante%s" % [Bag.display_name(offhand), ", acesa" if lit else ", apagada"],
+			"open": _offhand_actions})
+	return items
+
+
+func _offhand_actions() -> Array:
+	if offhand.is_empty():
 		return []
-	return [{"label": Bag.display_name(wielded), "open": _equipment_actions}]
+	var left := _torch_ends - Time.get_unix_time_from_system()
+	if left > 0.0:
+		return [{"label": "Acesa", "info": "Queima por mais uns %d minuto%s e afasta o Calado. Tocha acesa não se guarda." % [
+			ceili(left / 60.0), "" if ceili(left / 60.0) == 1 else "s"]}]
+	return [
+		{"label": "Acender", "run": _light_torch},
+		{"label": "Guardar", "run": _stow_offhand},
+	]
+
+
+func _light_torch() -> String:
+	request_light_torch.rpc_id(1)
+	return ""
+
+
+func _stow_offhand() -> String:
+	request_stow_offhand.rpc_id(1)
+	return ""
 
 
 func _equipment_actions() -> Array:
@@ -1755,6 +1951,9 @@ const CAMINHEIRO_RESOURCES := [
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
 	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
+	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
+	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
+	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
 ## Até onde (em casas, em linha reta) o Caminheiro procura um recurso: uma
 ## região e meia para cada lado.
@@ -1854,7 +2053,7 @@ func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 func _resource_pick_label(cell: Vector2i) -> String:
 	var text := harvest.spoken_name(cell)
 	var thing := world.thing_at(cell)
-	if thing == WorldGen.Thing.ARGILA or thing == WorldGen.Thing.PEDRAS:
+	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA]:
 		text += " no chão"
 	return text[0].to_upper() + text.substr(1)
 
@@ -2302,7 +2501,7 @@ func _run_auto_commands() -> void:
 			"KIT":  # testes, só quem hospeda: materiais para construir e fabricar
 				if state != null:
 					var inv := state.inventory_of(my_id)
-					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira"]:
+					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira", "silex", "cipo", "fibra", "resina"]:
 						inv[item] = int(inv.get(item, 0)) + 10
 					equipment_changed(inv, state.wielding(my_id), "", "")
 			"LIVRE":  # testes: vai até um chão livre e fica de frente para ele (norte)
@@ -2331,7 +2530,7 @@ func _run_auto_commands() -> void:
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":
 				_drop("pedra_grande", 99)
-			"LANCA", "CLAVA", "ENXADA":
+			"LANCA", "CLAVA", "ENXADA", "FACA", "TOCHA":
 				_craft(command.to_lower())
 			"POVOADO":  # testes, só quem hospeda: um marco com nome e uma fogueira prontos aqui perto
 				_test_settlement()

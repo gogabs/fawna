@@ -14,11 +14,14 @@ const ORIGIN_REACH := 1.2
 const MAX_STACK := 99  # só para armas fabricadas; a bolsa se limita pela carga (Bag.CAPACITY)
 const DROP_COOLDOWN_MS := 250  # largar e pegar do chão mais rápido que isso não conta
 const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
+const TORCH_SECONDS := 900.0  # quanto uma tocha acesa queima
 const BUILD_REACH := 1.9  # a obra ocupa a casa toda: dá para trabalhar de um pouco mais longe
 
 var world: WorldGen
 ## Recursos coletáveis: golpes dados, o que foi colhido e quando volta.
 var harvest: Harvest
+## Resina das árvores: golpes de faca e árvores secas. Ver Resin.
+var resin: Resin
 ## Construções (marcos, fogueiras). Ver Builds e Crafting.
 var builds: Builds
 ## Itens soltos no chão. Ver Ground.
@@ -29,6 +32,10 @@ var players := {}
 var inventories := {}
 ## nome da criatura -> item empunhado ("" = mãos livres). Ver Bag.
 var equipment := {}
+## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
+var offhand := {}
+## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
+var torch_until := {}
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
@@ -40,6 +47,7 @@ var _last_drop := {}  # id -> Time.get_ticks_msec()
 func _init(world_seed: int) -> void:
 	world = WorldGen.new(world_seed)
 	harvest = Harvest.new(world)
+	resin = Resin.new(world)
 	builds = Builds.new(world)
 	ground = Ground.new()
 
@@ -86,6 +94,91 @@ func wielding(id: int) -> String:
 	return equipment.get(players[id]["name"], "")
 
 
+## O que a criatura tem na mão não dominante ("" = livre).
+func offhand_of(id: int) -> String:
+	if not players.has(id):
+		return ""
+	return offhand.get(players[id]["name"], "")
+
+
+## Segundos que a tocha acesa na mão ainda queima (0 = apagada ou sem tocha).
+func torch_left(id: int, at := -1.0) -> float:
+	if not players.has(id):
+		return 0.0
+	return maxf(0.0, float(torch_until.get(players[id]["name"], 0.0)) - (Time.get_unix_time_from_system() if at < 0.0 else at))
+
+
+## Ids de quem leva uma tocha acesa.
+func lit_torch_ids() -> Array:
+	var out := []
+	for id in players:
+		if torch_left(id) > 0.0:
+			out.append(id)
+	return out
+
+
+## Posições (Vector3: x, y, raio) de quem leva uma tocha acesa: o Calado respeita.
+func lit_torches() -> Array:
+	var out := []
+	for id in players:
+		if torch_left(id) > 0.0:
+			var pos: Vector2 = players[id]["pos"]
+			out.append(Vector3(pos.x, pos.y, Horrors.TORCH_SAFE))
+	return out
+
+
+## Acende a tocha da mão não dominante numa fogueira acesa ao alcance.
+## Devolve { ok, reason, seconds }. reason: "sem_tocha", "ja_acesa", "sem_fogo".
+func light_torch(id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if offhand_of(id) != "tocha":
+		return {"ok": false, "reason": "sem_tocha"}
+	if torch_left(id) > 0.0:
+		return {"ok": false, "reason": "ja_acesa"}
+	var pos: Vector2 = players[id]["pos"]
+	var near := false
+	for build: Dictionary in builds.all():
+		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
+			near = true
+			break
+	if not near:
+		return {"ok": false, "reason": "sem_fogo"}
+	torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + TORCH_SECONDS
+	return {"ok": true, "seconds": TORCH_SECONDS}
+
+
+## Tochas que queimaram até o fim: somem da mão. Devolve os ids de quem estava
+## no mundo.
+func expire_torches(at := -1.0) -> Array:
+	if at < 0.0:
+		at = Time.get_unix_time_from_system()
+	var out := []
+	for player_name: String in torch_until.keys():
+		if float(torch_until[player_name]) > at:
+			continue
+		torch_until.erase(player_name)
+		offhand[player_name] = ""
+		for id in players:
+			if players[id]["name"] == player_name:
+				out.append(id)
+	return out
+
+
+## Guarda na bolsa o que estiver na mão não dominante. Devolve { ok, reason, item }.
+## Tocha acesa não se guarda: queima até o fim.
+func stow_offhand(id: int) -> Dictionary:
+	var item := offhand_of(id)
+	if item.is_empty():
+		return {"ok": false, "reason": "maos_livres"}
+	if torch_left(id) > 0.0:
+		return {"ok": false, "reason": "tocha_acesa", "item": item}
+	var inv := inventory_of(id)
+	inv[item] = int(inv.get(item, 0)) + 1
+	offhand[players[id]["name"]] = ""
+	return {"ok": true, "item": item}
+
+
 ## Tira um item da bolsa e o põe nas mãos. Se já havia outro nas mãos, ele
 ## volta para a bolsa. Devolve { ok, reason, item, stowed }.
 func equip(id: int, item: String) -> Dictionary:
@@ -97,6 +190,18 @@ func equip(id: int, item: String) -> Dictionary:
 	var inv := inventory_of(id)
 	if int(inv.get(item, 0)) <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
+	if Bag.is_offhand(item):
+		# Segunda peça de equipamento: a mão principal não muda.
+		if torch_left(id) > 0.0:
+			return {"ok": false, "reason": "tocha_acesa", "item": item}
+		var old: String = offhand.get(player_name, "")
+		if not old.is_empty():
+			inv[old] = int(inv.get(old, 0)) + 1
+		inv[item] = int(inv[item]) - 1
+		if int(inv[item]) <= 0:
+			inv.erase(item)
+		offhand[player_name] = item
+		return {"ok": true, "item": item, "stowed": old, "slot": "offhand"}
 	var stowed: String = equipment.get(player_name, "")
 	if not stowed.is_empty():
 		inv[stowed] = int(inv.get(stowed, 0)) + 1
@@ -182,9 +287,19 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var item := Harvest.item_of(thing)
 	var inv := inventory_of(id)
 	var carrying := wielding(id)
-	if Bag.free_space(inv, carrying) <= 0:
+	# Árvore de pé: o Espaço recolhe a resina seca ou diz como ela está.
+	var resin_haul := {}
+	if thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0:
+		var tapped := resin.collect(cell)
+		if not tapped["ok"]:
+			return {"ok": false, "reason": "arvore", "item": tapped["text"]}
+		resin_haul = tapped["yield"]
+		item = "resina"
+	if Bag.free_space(inv, carrying, offhand_of(id)) <= 0:
+		if not resin_haul.is_empty():
+			resin.undo_collect(cell)
 		return {"ok": false, "reason": "cheio", "item": item}
-	var result := harvest.take(cell)
+	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
 	var parts: Dictionary = result.get("parts", {})
@@ -193,7 +308,7 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	for extra: String in extras:
 		got[extra] = int(got.get(extra, 0)) + int(extras[extra])
 	# O que não cabe na carga fica no chão, onde a criatura está.
-	var split := Bag.split_to_fit(inv, carrying, got)
+	var split := Bag.split_to_fit(inv, carrying, got, offhand_of(id))
 	for key: String in split[0]:
 		inv[key] = int(inv.get(key, 0)) + int(split[0][key])
 	if not split[1].is_empty():
@@ -240,7 +355,7 @@ func pick_up(id: int, cell: Vector2i, only := "") -> Dictionary:
 	if pile.is_empty():
 		return {"ok": false, "reason": "nada"}
 	var inv := inventory_of(id)
-	var split := Bag.split_to_fit(inv, wielding(id), pile)
+	var split := Bag.split_to_fit(inv, wielding(id), pile, offhand_of(id))
 	if split[0].is_empty():
 		return {"ok": false, "reason": "cheio"}
 	var now := Time.get_ticks_msec()
@@ -270,6 +385,29 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	if not builds.at(cell).is_empty():
 		return {"ok": false, "reason": "nada", "hits_left": 0, "felled": false}
 	return harvest.strike(cell)
+
+
+## Um golpe de faca no tronco de uma árvore ao alcance, para tirar resina.
+## Quem chama confere se a faca está empunhada. A resina vai para a bolsa; o
+## que não couber fica no chão, onde a criatura está. Devolve { ok, reason,
+## event, cuts, yield, kept, left_over, pile_cell } (event: ver Resin.tap).
+func tap_tree(id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	# Árvore já derrubada (ou obra no lugar): não há tronco para sangrar.
+	if not builds.at(cell).is_empty() or not harvest.is_available(cell) or harvest.hits_left(cell) == 0:
+		return {"ok": false, "reason": "nada"}
+	var result := resin.tap(cell)
+	if not result["ok"]:
+		result["reason"] = result["event"]
+	return result
 
 
 ## Um golpe de preparo no terreno de uma obra grande: machado (limpar) ou
@@ -423,7 +561,10 @@ func to_save() -> Dictionary:
 		"seed": world.world_seed,
 		"inventories": inventories,
 		"equipment": equipment,
+		"offhand": offhand,
+		"torch_until": torch_until,
 		"harvest": harvest.to_save(),
+		"resin": resin.to_save(),
 		"builds": builds.to_save(),
 		"ground": ground.to_save(),
 	}
@@ -445,9 +586,16 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.inventories[player_name] = inv
 	for player_name in data.get("equipment", {}):
 		state.equipment[player_name] = str(data["equipment"][player_name])
+	for player_name in data.get("offhand", {}):
+		state.offhand[player_name] = str(data["offhand"][player_name])
+	for player_name in data.get("torch_until", {}):
+		state.torch_until[player_name] = float(data["torch_until"][player_name])
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
+	var tapped = data.get("resin", [])
+	if typeof(tapped) == TYPE_ARRAY:
+		state.resin.load_save(tapped)
 	var dropped = data.get("ground", [])
 	if typeof(dropped) == TYPE_ARRAY:
 		state.ground.load_save(dropped)
