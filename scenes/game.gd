@@ -1463,12 +1463,12 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, ouve os arredores. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; C diz onde fica a mais próxima.")
 
 
 ## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o
 ## cristal estiver aceso) e, depois, o recurso mais próximo do tipo que o
-## Caminheiro rastreou por último. Sem nada disso, fala os arredores.
+## Caminheiro rastreou por último; sem tipo rastreado, o mais próximo de qualquer tipo.
 func _say_radar() -> void:
 	var parts := PackedStringArray()
 	if _caminheiro.active:
@@ -1479,10 +1479,20 @@ func _say_radar() -> void:
 			parts.append("Não há %s por perto." % _radar_place.substr(_radar_place.find(" ") + 1))
 		elif not (_caminheiro.active and cell == _tracked_resource):
 			parts.append("Mais perto, %s: %s." % [_radar_place, Compass.describe(WorldGen.cell_center(cell) - _pos, _heading)])
-	if parts.is_empty():
-		_say_surroundings()
 	else:
-		Speech.say(" ".join(parts))
+		# Nenhum tipo rastreado: o coletável mais próximo, de qualquer tipo.
+		var best := WorldGen.NO_CELL
+		var best_place := ""
+		for entry: Array in CAMINHEIRO_RESOURCES:
+			var found := nearest_collectable(world, harvest, _pos, entry[1], RESOURCE_SEARCH_RADIUS)
+			if found != WorldGen.NO_CELL and (best == WorldGen.NO_CELL or WorldGen.cell_center(found).distance_squared_to(_pos) < WorldGen.cell_center(best).distance_squared_to(_pos)):
+				best = found
+				best_place = entry[2]
+		if best == WorldGen.NO_CELL:
+			parts.append("Não há recursos por perto.")
+		else:
+			parts.append("Mais perto, %s: %s." % [best_place, Compass.describe(WorldGen.cell_center(best) - _pos, _heading)])
+	Speech.say(" ".join(parts))
 
 
 func _say_surroundings() -> void:
