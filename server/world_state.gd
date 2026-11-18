@@ -19,6 +19,8 @@ const BUILD_REACH := 1.9  # a obra ocupa a casa toda: dá para trabalhar de um p
 var world: WorldGen
 ## Recursos coletáveis: golpes dados, o que foi colhido e quando volta.
 var harvest: Harvest
+## Resina das árvores: golpes de faca e árvores secas. Ver Resin.
+var resin: Resin
 ## Construções (marcos, fogueiras). Ver Builds e Crafting.
 var builds: Builds
 ## Itens soltos no chão. Ver Ground.
@@ -40,6 +42,7 @@ var _last_drop := {}  # id -> Time.get_ticks_msec()
 func _init(world_seed: int) -> void:
 	world = WorldGen.new(world_seed)
 	harvest = Harvest.new(world)
+	resin = Resin.new(world)
 	builds = Builds.new(world)
 	ground = Ground.new()
 
@@ -272,6 +275,40 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	return harvest.strike(cell)
 
 
+## Um golpe de faca no tronco de uma árvore ao alcance, para tirar resina.
+## Quem chama confere se a faca está empunhada. A resina vai para a bolsa; o
+## que não couber fica no chão, onde a criatura está. Devolve { ok, reason,
+## event, cuts, yield, kept, left_over, pile_cell } (event: ver Resin.tap).
+func tap_tree(id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	# Árvore já derrubada (ou obra no lugar): não há tronco para sangrar.
+	if not builds.at(cell).is_empty() or not harvest.is_available(cell) or harvest.hits_left(cell) == 0:
+		return {"ok": false, "reason": "nada"}
+	var result := resin.tap(cell)
+	if not result["ok"]:
+		result["reason"] = result["event"]
+		return result
+	if not result["yield"].is_empty():
+		var inv := inventory_of(id)
+		var split := Bag.split_to_fit(inv, wielding(id), result["yield"])
+		for key: String in split[0]:
+			inv[key] = int(inv.get(key, 0)) + int(split[0][key])
+		if not split[1].is_empty():
+			ground.add_items(WorldGen.cell_of(pos), split[1])
+		result["kept"] = split[0]
+		result["left_over"] = split[1]
+		result["pile_cell"] = WorldGen.cell_of(pos)
+	return result
+
+
 ## Um golpe de preparo no terreno de uma obra grande: machado (limpar) ou
 ## enxada (capinar), na casa "cell", ao alcance. Quem chama confere o que está
 ## empunhado. O que for arrancado cai no chão da casa, como se tivesse sido
@@ -468,6 +505,7 @@ func to_save() -> Dictionary:
 		"inventories": inventories,
 		"equipment": equipment,
 		"harvest": harvest.to_save(),
+		"resin": resin.to_save(),
 		"builds": builds.to_save(),
 		"ground": ground.to_save(),
 	}
@@ -492,6 +530,9 @@ static func from_save(data: Dictionary) -> WorldState:
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
+	var tapped = data.get("resin", [])
+	if typeof(tapped) == TYPE_ARRAY:
+		state.resin.load_save(tapped)
 	var dropped = data.get("ground", [])
 	if typeof(dropped) == TYPE_ARRAY:
 		state.ground.load_save(dropped)

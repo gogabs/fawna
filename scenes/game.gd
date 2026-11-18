@@ -384,6 +384,31 @@ func request_strike(cell: Vector2i) -> void:
 	# Golpe em bambu já caído ou já recolhido: só o som do machado, sem fala.
 
 
+## Um golpe de faca no tronco de uma árvore (tecla J, com a faca empunhada):
+## algumas vezes faz a resina escorrer; demais seca a árvore (Resin).
+@rpc("any_peer", "call_local", "reliable")
+func request_tap(cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	if state.wielding(id) != "faca":
+		return
+	_tell_others_handled(id, "golpeou")
+	var result := state.tap_tree(id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] == "seca":
+			resin_tapped.rpc(cell, "seca", id)
+		return
+	_dirty = true
+	resin_tapped.rpc(cell, result["event"], id)
+	if not result["yield"].is_empty():
+		var kept: Dictionary = result.get("kept", {})
+		var left_over: Dictionary = result.get("left_over", {})
+		inventory_changed.rpc_id(id, state.inventory_of(id), "extraiu", "resina", int(result["yield"]["resina"]), {}, {}, kept, left_over)
+		if not left_over.is_empty():
+			ground_changed.rpc(result["pile_cell"], state.ground.items_at(result["pile_cell"]), "sobrou", id, left_over)
+
+
 @rpc("any_peer", "call_local", "reliable")
 func request_equip(item: String) -> void:
 	if not multiplayer.is_server():
@@ -720,6 +745,30 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
+
+
+## Um golpe de faca numa árvore: o som sai do tronco e quem golpeou ouve os
+## avisos (a resina em si vem por inventory_changed).
+@rpc("authority", "call_local", "reliable")
+func resin_tapped(cell: Vector2i, event: String, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.tree_knock(), 0.0, true, true)
+		if event in ["range", "secou", "seca"]:
+			audio.play_at_point(where, Sounds.tree_creak(), 0.0, true, true)
+	if by_id != my_id:
+		return
+	match event:
+		"descanso":
+			Speech.say("A resina ainda não voltou: a árvore precisa descansar. Mais golpes só a machucam.")
+		"range":
+			Speech.say("O tronco range. Pare, ou a árvore seca.")
+		"secou":
+			Speech.say("A árvore secou. Não dá mais resina.")
+		"seca":
+			Speech.say("Esta árvore está seca. Não dá mais resina.")
 
 
 ## As construções que já existem, para quem acabou de entrar.
@@ -1500,6 +1549,17 @@ func _swing() -> void:
 			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
 			return
+	if wielded == "faca":
+		# A faca só serve para sangrar o tronco de uma árvore.
+		var tree := _nearest_resource(STRIKE_REACH, func(cell: Vector2i):
+			return world.thing_at(cell) == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() \
+					and harvest.is_available(cell) and harvest.hits_left(cell) > 0, false)
+		if tree != WorldGen.NO_CELL:
+			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
+			request_tap.rpc_id(1, tree)
+		else:
+			request_swing.rpc_id(1)
+		return
 	if wielded != "machado":
 		# Armas ainda não acertam nada (os horrores virão): só o golpe no ar.
 		request_swing.rpc_id(1)
@@ -1516,7 +1576,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, tira resina; golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: ouvir os arredores; segure o Tab para escutar com atenção, com o vento e a música mais baixos e os recursos mais altos. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo; o Tab diz onde fica a mais próxima.")
 
 
 ## Tab: um toque curto fala os arredores; segurado, escuta com atenção até
@@ -1801,6 +1861,9 @@ const CAMINHEIRO_RESOURCES := [
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
 	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
+	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
+	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
+	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
 ## Até onde (em casas, em linha reta) o Caminheiro procura um recurso: uma
 ## região e meia para cada lado.
@@ -1900,7 +1963,7 @@ func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 func _resource_pick_label(cell: Vector2i) -> String:
 	var text := harvest.spoken_name(cell)
 	var thing := world.thing_at(cell)
-	if thing == WorldGen.Thing.ARGILA or thing == WorldGen.Thing.PEDRAS:
+	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA]:
 		text += " no chão"
 	return text[0].to_upper() + text.substr(1)
 
@@ -2411,7 +2474,7 @@ func _run_auto_commands() -> void:
 			"KIT":  # testes, só quem hospeda: materiais para construir e fabricar
 				if state != null:
 					var inv := state.inventory_of(my_id)
-					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira"]:
+					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira", "silex", "cipo", "fibra", "resina"]:
 						inv[item] = int(inv.get(item, 0)) + 10
 					equipment_changed(inv, state.wielding(my_id), "", "")
 			"LIVRE":  # testes: vai até um chão livre e fica de frente para ele (norte)
@@ -2440,7 +2503,7 @@ func _run_auto_commands() -> void:
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":
 				_drop("pedra_grande", 99)
-			"LANCA", "CLAVA", "ENXADA":
+			"LANCA", "CLAVA", "ENXADA", "FACA", "TOCHA":
 				_craft(command.to_lower())
 			"POVOADO":  # testes, só quem hospeda: um marco com nome e uma fogueira prontos aqui perto
 				_test_settlement()
