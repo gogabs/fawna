@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_appears_when_exposed()
 	_test_safe_places()
 	_test_stalks_from_behind()
+	_test_rear_directions()
 	_test_caught_consequences()
 	_test_stare_holds_and_repels()
 	_test_fire_repels()
@@ -130,6 +131,22 @@ func _test_safe_places() -> void:
 			_run(swim, {1: _player(world.region_landmark(sea))}, [], 0, long)
 			_check(swim.horrors.is_empty(), "no mar o Calado não deveria aparecer")
 			break
+
+
+func _test_rear_directions() -> void:
+	var world := WorldGen.new(42)
+	var spot := _forest_spot(world)
+	var seen := {}
+	for i in 60:
+		var horrors := Horrors.new(world)
+		horrors._rng.seed = i
+		var players := {1: _player(spot)}
+		var horror: Dictionary = horrors.horrors[horrors.summon(1, players)]
+		var offset: Vector2 = (horror["pos"] as Vector2) - spot
+		var heading := int(players[1].get("heading", 0))
+		_check(offset.dot(Compass.forward(heading)) < 0.0, "o Calado deveria sempre nascer atrás")
+		seen[posmod(roundi(Compass.bearing(offset) * 8.0 / TAU), 8)] = true
+	_check(seen.size() == 3, "o Calado deveria nascer em 3 direções de trás (viu %d)" % seen.size())
 
 
 func _test_stalks_from_behind() -> void:

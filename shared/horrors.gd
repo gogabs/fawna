@@ -105,13 +105,19 @@ func hunting(peer: int) -> Dictionary:
 	return {}
 
 
+## Uma das três direções de trás (traseira esquerda, trás, traseira direita),
+## sorteada, para o jogador ter que procurar por ele.
+func _rear_direction(heading: int) -> Vector2:
+	return Compass.forward(heading + 4 + _rng.randi_range(-1, 1))
+
+
 ## Faz o Calado aparecer atrás de um jogador (testes e, um dia, eventos).
 ## Devolve o id, ou -1 se o jogador não existe ou já tem um atrás de si.
 func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:
 	if not players.has(peer) or not hunting(peer).is_empty():
 		return -1
 	var player: Dictionary = players[peer]
-	var behind := -Compass.forward(int(player.get("heading", 0)))
+	var behind := _rear_direction(int(player.get("heading", 0)))
 	var horror := {
 		"id": _next_id, "target": peer, "pos": (player["pos"] as Vector2) + behind * distance,
 		"mode": Mode.STALK, "stare": 0.0, "wait": 0.0, "retreat_s": 0.0, "watchers": {},
@@ -189,7 +195,7 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		# sumir e só voltar depois do sossego. Só desiste de um salto muito
 		# grande, ou se a criatura ficou a salvo (mar, fogueira).
 		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
-			var behind := -Compass.forward(int(players[peer].get("heading", 0)))
+			var behind := _rear_direction(int(players[peer].get("heading", 0)))
 			horror["pos"] = target + behind * SPAWN_DISTANCE
 			horror["stare"] = 0.0
 			horror["mode"] = Mode.STALK
