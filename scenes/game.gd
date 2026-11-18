@@ -440,6 +440,10 @@ func request_build_start(kind: String, cell: Vector2i) -> void:
 		return
 	_dirty = true
 	build_changed.rpc(state.builds.info(result["id"]), "iniciada", id, {})
+	# Quem andou para dentro da casa antes de a obra chegar é levado para fora.
+	for entry in state.eject_from_walls(result["id"]):
+		move_corrected.rpc_id(int(entry[0]), entry[1])
+		player_moved.rpc(int(entry[0]), entry[1])
 
 
 ## Espaço perto de uma obra: deposita, bate, acende ou alimenta o fogo.
@@ -710,6 +714,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 	if world == null:
 		return
 	builds.apply_info(data)
+	_unstick()
 	var build_id := int(data["id"])
 	var build := builds.get_build(build_id)
 	# O som sai de onde a coisa acontece: a casa golpeada, o canteiro ou, nas
@@ -1117,6 +1122,15 @@ func _wanted_motion() -> Vector2:
 	return motion.normalized() * speed
 
 
+## Se a criatura ficou dentro de algo sólido (uma obra que chegou enquanto ela
+## andava para a casa), sai para o ponto livre mais perto e avisa o servidor.
+func _unstick() -> void:
+	if world == null or world.is_free(_pos):
+		return
+	_set_pos(world.nearest_free(_pos))
+	_last_sent = Vector2.INF
+
+
 ## Anda com colisão: se bater de frente, tenta deslizar ao longo do
 ## obstáculo; se não der para andar nada, esbarra.
 func _walk(motion: Vector2) -> void:
@@ -1126,6 +1140,7 @@ func _walk(motion: Vector2) -> void:
 	if world.is_free(target):
 		_set_pos(target)
 		return
+	_unstick()
 	var slid := Vector2.ZERO
 	for part in [Vector2(motion.x, 0.0), Vector2(0.0, motion.y)]:
 		if part != Vector2.ZERO and world.is_free(_pos + part):
