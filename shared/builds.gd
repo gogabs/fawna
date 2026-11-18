@@ -49,6 +49,8 @@ const WATER := 2  # lago, riacho, mar ou charco: não dá
 const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
 ## Canteiros de uma construção grande: um em cada canto (NO, NE, SE, SO).
 const POSTS := 4
+## As 9 partes de uma obra grande, de noroeste a sudeste (ver sector_name).
+const SECTORS := ["noroeste", "norte", "nordeste", "oeste", "centro", "leste", "sudoeste", "sul", "sudeste"]
 ## Até onde (em casas) do canto a batida conta para aquele canteiro.
 const POST_REACH := 2.2
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
@@ -140,6 +142,16 @@ static func post_cell(build: Dictionary, i: int) -> Vector2i:
 	var far := size - 1
 	var offsets := [Vector2i(0, 0), Vector2i(far, 0), Vector2i(far, far), Vector2i(0, far)]
 	return build["cell"] + offsets[i % POSTS]
+
+
+## A parte da obra em que uma casa fica, dividindo o quadrado em 3 por 3:
+## "noroeste", "norte", ..., "centro". "cell" é uma casa do mundo.
+static func sector_name(build: Dictionary, cell: Vector2i) -> String:
+	var size := maxi(1, int(build.get("size", 1)))
+	var local: Vector2i = cell - (build["cell"] as Vector2i)
+	var col := clampi(local.x * 3 / size, 0, 2)
+	var row := clampi(local.y * 3 / size, 0, 2)
+	return [["noroeste", "norte", "nordeste"], ["oeste", "centro", "leste"], ["sudoeste", "sul", "sudeste"]][row][col]
 
 
 static func post_name(i: int) -> String:
@@ -962,21 +974,41 @@ func status_text(id: int, at_time := -1.0) -> String:
 ## "faltam 3 coisas a arrancar: 2 arbustos e 1 árvore" / "faltam 9 casas de grama".
 func _prep_text(build: Dictionary) -> String:
 	var prep: Dictionary = build["prep"]
-	if str(build["phase"]) == "capina":
-		return "falta%s %d casa%s de grama" % ["" if prep.size() == 1 else "m", prep.size(), "" if prep.size() == 1 else "s"]
-	var counts := {}
+	var by_sector := {}
 	for cell: Vector2i in prep:
-		var thing := world.thing_at(cell)
-		counts[thing] = int(counts.get(thing, 0)) + 1
+		var sector := sector_name(build, cell)
+		if not by_sector.has(sector):
+			by_sector[sector] = []
+		by_sector[sector].append(cell)
+	var sectors: Array = by_sector.keys()
+	sectors.sort_custom(func(a: String, b: String) -> bool: return SECTORS.find(a) < SECTORS.find(b))
+	var plural := "" if prep.size() == 1 else "s"
+	if str(build["phase"]) == "capina":
+		var parts: PackedStringArray = []
+		for sector: String in sectors:
+			parts.append("%d %s" % [by_sector[sector].size(), _sector_place(sector)])
+		return "falta%s %d casa%s de grama: %s" % ["" if prep.size() == 1 else "m", prep.size(), plural, ", ".join(parts)]
 	var names := {
 		WorldGen.Thing.ARVORE: ["árvore", "árvores"], WorldGen.Thing.BAMBU: ["touceira de bambu", "touceiras de bambu"],
 		WorldGen.Thing.ARBUSTO: ["arbusto", "arbustos"], WorldGen.Thing.ARBUSTO_FRUTAS: ["arbusto com frutas", "arbustos com frutas"],
 	}
 	var parts: PackedStringArray = []
-	for thing in counts:
-		var pair: Array = names.get(thing, ["coisa", "coisas"])
-		parts.append("%d %s" % [counts[thing], pair[0] if counts[thing] == 1 else pair[1]])
-	return "falta%s %d coisa%s a arrancar: %s" % ["" if prep.size() == 1 else "m", prep.size(), "" if prep.size() == 1 else "s", ", ".join(parts)]
+	for sector: String in sectors:
+		var counts := {}
+		for cell: Vector2i in by_sector[sector]:
+			var thing := world.thing_at(cell)
+			counts[thing] = int(counts.get(thing, 0)) + 1
+		var things: PackedStringArray = []
+		for thing in counts:
+			var pair: Array = names.get(thing, ["coisa", "coisas"])
+			things.append("%d %s" % [counts[thing], pair[0] if counts[thing] == 1 else pair[1]])
+		parts.append("%s: %s" % [sector, ", ".join(things)])
+	return "falta%s %d coisa%s a arrancar. %s" % ["" if prep.size() == 1 else "m", prep.size(), plural, "; ".join(parts)]
+
+
+## "no sudeste", "no centro" (a parte da obra, dita em lugar).
+static func _sector_place(sector: String) -> String:
+	return "no centro" if sector == "centro" else "no " + sector
 
 
 ## "noroeste 3, nordeste 0, sudeste 3, sudoeste 2": quantas batidas faltam em cada canto.
