@@ -80,9 +80,10 @@ func _test_resin_cycle() -> void:
 	_check(resin.cuts(other, t + 1) == 2 and resin.cuts(other, t + 1 + Resin.CUT_MEMORY + 1) == 0, "os cortes se curam com o tempo")
 	_check(resin.tap(other, t + 2)["event"] == "resina", "resina na outra árvore")
 	var later := t + 2 + Resin.CUT_MEMORY + 5
-	resin.tap(other, later)
+	_check(resin.tap(other, later)["event"] == "descanso" and resin.cuts(other, later) == 0, "primeiro golpe numa árvore que descansa só avisa, sem machucar")
 	resin.tap(other, later + 1)
-	_check(resin.tap(other, later + 2)["event"] == "descanso", "a árvore ainda descansa: sem resina")
+	resin.tap(other, later + 2)
+	_check(resin.tap(other, later + 3)["event"] == "descanso", "a árvore ainda descansa: sem resina")
 	var rested := t + 2 + Resin.REST_TIME + Resin.CUT_MEMORY + 10
 	resin.tap(other, rested)
 	resin.tap(other, rested + 1)

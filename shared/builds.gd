@@ -25,7 +25,7 @@ extends RefCounted
 ## para a argila secar (Crafting, "dry"): dá para trabalhar antes, mas cada
 ## batida vale metade; uma fogueira acesa na região seca em metade do tempo.
 ## Fogueira pronta:
-##   apagada com lenha -> batidas de pedra (faíscas) -> acesa -> queima a
+##   apagada com lenha -> batidas de sílex (faíscas; gasta 1 sílex) -> acesa -> queima a
 ##   lenha com o tempo -> apagada. Espaço com ela acesa (ou sem lenha) põe
 ##   mais uma lenha.
 
@@ -686,10 +686,16 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 			return {"ok": true, "event": "alimentou", "item": wood}
 		build["fuel"] = minf(float(build["fuel"]) + seconds, Crafting.MAX_FUEL)
 		return {"ok": true, "event": "abasteceu", "item": wood}
+	# Acender pede um sílex na bolsa (bate-se pedra nele); ele só se gasta quando pega fogo.
+	if int(bag.get("silex", 0)) <= 0:
+		return {"ok": false, "reason": "sem_silex"}
 	build["sparks"] = int(build["sparks"]) + 1
 	if int(build["sparks"]) < Crafting.SPARKS_TO_LIGHT:
 		return {"ok": true, "event": "faisca", "sparks_left": Crafting.SPARKS_TO_LIGHT - int(build["sparks"])}
 	build["sparks"] = 0
+	bag["silex"] = int(bag["silex"]) - 1
+	if int(bag["silex"]) <= 0:
+		bag.erase("silex")
 	build["burn_until"] = at_time + float(build["fuel"])
 	build["fuel"] = 0.0
 	return {"ok": true, "event": "acesa"}
@@ -945,7 +951,7 @@ func status_text(id: int, at_time := -1.0) -> String:
 		if is_lit(id, at_time):
 			return "%s acesa, com lenha para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
 		if float(build["fuel"]) > 0.0:
-			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
+			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate o sílex para acender (gasta 1 sílex)." % [title, minutes, "" if minutes == 1 else "s"]
 		return "%s apagada e sem lenha. Espaço põe uma lenha." % title
 	if int(build["size"]) > 1:
 		return "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [

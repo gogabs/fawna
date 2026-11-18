@@ -139,11 +139,15 @@ func _test_fire() -> void:
 	_check(is_equal_approx(builds.fuel_left(id), expected), "a lenha da última etapa é o primeiro combustível")
 	_check(not builds.is_lit(id), "pronta, mas apagada")
 	var t := Builds.now()
+	result = builds.work(id, inv, t)
+	_check(not result["ok"] and result["reason"] == "sem_silex", "sem sílex, não dá para acender")
+	inv["silex"] = 2
 	for i in Crafting.SPARKS_TO_LIGHT - 1:
 		result = builds.work(id, inv, t)
 		_check(result["event"] == "faisca", "batidas de pedra soltam faíscas")
 	result = builds.work(id, inv, t)
 	_check(result["event"] == "acesa" and builds.is_lit(id, t), "acende na quarta batida")
+	_check(int(inv.get("silex", 0)) == 1, "acender gasta 1 sílex")
 	var lenha_before := int(inv["lenha_media"])
 	result = builds.work(id, inv, t)
 	_check(result["event"] == "alimentou" and int(inv["lenha_media"]) == lenha_before - 1, "acesa, Espaço põe uma lenha média")
@@ -156,6 +160,7 @@ func _test_fire() -> void:
 	result = builds.work(id, inv, out_at)
 	_check(not result["ok"] and result["reason"] == "sem_lenha", "apagada e sem lenha, avisa")
 	inv["lenha_pequena"] = 1
+	inv["silex"] = 1
 	result = builds.work(id, inv, out_at)
 	_check(result["event"] == "abasteceu" and is_equal_approx(builds.fuel_left(id, out_at), Crafting.FUEL_SECONDS["lenha_pequena"]), "lenha numa fogueira apagada fica guardada")
 	result = builds.work(id, inv, out_at)
@@ -169,10 +174,10 @@ func _test_weapons() -> void:
 	_check(not result["ok"] and result["reason"] == "faltam", "sem materiais, não faz a lança")
 	var inv := state.inventory_of(2)
 	inv["bambu"] = 2
-	inv["pedra_pequena"] = 1
+	inv["silex"] = 1
 	result = state.craft(2, "lanca")
 	_check(result["ok"] and int(inv["lanca"]) == 1, "faz a lança")
-	_check(int(inv["bambu"]) == 1 and not inv.has("pedra_pequena"), "gastando 1 bambu e 1 pedra pequena")
+	_check(int(inv["bambu"]) == 1 and not inv.has("silex"), "gastando 1 bambu e 1 sílex")
 	_check(state.equip(2, "lanca")["ok"] and state.wielding(2) == "lanca", "a lança pode ser empunhada")
 	inv["lenha_media"] = 1
 	inv["pedra_media"] = 1

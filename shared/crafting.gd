@@ -96,7 +96,7 @@ const WEED_HITS := 2
 ## Ferramenta de cada fase de preparo.
 const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
-## Fogo: batidas de pedra até acender, quanto cada lenha queima e o máximo
+## Fogo: batidas de sílex (gasta 1 sílex ao acender) até acender, quanto cada lenha queima e o máximo
 ## que a fogueira guarda. A lenha da última etapa da fogueira já é o
 ## primeiro combustível.
 const SPARKS_TO_LIGHT := 4
@@ -109,7 +109,7 @@ const FUEL_ORDER := ["lenha_grande", "lenha_media", "lenha_pequena"]
 ## ser empunhadas (Bag.WIELDABLE).
 const WEAPONS := {
 	"lanca": {"name": ["lança de bambu", "lanças de bambu"], "article": "a",
-		"materials": {"bambu": 1, "pedra_pequena": 1}},
+		"materials": {"bambu": 1, "silex": 1}},
 	"clava": {"name": ["clava de pedra", "clavas de pedra"], "article": "a",
 		"materials": {"lenha_media": 1, "pedra_media": 1}},
 }

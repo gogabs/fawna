@@ -9,7 +9,8 @@ extends RefCounted
 ## fazem o tronco ranger (a partir de WARN_AT) e o de número DEATH_AT seca a
 ## árvore para sempre (ela continua de pé: dá para derrubar com o machado, mas
 ## não dá mais resina). Depois de dar resina, a árvore descansa REST_TIME
-## segundos; golpear nesse tempo conta como machucar.
+## segundos; o primeiro golpe nesse tempo só avisa ("descanso"), e quem insiste
+## em seguida a machuca.
 ##
 ## Só o servidor precisa disto: os clientes ficam sabendo pelo resultado do
 ## golpe, mandado a quem golpeou e, como som, a quem está por perto.
@@ -20,6 +21,7 @@ const DEATH_AT := 6
 const CUT_MEMORY := 120.0
 const REST_TIME := 900.0
 const RESIN_YIELD := 2
+
 
 var world: WorldGen
 ## Vector2i -> { "cuts": int, "last": hora do último golpe, "rest_until": hora
@@ -62,6 +64,12 @@ func tap(cell: Vector2i, at := -1.0) -> Dictionary:
 	if is_dead(cell):
 		return {"ok": false, "event": "seca", "cuts": 0, "yield": {}}
 	var node: Dictionary = _trees.get(cell, {"cuts": 0, "last": 0.0, "rest_until": 0.0, "dead": false})
+	# Primeiro golpe numa árvore que ainda descansa: só avisa, sem machucar.
+	# Quem insiste (golpes seguidos) passa a machucá-la.
+	if at < float(node["rest_until"]) and cuts(cell, at) == 0 and at - float(node.get("warned", -1.0e9)) > CUT_MEMORY:
+		node["warned"] = at
+		_trees[cell] = node
+		return {"ok": true, "event": "descanso", "cuts": 0, "yield": {}}
 	var count := cuts(cell, at) + 1
 	node["cuts"] = count
 	node["last"] = at
