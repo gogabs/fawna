@@ -39,7 +39,7 @@ const WEIGHTS := {
 	"lanca": 2,
 	"clava": 4,
 	"enxada": 3,
-	"silex": 2,
+	"silex": 1,
 	"cipo": 1,
 	"fibra": 1,
 	"resina": 1,

@@ -54,7 +54,7 @@ const BUILDS := {
 		"fire": true,
 		"stages": [
 			{"name": "o anel de pedras", "materials": {"pedra_media": 4, "pedra_pequena": 4}, "work": 3},
-			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3}, "work": 2},
+			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3, "silex": 1}, "work": 2},
 		],
 	},
 	"abrigo": {
@@ -96,7 +96,7 @@ const WEED_HITS := 2
 ## Ferramenta de cada fase de preparo.
 const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
-## Fogo: batidas de sílex (gasta 1 sílex ao acender) até acender, quanto cada lenha queima e o máximo
+## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada lenha queima e o máximo
 ## que a fogueira guarda. A lenha da última etapa da fogueira já é o
 ## primeiro combustível.
 const SPARKS_TO_LIGHT := 4
