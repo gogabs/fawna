@@ -261,26 +261,8 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 
 ## Põe os sons dos recursos mais próximos (que ainda não foram colhidos) nas
 ## fontes fixas. Chamado ao trocar de casa e quando algo é colhido ou rebrota.
-## Escutar com atenção: os sons dos recursos sobem enquanto o Tab está
-## segurado. Só muda o volume das fontes fixas que já existem.
-const RESOURCE_FOCUS_DB := 6.0
-var _resource_focus := false
-var _resource_tween: Tween
-
-
-func set_resource_focus(on: bool, seconds := 0.4) -> void:
-	_resource_focus = on
-	if _resource_tween != null:
-		_resource_tween.kill()
-	if _resource_players.is_empty():
-		return
-	_resource_tween = create_tween().set_parallel()
-	for player in _resource_players:
-		_resource_tween.tween_property(player, "volume_db", _resource_db(), seconds)
-
-
 func _resource_db() -> float:
-	return RESOURCE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0) + (RESOURCE_FOCUS_DB if _resource_focus else 0.0)
+	return RESOURCE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
 
 
 func refresh_resources() -> void:

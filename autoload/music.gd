@@ -18,7 +18,6 @@ var level := 0
 
 var _player: AudioStreamPlayer
 var _pending_level := -1
-var _duck_tween: Tween
 
 
 func _ready() -> void:
@@ -41,16 +40,6 @@ func start() -> void:
 func stop() -> void:
 	if _player != null:
 		_player.stop()
-
-
-## Abaixa a música por um tempo (escutar com atenção); 0 volta ao normal.
-func set_duck(db: float, seconds := 0.4) -> void:
-	if _player == null:
-		return
-	if _duck_tween != null:
-		_duck_tween.kill()
-	_duck_tween = create_tween()
-	_duck_tween.tween_property(_player, "volume_db", VOLUME_DB + db, seconds)
 
 
 ## Muda a versão da música. Se já estiver tocando, troca no fim do loop.
