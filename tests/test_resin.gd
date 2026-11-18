@@ -65,30 +65,43 @@ func _test_resin_cycle() -> void:
 	_check(tree != WorldGen.NO_CELL, "acha uma árvore")
 	var resin := Resin.new(world)
 	var t := 1000.0
+	_check(resin.status_text(tree, t).begins_with("Árvore de pé, sem cortes"), "sem cortes: " + resin.status_text(tree, t))
 	_check(resin.tap(tree, t)["event"] == "corte", "golpe 1 é um corte")
+	_check(resin.status_text(tree, t).begins_with("Árvore com 1 corte."), "Espaço conta os cortes: " + resin.status_text(tree, t))
 	_check(resin.tap(tree, t + 1)["event"] == "corte", "golpe 2 é um corte")
-	var third := resin.tap(tree, t + 2)
-	_check(third["event"] == "resina" and int(third["yield"]["resina"]) == Resin.RESIN_YIELD, "golpe 3 solta a resina")
-	_check(resin.tap(tree, t + 3)["event"] == "range", "golpe 4 faz o tronco ranger")
-	_check(resin.tap(tree, t + 4)["event"] == "range", "golpe 5 ainda range")
-	_check(resin.tap(tree, t + 5)["event"] == "secou", "golpe 6 seca a árvore")
-	_check(resin.is_dead(tree), "árvore seca")
-	_check(resin.tap(tree, t + 6)["event"] == "seca", "árvore seca não dá mais nada")
-	# Outra árvore: cura depois de um tempo parado, e descansa depois da resina.
+	_check(resin.tap(tree, t + 2)["event"] == "escorre" and resin.has_resin(tree), "golpe 3 faz a resina escorrer")
+	_check("escorre" in resin.status_text(tree, t + 10), "Espaço diz que a resina escorre: " + resin.status_text(tree, t + 10))
+	_check(not resin.collect(tree, t + 10)["ok"], "ainda escorrendo, não recolhe")
+	var got := resin.collect(tree, t + 2 + Resin.FLOW_TIME + 1)
+	_check(got["ok"] and int(got["yield"]["resina"]) == Resin.RESIN_YIELD and not resin.has_resin(tree), "seca, recolhe 2 resinas")
+	_check("descansa" in resin.status_text(tree, t + 100), "Espaço diz que a árvore descansa: " + resin.status_text(tree, t + 100))
+	# Insistir mata: golpes 4 e 5 rangem, o 6 seca (com resina escorrendo, ela se perde).
 	var other := _find(world, WorldGen.Thing.ARVORE, tree + Vector2i(3, 0))
-	_check(resin.tap(other, t)["event"] == "corte" and resin.tap(other, t + 1)["event"] == "corte", "dois cortes")
-	_check(resin.cuts(other, t + 1) == 2 and resin.cuts(other, t + 1 + Resin.CUT_MEMORY + 1) == 0, "os cortes se curam com o tempo")
-	_check(resin.tap(other, t + 2)["event"] == "resina", "resina na outra árvore")
-	var later := t + 2 + Resin.CUT_MEMORY + 5
-	_check(resin.tap(other, later)["event"] == "descanso" and resin.cuts(other, later) == 0, "primeiro golpe numa árvore que descansa só avisa, sem machucar")
-	resin.tap(other, later + 1)
-	resin.tap(other, later + 2)
-	_check(resin.tap(other, later + 3)["event"] == "descanso", "a árvore ainda descansa: sem resina")
-	var rested := t + 2 + Resin.REST_TIME + Resin.CUT_MEMORY + 10
-	resin.tap(other, rested)
-	resin.tap(other, rested + 1)
-	_check(resin.tap(other, rested + 2)["event"] == "resina", "depois do descanso a resina volta")
-	_check(resin.tap(Vector2i(1, 1), t)["event"] == "nada" or world.thing_at(Vector2i(1, 1)) == WorldGen.Thing.ARVORE, "só árvore dá resina")
+	for i in 3:
+		resin.tap(other, t + i)
+	_check(resin.has_resin(other), "outra árvore escorrendo")
+	_check(resin.tap(other, t + 3)["event"] == "range", "golpe 4 faz o tronco ranger")
+	_check(resin.tap(other, t + 4)["event"] == "range", "golpe 5 ainda range")
+	_check(resin.tap(other, t + 5)["event"] == "secou" and resin.is_dead(other) and not resin.has_resin(other), "golpe 6 seca a árvore e perde a resina")
+	_check(resin.tap(other, t + 6)["event"] == "seca", "árvore seca não dá mais nada")
+	_check(resin.status_text(other, t + 7).begins_with("Árvore seca"), "Espaço diz que está seca")
+	# Cura dos cortes e descanso depois da resina.
+	var third := _find(world, WorldGen.Thing.ARVORE, tree + Vector2i(8, 0))
+	resin.tap(third, t)
+	resin.tap(third, t + 1)
+	_check(resin.cuts(third, t + 1) == 2 and resin.cuts(third, t + 1 + Resin.CUT_MEMORY + 1) == 0, "os cortes se curam com o tempo")
+	resin.tap(third, t + 2)
+	var collected := t + 2 + Resin.FLOW_TIME + 1
+	_check(resin.collect(third, collected)["ok"], "recolhe")
+	var later := collected + Resin.CUT_MEMORY + 5
+	_check(resin.tap(third, later)["event"] == "descanso" and resin.cuts(third, later) == 0, "primeiro golpe numa árvore que descansa só avisa, sem machucar")
+	resin.tap(third, later + 1)
+	resin.tap(third, later + 2)
+	_check(resin.tap(third, later + 3)["event"] == "descanso", "a árvore ainda descansa: sem resina")
+	var rested := collected + Resin.REST_TIME + Resin.CUT_MEMORY + 10
+	resin.tap(third, rested)
+	resin.tap(third, rested + 1)
+	_check(resin.tap(third, rested + 2)["event"] == "escorre", "depois do descanso a resina volta")
 
 
 func _test_world_state() -> void:
@@ -96,13 +109,18 @@ func _test_world_state() -> void:
 	var tree := _find(state.world, WorldGen.Thing.ARVORE)
 	state.add_player(2, "Lua")
 	state.players[2]["pos"] = WorldGen.cell_center(tree) + Vector2(0, 0.8)
-	var got := 0
 	for i in 3:
 		state._last_strike.clear()
-		var result := state.tap_tree(2, tree)
-		_check(result["ok"], "golpe de faca vale perto da árvore")
-		got += int(result["yield"].get("resina", 0))
-	_check(got == Resin.RESIN_YIELD and int(state.inventory_of(2).get("resina", 0)) == Resin.RESIN_YIELD, "a resina vai para a bolsa")
+		_check(state.tap_tree(2, tree)["ok"], "golpe de faca vale perto da árvore")
+	state._last_collect.clear()
+	var early := state.collect(2, tree)
+	_check(not early["ok"] and early["reason"] == "arvore" and "escorre" in str(early["item"]), "Espaço na resina ainda escorrendo só informa")
+	# Passa o tempo de secagem (volta o relógio da resina).
+	state.resin._trees[tree]["flow_until"] = Resin.now() - 1.0
+	state._last_collect.clear()
+	var result := state.collect(2, tree)
+	_check(result["ok"] and result["item"] == "resina", "Espaço recolhe a resina seca")
+	_check(int(state.inventory_of(2).get("resina", 0)) == Resin.RESIN_YIELD, "a resina vai para a bolsa")
 	# Árvore derrubada não dá resina.
 	var other := _find(state.world, WorldGen.Thing.ARVORE, tree + Vector2i(4, 0))
 	state.players[2]["pos"] = WorldGen.cell_center(other) + Vector2(0, 0.8)
@@ -112,6 +130,9 @@ func _test_world_state() -> void:
 	_check(not state.tap_tree(2, other)["ok"], "árvore caída não dá resina")
 	state._last_strike.clear()
 	_check(state.tap_tree(2, other + Vector2i(40, 0))["reason"] == "longe", "longe demais")
+	state._last_collect.clear()
+	var felled := state.collect(2, other)
+	_check(felled["ok"] and felled["item"] == "madeira", "árvore caída dá madeira ao Espaço")
 
 
 func _test_recipes() -> void:

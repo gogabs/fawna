@@ -185,9 +185,19 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var item := Harvest.item_of(thing)
 	var inv := inventory_of(id)
 	var carrying := wielding(id)
+	# Árvore de pé: o Espaço recolhe a resina seca ou diz como ela está.
+	var resin_haul := {}
+	if thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0:
+		var tapped := resin.collect(cell)
+		if not tapped["ok"]:
+			return {"ok": false, "reason": "arvore", "item": tapped["text"]}
+		resin_haul = tapped["yield"]
+		item = "resina"
 	if Bag.free_space(inv, carrying) <= 0:
+		if not resin_haul.is_empty():
+			resin.undo_collect(cell)
 		return {"ok": false, "reason": "cheio", "item": item}
-	var result := harvest.take(cell)
+	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
 	var parts: Dictionary = result.get("parts", {})
@@ -295,17 +305,6 @@ func tap_tree(id: int, cell: Vector2i) -> Dictionary:
 	var result := resin.tap(cell)
 	if not result["ok"]:
 		result["reason"] = result["event"]
-		return result
-	if not result["yield"].is_empty():
-		var inv := inventory_of(id)
-		var split := Bag.split_to_fit(inv, wielding(id), result["yield"])
-		for key: String in split[0]:
-			inv[key] = int(inv.get(key, 0)) + int(split[0][key])
-		if not split[1].is_empty():
-			ground.add_items(WorldGen.cell_of(pos), split[1])
-		result["kept"] = split[0]
-		result["left_over"] = split[1]
-		result["pile_cell"] = WorldGen.cell_of(pos)
 	return result
 
 
