@@ -2408,6 +2408,13 @@ func _capital(text: String) -> String:
 	return text.left(1).to_upper() + text.substr(1)
 
 
+## "sudeste da obra" (ou "centro da obra"); pronta, "sudeste do abrigo".
+func _sector_phrase(build: Dictionary, sector: String) -> String:
+	if build["done"] or Builds.walls_up(build):
+		return "%s d%s %s" % [sector, Crafting.BUILDS[build["kind"]]["article"], Crafting.build_name(build["kind"])]
+	return "%s da obra" % sector
+
+
 ## Entrar no terreno de uma obra grande é anunciado, como entrar numa trilha:
 ## "Terreno do abrigo, obra em fase de limpeza" ou "Dentro do abrigo". Só ao
 ## entrar (ou ao passar de uma obra a outra), sem repetir a cada casa.
@@ -2419,8 +2426,12 @@ func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
 	var at_door := Builds.walls_up(build) and cell == Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"]))
 	var old_door := not old_build.is_empty() and Builds.walls_up(old_build) \
 			and old_cell == Builds.door_cell(old_build["cell"], int(old_build["size"]), str(old_build["entrance"]))
-	# Só repete ao trocar de obra ou de zona (porta, dentro, terreno).
-	if not old_build.is_empty() and old_build["id"] == build["id"] and old_door == at_door:
+	var same_build := not old_build.is_empty() and old_build["id"] == build["id"]
+	var sector := Builds.sector_name(build, cell)
+	# Dentro da mesma obra e zona, só fala ao passar de uma parte a outra.
+	if same_build and old_door == at_door:
+		if sector != Builds.sector_name(build, old_cell) and not at_door:
+			Speech.say(_capital(_sector_phrase(build, sector)) + ".", false)
 		return
 	var id := int(build["id"])
 	var name: String = Crafting.build_name(build["kind"])
@@ -2428,6 +2439,6 @@ func _announce_site(old_cell: Vector2i, cell: Vector2i) -> void:
 	if at_door:
 		Speech.say("Porta d%s %s." % [article, name], false)
 	elif build["done"] or Builds.walls_up(build):
-		Speech.say("Dentro d%s %s." % [article, name], false)
+		Speech.say("Dentro d%s %s, %s." % [article, name, sector], false)
 	else:
-		Speech.say("Terreno d%s %s, %s." % [article, name, builds.spoken_name(id).trim_prefix(name + ", ").trim_prefix(name + " ")], false)
+		Speech.say("Terreno d%s %s, %s. %s." % [article, name, builds.spoken_name(id).trim_prefix(name + ", ").trim_prefix(name + " "), _capital(_sector_phrase(build, sector))], false)
