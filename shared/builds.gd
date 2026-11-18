@@ -51,6 +51,8 @@ const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
 const POSTS := 4
 ## Até onde (em casas) do canto a batida conta para aquele canteiro.
 const POST_REACH := 2.2
+## Até onde (em casas) de um móvel da oficina o Espaço ainda o alcança.
+const FURNITURE_REACH := 1.6
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
 const DOOR_REACH := 1.6  # só na frente da porta, dentro ou fora
 
@@ -114,7 +116,72 @@ static func wall_cells(build: Dictionary) -> Array:
 		var inner: Vector2i = cell - build["cell"]
 		if (inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1) and (cell != door or door_closed):
 			cells.append(cell)
+	if bool(build.get("done", false)):
+		for cell: Vector2i in furniture_cells(build).values():
+			cells.append(cell)
 	return cells
+
+
+## Para onde olha quem entra pela porta (sentido do lado da porta para dentro).
+static func inward(entrance: String) -> Vector2i:
+	match entrance:
+		"norte":
+			return Vector2i(0, 1)
+		"leste":
+			return Vector2i(-1, 0)
+		"oeste":
+			return Vector2i(1, 0)
+		_:
+			return Vector2i(0, -1)
+
+
+## Os móveis de uma construção com "furniture" (a oficina): nome -> casa. Ficam
+## dentro, na fileira junto da porta: a bancada à esquerda de quem entra e as
+## prateleiras à direita. Vazio nas outras construções.
+static func furniture_cells(build: Dictionary) -> Dictionary:
+	var kind := str(build.get("kind", ""))
+	var size := int(build.get("size", 1))
+	if not Crafting.has_furniture(kind) or size < 5:
+		return {}
+	var entrance := str(build.get("entrance", ""))
+	var facing := inward(entrance)
+	var left := Vector2i(facing.y, -facing.x)
+	var base := door_cell(build["cell"], size, entrance) + facing
+	return {"bancada": base + left, "prateleiras": base - left}
+
+
+static func has_furniture(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and not furniture_cells(build).is_empty()
+
+
+## O móvel ao alcance de quem está em "pos" e mais perto dele que a porta
+## ("" se nenhum): "bancada" ou "prateleiras".
+static func furniture_near(build: Dictionary, pos: Vector2) -> String:
+	if not has_furniture(build):
+		return ""
+	var door := WorldGen.cell_center(door_cell(build["cell"], int(build["size"]), str(build["entrance"])))
+	var best := ""
+	var best_distance := minf(FURNITURE_REACH, pos.distance_to(door) - 0.001)
+	var cells := furniture_cells(build)
+	for name: String in cells:
+		var distance := pos.distance_to(WorldGen.cell_center(cells[name]))
+		if distance <= best_distance:
+			best_distance = distance
+			best = name
+	return best
+
+
+## Há uma oficina pronta com a bancada ao alcance de "pos"?
+func bench_near(pos: Vector2) -> bool:
+	for build: Dictionary in _builds.values():
+		if furniture_near(build, pos) == "bancada":
+			return true
+	return false
+
+
+## "A bancada fica à sua esquerda ao entrar e as prateleiras à direita."
+static func furniture_hint(build: Dictionary) -> String:
+	return "A bancada fica à sua esquerda ao entrar, e as prateleiras à direita."
 
 
 ## As paredes já estão de pé? Só depois da etapa das paredes (ou da obra pronta);
@@ -566,6 +633,9 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 		if Crafting.BUILDS[build["kind"]].get("fire", false):
 			return _tend_fire(build, bag, at_time)
 		if int(build["size"]) > 1:
+			var piece := furniture_near(build, pos) if pos.x != INF else ""
+			if not piece.is_empty():
+				return {"ok": false, "reason": "movel", "furniture": piece}
 			return _use_door(build, pos)
 		return {"ok": false, "reason": "pronta"}
 	if str(build["phase"]) != "obra":
@@ -624,13 +694,16 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 		return result
 	build["done"] = true
 	_register_walls(build)
+	var done_result := {"ok": true, "event": "pronta"}
+	if Crafting.has_furniture(build["kind"]):
+		done_result["walls"] = true  # os móveis ocupam casas: quem estava nelas é levado para o lado
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		# A lenha da última etapa fica como o primeiro combustível.
 		var fuel := 0.0
 		for item: String in finished["materials"]:
 			fuel += float(Crafting.FUEL_SECONDS.get(item, 0.0)) * int(finished["materials"][item])
 		build["fuel"] = minf(fuel, Crafting.MAX_FUEL)
-	return {"ok": true, "event": "pronta"}
+	return done_result
 
 
 ## O canteiro que recebe a batida de quem está em "pos": o mais perto que
@@ -1032,7 +1105,10 @@ func status_text(id: int, at_time := -1.0) -> String:
 	if int(build["size"]) > 1:
 		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]
-		if stores(build):
+		if has_furniture(build):
+			text += " %s Espaço junto da bancada abre as receitas; junto das prateleiras, o armazenamento: guardam %s, %s." % [
+				furniture_hint(build), Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
+		elif stores(build):
 			text += " Guarda %s: %s. Espaço longe da porta abre o armazenamento." % [
 				Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
 		return text

@@ -69,6 +69,24 @@ const BUILDS := {
 			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
 		],
 	},
+	# Barracão com porta e dois móveis dentro (Builds.furniture_cells): a bancada,
+	# à esquerda de quem entra, onde se fazem as receitas de WORKSHOP; e as
+	# prateleiras, à direita, onde se guardam ferramentas e armas. Os móveis pedem
+	# um lado de pelo menos 5 casas, para caberem os dois ao lado da porta.
+	"oficina": {
+		"name": ["oficina", "oficinas"],
+		"article": "a",
+		"settlement": true,
+		"furniture": true,
+		"size": {"min": 5, "max": 8, "default": 5, "reference": 5},
+		"stages": [
+			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
+			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
+			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
+			{"name": "a bancada e as prateleiras", "materials": {"madeira": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
+		],
+	},
 	"armazem": {
 		"name": ["armazém", "armazéns"],
 		"article": "o",
@@ -84,7 +102,7 @@ const BUILDS := {
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem"]
+const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
 
 ## Armazenamento: construções grandes prontas guardam itens, cada uma só de
 ## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
@@ -93,6 +111,7 @@ const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem"]
 const STORAGE := {
 	"armazem": {"accepts": ["material"], "per_cell": 8, "label": "materiais"},
 	"abrigo": {"accepts": ["roupa"], "per_cell": 4, "label": "roupas"},
+	"oficina": {"accepts": ["ferramenta", "arma"], "per_cell": 2, "label": "ferramentas e armas"},
 }
 
 ## Construções grandes (as de BUILDS com "size"): ocupam um quadrado de lados
@@ -256,6 +275,15 @@ static func recipe(kind: String) -> Dictionary:
 	if WORKSHOP.has(kind):
 		return WORKSHOP[kind]
 	return TOOLS.get(kind, {})
+
+
+## A receita só se faz na bancada de uma oficina?
+static func needs_bench(kind: String) -> bool:
+	return WORKSHOP.has(kind)
+
+
+static func has_furniture(kind: String) -> bool:
+	return BUILDS.has(kind) and BUILDS[kind].get("furniture", false)
 
 
 static func is_tool_recipe(kind: String) -> bool:
