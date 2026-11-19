@@ -41,6 +41,7 @@ extends Control
 @onready var ui_sound: AudioStreamPlayer = %UiSound
 
 var name_field: MenuTextField
+var password_field: MenuTextField
 var ip_field: MenuTextField
 var _key_usec := -1
 var _scanner: LanDiscovery
@@ -76,10 +77,19 @@ func _ready() -> void:
 	options_page.move_child(name_field, 1)  # logo depois do título
 	name_field.nav_control().pressed.connect(_say_editing)
 	name_field.submitted.connect(func(_t): _say_field_done("Nome"))
+	password_field = MenuTextField.new("Senha")
+	password_field.secret = true
+	password_field.max_length = Credentials.MAX_LENGTH
+	password_field.placeholder = "Protege sua criatura. Mínimo %d caracteres." % Credentials.MIN_LENGTH
+	password_field.empty_text = "definir"
+	options_page.add_child(password_field)
+	options_page.move_child(password_field, name_field.get_index() + 1)
+	password_field.nav_control().pressed.connect(_say_editing_password)
+	password_field.submitted.connect(func(_t): _say_field_done("Senha"))
 	vsync_check.toggled.connect(_on_vsync_toggled)
 	graphics_check.toggled.connect(_on_graphics_toggled)
 	nav_button.pressed.connect(_on_nav_pressed)
-	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), ip_field.nav_control(), vsync_check, graphics_check, nav_button, back_button, rescan_button, join_back_button]:
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), vsync_check, graphics_check, nav_button, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
 	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
@@ -113,7 +123,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _editing() -> bool:
-	return (name_field != null and name_field.is_editing()) or (ip_field != null and ip_field.is_editing())
+	return (name_field != null and name_field.is_editing()) or (password_field != null and password_field.is_editing()) or (ip_field != null and ip_field.is_editing())
 
 
 func _process(delta: float) -> void:
@@ -178,6 +188,7 @@ func _navigate(action: String) -> void:
 func _show_main(save := true) -> void:
 	if save:
 		Net.player_name = name_field.value
+		Net.password = password_field.value
 		Net.save_settings()
 	_stop_scan()
 	options_page.hide()
@@ -192,6 +203,7 @@ func _show_main(save := true) -> void:
 
 func _show_options() -> void:
 	name_field.value = Net.player_name
+	password_field.value = Net.password
 	vsync_check.set_pressed_no_signal(Net.vsync)
 	graphics_check.set_pressed_no_signal(Net.graphics_off)
 	_refresh_nav_button()
@@ -239,10 +251,16 @@ func _say_editing() -> void:
 		Speech.say("Digite o nome. Enter confirma e Esc cancela.")
 
 
+func _say_editing_password() -> void:
+	if not Speech.screen_reader_active():
+		Speech.say("Digite a senha. Enter confirma e Esc cancela.")
+
+
 func _say_field_done(field: String) -> void:
 	_play(Sounds.ui_confirm())
 	if not Speech.screen_reader_active():
-		Speech.say("%s: %s" % [field, name_field.value if not name_field.value.is_empty() else "vazio"])
+		var field_value := password_field.spoken().get_slice(": ", 1) if field == "Senha" else name_field.value
+		Speech.say("%s: %s" % [field, field_value if not field_value.is_empty() else "vazio"])
 
 
 func _on_off(on: bool) -> String:
@@ -253,11 +271,14 @@ func _has_name() -> bool:
 	return not Net.player_name.strip_edges().is_empty()
 
 
-## Sem nome não se entra em lugar nenhum: o nome vem de Opções.
+## Sem nome e senha não se entra em lugar nenhum: ambos vêm de Opções.
 func _require_name() -> bool:
-	if _has_name():
+	if _has_name() and Net.password.length() >= Credentials.MIN_LENGTH:
 		return true
-	notice_label.text = "Defina seu nome nas Opções antes de entrar."
+	if _has_name():
+		notice_label.text = "Defina uma senha de pelo menos %d caracteres nas Opções antes de entrar." % Credentials.MIN_LENGTH
+	else:
+		notice_label.text = "Defina seu nome e uma senha nas Opções antes de entrar."
 	notice_label.show()
 	Speech.say(notice_label.text)
 	return false
@@ -357,6 +378,8 @@ func _on_focus(control: Control) -> void:
 		return
 	if control == name_field.nav_control():
 		Speech.say(name_field.spoken(), interrupt)
+	elif control == password_field.nav_control():
+		Speech.say(password_field.spoken(), interrupt)
 	elif control == vsync_check:
 		Speech.say("VSync, %s. Botão de alternar. Deixe desligado se o leitor de tela demorar." % _on_off(vsync_check.button_pressed), interrupt)
 	elif control == graphics_check:

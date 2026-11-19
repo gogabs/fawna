@@ -163,7 +163,7 @@ func _ready() -> void:
 	if Net.is_server():
 		_load_or_create_world()
 	if Net.mode == Net.Mode.HOST:
-		request_join.rpc_id(1, Net.player_name)
+		request_join.rpc_id(1, Net.player_name, Net.password)
 	elif Net.mode == Net.Mode.CLIENT:
 		Speech.say("Conectando a %s..." % Net.address)
 
@@ -282,12 +282,21 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- Rede: pedidos dos clientes (executados no servidor) ---------------------
 
 @rpc("any_peer", "call_local", "reliable")
-func request_join(player_name: String) -> void:
+func request_join(player_name: String, password: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
 	if state.players.has(id):
 		return
+	var login := state.login(player_name, password)
+	if not login["ok"]:
+		print("[servidor] peer %d recusado (%s)" % [id, login["reason"]])
+		join_refused.rpc_id(id, login["reason"])
+		return
+	if login["created"]:
+		# Senha nova: grava já, para uma queda do servidor não perder o dono do nome.
+		_dirty = true
+		print("[servidor] senha registrada para %s" % player_name.strip_edges().left(24))
 	var pos := state.add_player(id, player_name)
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
@@ -302,6 +311,24 @@ func request_join(player_name: String) -> void:
 	for other_id in state.players:
 		if other_id != id:
 			player_joined.rpc_id(other_id, id, accepted_name, pos)
+	_save_world()
+
+
+## O servidor não deixou entrar: a pessoa volta ao menu com o motivo.
+@rpc("authority", "call_local", "reliable")
+func join_refused(reason: String) -> void:
+	match reason:
+		"errada":
+			Speech.say("Senha errada para esse nome. Confira a senha nas Opções.")
+		"curta":
+			Speech.say("A senha precisa ter pelo menos %d caracteres. Defina nas Opções." % Credentials.MIN_LENGTH)
+		"devagar":
+			Speech.say("Senha errada demais. Espere uns segundos e tente de novo.")
+		"ja_conectado":
+			Speech.say("Essa criatura já está no mundo.")
+		_:
+			Speech.say("O servidor não deixou você entrar.")
+	_back_to_menu()
 
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
@@ -1316,7 +1343,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected_to_server() -> void:
-	request_join.rpc_id(1, Net.player_name)
+	request_join.rpc_id(1, Net.player_name, Net.password)
 
 
 func _on_connection_failed() -> void:
