@@ -72,6 +72,8 @@ func _server_step() -> void:
 	var positions := {}
 	for id in game.state.players:
 		positions[id] = game.state.players[id]["pos"]
+	aviary.darkness = game.daytime.darkness()
+	aviary.dawn = DayCycle.phase_of(game.daytime.t) == DayCycle.Phase.DAWN
 	for message in aviary.update(Time.get_ticks_msec(), positions):
 		var peer: int = message[0]
 		var args: Array = message[2]

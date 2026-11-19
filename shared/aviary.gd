@@ -154,6 +154,12 @@ var world: WorldGen
 ## Pontos (Vector2, em casas) que calam e espantam os pássaros. Quem roda a
 ## simulação atualiza antes de cada passo.
 var hush: Array = []
+## Quão escuro está (0 dia, 1 noite; DayCycle.darkness) e se é amanhecer. Quem
+## roda a simulação atualiza antes de cada passo. De noite os pássaros do dia
+## dormem (nem cantam, nem trocam de poleiro) e só a coruja canta; ao
+## amanhecer vem o coro: eles cantam o dobro.
+var darkness := 0.0
+var dawn := false
 
 ## Um canto é identificado por voz * VOICE_STRIDE + frase.
 const VOICE_STRIDE := 100
@@ -314,6 +320,9 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 	var all_landed := true
 	var threat := Vector2.INF
 	var dread := _hush_near(birds[group["members"][0]]["pos"])
+	var nocturnal: bool = group["species"] == Species.CORUJA
+	# Fora de hora: de noite, os pássaros do dia; de dia, a coruja.
+	var asleep := darkness < 0.4 if nocturnal else darkness >= 0.6
 	for bird_id in group["members"]:
 		var bird: Dictionary = birds[bird_id]
 		if bird["flying"]:
@@ -327,9 +336,9 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 		if int(bird["next_song_ms"]) < 0:
 			bird["next_song_ms"] = now_ms + _seconds(data["song_every"], 0.0, 0.2)
 		elif now_ms >= int(bird["next_song_ms"]):
-			bird["next_song_ms"] = now_ms + _seconds(data["song_every"])
-			if dread != Vector2.INF:
-				continue  # perto de um horror, ninguém canta
+			bird["next_song_ms"] = now_ms + _seconds(data["song_every"], 1.0, 0.5 if dawn and not nocturnal else 1.0)
+			if dread != Vector2.INF or asleep:
+				continue  # perto de um horror, ou fora de hora, ninguém canta
 			var song: int = bird["songs"][_rng.randi() % bird["songs"].size()]
 			for peer in bird["watchers"]:
 				out.append([peer, "sing", [bird_id, song]])
@@ -341,7 +350,7 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 		threat = dread
 	if threat != Vector2.INF:
 		_move_group(group, now_ms, threat, out)
-	elif now_ms >= int(group["leave_ms"]):
+	elif now_ms >= int(group["leave_ms"]) and not asleep:
 		_move_group(group, now_ms, Vector2.INF, out)
 
 

@@ -3,7 +3,9 @@ extends RefCounted
 ## Os horrores do mundo. A simulação roda só no servidor; os clientes só
 ## recebem onde cada um está e cuidam do som.
 ##
-## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Surge
+## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Só rola
+## de noite (DayCycle.is_night): com a primeira luz do amanhecer ele recua e
+## some, e de dia ninguém o atrai. Surge
 ## atrás de quem fica exposto em qualquer bioma (menos o mar), em trilha ou não, longe do fogo,
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
@@ -54,6 +56,7 @@ var _exposure := {}  # peer -> segundos exposto
 var _need := {}  # peer -> segundos de exposição até ele aparecer
 var _rest_until := {}  # peer -> ms: antes disso ele não volta
 var _rng := RandomNumberGenerator.new()
+var _night := true  # do último passo
 
 
 func _init(the_world: WorldGen) -> void:
@@ -66,8 +69,14 @@ func _init(the_world: WorldGen) -> void:
 ## Devolve mensagens para os clientes: [peer, tipo, argumentos], com tipo
 ## "at" ([id, posição, modo]), "gone" ([id]) ou "caught" ([id]): este último
 ## só vai ao alvo, que foi alcançado (o Calado some e descansa).
-func update(now_ms: int, players: Dictionary, fires: Array) -> Array:
+func update(now_ms: int, players: Dictionary, fires: Array, night := true) -> Array:
 	var out := []
+	_night = night
+	if not night:
+		# Clareou: o que ainda caçava recua, como se a luz o espantasse.
+		for horror in horrors.values():
+			if horror["mode"] != Mode.RETREAT:
+				horror["mode"] = Mode.RETREAT
 	var delta := 0.0 if _last_ms < 0 else clampf((now_ms - _last_ms) / 1000.0, 0.0, 1.0)
 	_last_ms = now_ms
 	for id in horrors.keys():
@@ -116,7 +125,7 @@ func _rear_direction(heading: int) -> Vector2:
 ## exposto, então o Calado pode chegar mais cedo. Não vale durante o sossego
 ## depois de uma visita, nem com um já atrás dele.
 func hear_noise(peer: int, seconds: float) -> void:
-	if not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
+	if not _night or not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
 		return
 	if not _need.has(peer):
 		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
@@ -251,7 +260,7 @@ func _remove(horror: Dictionary, now_ms: int, out: Array) -> void:
 func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary, fires: Array) -> void:
 	if not hunting(peer).is_empty():
 		return
-	if not _exposed(peer, players, fires) or now_ms < int(_rest_until.get(peer, 0)):
+	if not _night or not _exposed(peer, players, fires) or now_ms < int(_rest_until.get(peer, 0)):
 		_exposure[peer] = maxf(float(_exposure.get(peer, 0.0)) - delta * 2.0, 0.0)
 		return
 	if not _need.has(peer):

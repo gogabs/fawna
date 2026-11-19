@@ -46,6 +46,46 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStreamWAV:
 
 const BED_SECONDS := 6
 
+## Grilos da noite (em loop, 8 s): três grilos de alturas diferentes, cada um
+## com a sua cantiga, um trinado de pulsinhos curtos que se repete. Os
+## períodos cabem inteiros no loop, então ele fecha sem emenda.
+static func crickets() -> AudioStreamWAV:
+	if _cache.has("grilos"):
+		return _cache["grilos"]
+	var seconds := 8
+	var count := RATE * seconds
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	# [altura em Hz, chirps no loop, pulsos por chirp, volume, atraso em s]
+	var singers := [[4300.0, 16, 4, 0.05, 0.0], [3700.0, 11, 3, 0.04, 0.21], [4900.0, 13, 5, 0.03, 0.37]]
+	for singer in singers:
+		var chirp_period: float = float(seconds) / int(singer[1])
+		var pulses: int = singer[2]
+		var pulse_period := 0.034
+		var pulse_len := 0.017
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(singer[4]), float(seconds))
+			var local := fposmod(t, chirp_period)
+			var n := int(local / pulse_period)
+			if n >= pulses:
+				continue
+			var in_pulse := local - n * pulse_period
+			if in_pulse >= pulse_len:
+				continue
+			var env := sin(PI * in_pulse / pulse_len)
+			# O trinado cresce e some em arco; o grilo oscila um pouco de altura.
+			var arc := sin(PI * (n + 0.5) / pulses)
+			var freq: float = singer[0] * (1.0 + 0.01 * sin(TAU * t * 0.7))
+			samples[i] += sin(TAU * freq * t) * env * env * arc * float(singer[3])
+	var peak := 0.0
+	for value in samples:
+		peak = maxf(peak, absf(value))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.5
+	_cache["grilos"] = _to_wav(samples, true)
+	return _cache["grilos"]
+
+
 ## Mar: uma onda grave e lenta que cresce, quebra num chiado e recua. O loop
 ## fecha no ponto mais baixo, entre uma onda e outra.
 static func _sea_loop() -> AudioStreamWAV:

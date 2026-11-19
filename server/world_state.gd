@@ -43,6 +43,9 @@ var offhand := {}
 var torch_until := {}
 ## id -> { method, needed, count, last_ms, first }: quem está riscando a tocha.
 var striking := {}
+## A hora do mundo (fração do dia, 0 = meia-noite; ver DayCycle). Quem anda com o
+## relógio é o nó Daytime, no servidor; aqui ela só fica guardada e salva.
+var day_t := DayCycle.hour_to_t(DayCycle.START_HOUR)
 var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
@@ -679,6 +682,7 @@ func to_save() -> Dictionary:
 		"equipment": equipment,
 		"offhand": offhand,
 		"torch_until": torch_until,
+		"day_t": day_t,
 		"harvest": harvest.to_save(),
 		"resin": resin.to_save(),
 		"builds": builds.to_save(),
@@ -706,6 +710,7 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
