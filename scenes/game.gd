@@ -20,6 +20,8 @@ const SIDE_FACTOR := 0.8  # o passo para o lado também
 ## Para deixar mais rápido ou mais lento, mude só este número (3,3 é o ritmo escolhido pelo Gabs).
 const STEPS_PER_SECOND := 3.3
 const STEP_INTERVAL := 1.0 / STEPS_PER_SECOND
+## O ritmo dos passos acompanha a velocidade, sem cair abaixo desta fração.
+const MIN_STEP_RATE := 0.3
 ## Ao começar a andar, o primeiro passo sai na hora, a menos que o último
 ## tenha sido há bem pouco (toques rápidos na tecla não viram rajada).
 const STEP_RESTART := 0.6 * STEP_INTERVAL
@@ -216,8 +218,10 @@ func _process(delta: float) -> void:
 	_bump_speech_cooldown = maxf(_bump_speech_cooldown - delta, 0.0)
 	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
 	var before := _pos
-	_walk(_wanted_motion() * delta)
-	_step_clock += delta
+	var motion := _wanted_motion()
+	_walk(motion * delta)
+	# O ritmo dos passos acompanha a velocidade: de costas, de lado ou sobrecarregado, mais lento.
+	_step_clock += delta * clampf(motion.length() / WALK_SPEED, MIN_STEP_RATE, 1.0)
 	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
 	_update_torch_sounds()
@@ -1245,6 +1249,13 @@ func player_moved(id: int, pos: Vector2) -> void:
 	if old_pos.distance_to(pos) < 0.01:
 		return
 	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF, "count": 0})
+	# Velocidade dela, estimada pelo que andou entre duas posições: os passos seguem o mesmo ritmo.
+	var now := Time.get_ticks_msec()
+	var dt := float(now - int(steps.get("last_ms", 0))) / 1000.0
+	if steps["idle"] < OTHER_WALK_GRACE and dt >= 0.03 and dt <= 0.5:
+		var rate := clampf(old_pos.distance_to(pos) / dt / WALK_SPEED, MIN_STEP_RATE, 1.0)
+		steps["rate"] = lerpf(float(steps.get("rate", 1.0)), rate, 0.3)
+	steps["last_ms"] = now
 	if steps["idle"] >= OTHER_WALK_GRACE and steps["clock"] >= STEP_RESTART:
 		steps["clock"] = 0.0  # começou a andar: primeiro passo na hora
 		steps["count"] = 0
@@ -1454,7 +1465,7 @@ func _step_foley(n: int) -> Array:
 func _tick_other_steps(delta: float) -> void:
 	for id: int in _others_step:
 		var steps: Dictionary = _others_step[id]
-		steps["clock"] += delta
+		steps["clock"] += delta * float(steps.get("rate", 1.0))
 		var was_walking: bool = steps["idle"] < OTHER_WALK_GRACE
 		steps["idle"] += delta
 		if not players.has(id):
