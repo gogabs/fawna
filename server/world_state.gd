@@ -71,10 +71,12 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if not equipment.has(clean_name):
 		equipment[clean_name] = ""
 	Bag.give_starter(inventories[clean_name], equipment[clean_name])
+	builds.touch(owner_key_of_name(clean_name))
 	return pos
 
 
 func remove_player(id: int) -> void:
+	builds.touch(owner_key(id))
 	players.erase(id)
 	_last_collect.erase(id)
 	_last_move.erase(id)
@@ -663,6 +665,35 @@ func _owner_check(id: int, build_id: int) -> Dictionary:
 		return {"ok": false, "reason": "desconhecida"}
 	if Builds.has_owners(build) and not Builds.inside(build, players[id]["pos"]):
 		return {"ok": false, "reason": "fora"}
+	return {}
+
+
+## Propor derrubar uma construção, no marco do povoado (Builds.propose_wreck).
+## Devolve o resultado dele, ou { ok: false, reason: "longe" | "desconhecido" }.
+func propose_wreck(id: int, marco_id: int, target_id: int) -> Dictionary:
+	var check := _marco_check(id, marco_id)
+	if not check.is_empty():
+		return check
+	return builds.propose_wreck(marco_id, owner_key(id), target_id)
+
+
+## Votar numa proposta, no marco (Builds.vote_wreck).
+func vote_wreck(id: int, marco_id: int, target_id: int, yes: bool) -> Dictionary:
+	var check := _marco_check(id, marco_id)
+	if not check.is_empty():
+		return check
+	return builds.vote_wreck(marco_id, owner_key(id), target_id, yes)
+
+
+## Vazio se a criatura está ao alcance do marco; senão, a recusa.
+func _marco_check(id: int, marco_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var marco := builds.get_build(marco_id)
+	if marco.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if Builds.reach_distance(marco, players[id]["pos"]) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
 	return {}
 
 

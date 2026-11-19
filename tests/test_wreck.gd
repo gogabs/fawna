@@ -144,6 +144,7 @@ func _test_owners() -> void:
 	var home := _large(state, "abrigo", 1, true)
 	_check(builds.demolish_refusal(1, -1.0, "Ana") == "", "abrigo sem dono: qualquer um derruba")
 	home["owners"] = ["Ana"]
+	builds.touch("Ana")
 	home["lockers"] = {"Ana": {"bambu": 3}}
 	_check(builds.demolish_refusal(1, -1.0, "Bia") == "nao_dono", "abrigo de Ana: Bia não derruba")
 	_check(not builds.strike_wreck(1, -1.0, "Bia")["ok"], "golpe de quem não é dono é recusado")
