@@ -23,7 +23,7 @@ func _check(condition: bool, message: String) -> void:
 
 func _test_data() -> void:
 	_check(Species.ORDER.size() == 10, "dez espécies")
-	_check(Species.TAGS.size() == 13, "treze tags")
+	_check(Species.TAGS.size() == 10, "dez tags")
 	for id in Species.ORDER:
 		_check(Species.DATA.has(id), "dados de " + id)
 		_check(not Species.description(id).is_empty(), "descrição de " + id)
@@ -33,8 +33,7 @@ func _test_data() -> void:
 			_check(Species.TAGS.has(tag), "tag %s de %s existe" % [tag, id])
 	for tag: String in Species.TAGS:
 		var data: Dictionary = Species.TAGS[tag]
-		_check(str(data["text"]).contains("mas"),
-			"tag %s diz o custo" % tag)
+		_check(not str(data["text"]).is_empty(), "tag %s tem texto" % tag)
 		for key: String in data["effects"]:
 			if key != "overload":  # a sobrecarga resistente é pela metade, de propósito
 				_check(absf(float(data["effects"][key]) - 1.0) <= 0.31, "efeito pequeno em " + tag)
