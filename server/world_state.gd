@@ -10,7 +10,6 @@ const STRIKE_COOLDOWN_MS := 350  # golpes de machado mais rápidos que isso não
 const MAX_SPEED := 2.2  # casas por segundo (a criatura anda a 1,5)
 const MOVE_SLACK := 0.4  # folga para atrasos da rede
 const REACH := 1.6  # até onde dá para coletar ou golpear (do centro da criatura ao centro da casa)
-const ORIGIN_REACH := 1.2
 const MAX_STACK := 99  # só para armas fabricadas; a bolsa se limita pela carga (Bag.CAPACITY)
 const DROP_COOLDOWN_MS := 250  # largar e pegar do chão mais rápido que isso não conta
 const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
@@ -722,7 +721,16 @@ static func from_save(data: Dictionary) -> WorldState:
 
 
 func _spawn_point() -> Vector2:
-	# Ao redor da Origem, que é sempre livre, começando ao sul dela: quem entra
-	# olhando para o norte já tem a Origem à frente.
-	var offsets := [Vector2(0, 1.5), Vector2(1.5, 0), Vector2(-1.5, 0), Vector2(0, -1.5)]
-	return WorldGen.origin_point() + offsets[players.size() % offsets.size()]
+	# Quem entra pela primeira vez nasce no cruzamento de trilhas da região
+	# (0, 0), o ponto de encontro do mundo: o chão livre mais próximo, saindo
+	# do centro em voltas, e cada jogador na sua vez de lugar.
+	var skip := players.size()
+	var centre := WorldGen.center_point()
+	for radius in range(0, 12):
+		for i in maxi(1, radius * 4):
+			var spot := centre + Vector2.from_angle(PI * 0.5 + TAU * i / float(maxi(1, radius * 4))) * float(radius) * 1.5
+			if world.is_free(spot):
+				if skip == 0:
+					return spot
+				skip -= 1
+	return centre

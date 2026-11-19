@@ -21,7 +21,7 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _ready_build(state: WorldState, kind: String) -> int:
-	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(8, 8)
+	var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(8, 8)
 	var made := {}
 	var id := -1
 	if made.get("ok", false):
@@ -37,7 +37,7 @@ func _ready_build(state: WorldState, kind: String) -> int:
 
 
 func _ready_build_at(state: WorldState, kind: String, id: int) -> void:
-	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(20, 20)
+	var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(20, 20)
 	var build := state.builds._fill(state.builds._new_build(id, kind, cell, 4, "sul"), {"size": 4, "entrance": "sul"}, 0.0)
 	build["done"] = true
 	state.builds._add(build)
@@ -87,7 +87,7 @@ func _test_store_and_fetch() -> void:
 		_check(builds.store(int(other[0]["id"]), {"bambu": 1}, "bambu", 1)["reason"] == "nao_aceita", "abrigo não guarda material")
 		_check(Builds.capacity(other[0]) == 64, "abrigo 4x4 guarda 64")
 	# Obra em andamento não guarda.
-	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
+	var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(30, 30)
 	var site := builds._new_build(77, "armazem", cell, 4, "sul")
 	builds._add(builds._fill(site, {"size": 4, "entrance": "sul"}, 0.0))
 	_check(builds.store(77, {"bambu": 1}, "bambu", 1)["reason"] == "nao_guarda", "obra não pronta não guarda")

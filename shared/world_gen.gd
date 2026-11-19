@@ -15,7 +15,8 @@ extends RefCounted
 ## coisas são espalhadas de forma procedural, e só são calculadas quando
 ## alguém chega perto (em pedaços de CHUNK casas, guardados em cache). Cada
 ## região tem um ponto de encontro, e trilhas de terra ligam os pontos das
-## regiões vizinhas. A Origem fica no ponto de encontro da região (0, 0).
+## regiões vizinhas. Quem entra pela primeira vez nasce no ponto de encontro
+## da região (0, 0).
 
 enum Biome { BOSQUE, PRADARIA, LAGOA, MAR, FLORESTA_GELADA, DESERTO_GELADO, BAMBUZAL, BREJO }
 ## Feição de uma região: algo que muda o lugar sem mudar o bioma. Uma clareira
@@ -25,13 +26,11 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX }
+enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
-const WORLD_LIMIT := 4096  # casas a partir da Origem; além disso, fim do caminho
-const ORIGIN_CLEAR_RADIUS := 3.0
-const ORIGIN_DRY_RADIUS := 10.0  # sem riachos colados na Origem
+const WORLD_LIMIT := 4096  # casas a partir do centro; além disso, fim do caminho
 const TRAIL_HALF_WIDTH := 1.6  # casas: trilhas com uns 4,8 m de largura
 const TRAIL_VERGE := 1.2  # casas além da trilha em que nada nasce (acostamento)
 const LAKE_RADIUS := 9.0  # casas, antes da ondulação da margem
@@ -84,7 +83,6 @@ const COLD_BIOMES := [Biome.FLORESTA_GELADA, Biome.DESERTO_GELADO]
 const THING_NAMES := {
 	Thing.RIACHO: "riacho",
 	Thing.ARBUSTO: "arbusto com gravetos",
-	Thing.ORIGEM: "Origem",
 	Thing.TRILHA: "trilha",
 	Thing.PONTE: "ponte",
 	Thing.LAGO: "lagoa",
@@ -180,10 +178,10 @@ const MARSH_SHORE := 0.1  # faixa de terra baixa, acima do mar, que vira brejo
 const MARSH_HUMIDITY := 0.9  # ou qualquer lugar úmido assim
 const COLD_LEVEL := -0.55
 const BAMBOO_LEVEL := 0.5  # no ruído próprio do bambuzal, dentro das matas
-## Perto da Origem o clima é sempre ameno e de terra firme: o frio e o mar
+## Perto do centro do mundo o clima é sempre ameno e de terra firme: o frio e o mar
 ## ficam para quem se afasta. Até HOME_CALM regiões, terra e temperatura são
 ## as de casa; de lá até HOME_REACH vão se soltando. A umidade se solta logo
-## (HOME_HUMID_REACH), para já haver bosque e campo ao redor da Origem.
+## (HOME_HUMID_REACH), para já haver bosque e campo ao redor do centro.
 const HOME_CALM := 1.5
 const HOME_REACH := 4.5
 const HOME_HUMID_REACH := 2.0
@@ -287,8 +285,9 @@ static func cell_center(cell: Vector2i) -> Vector2:
 	return Vector2(cell) + Vector2(0.5, 0.5)
 
 
-## Ponto central da Origem.
-static func origin_point() -> Vector2:
+## Ponto central do mundo (o ponto de encontro da região 0, 0), onde nasce
+## quem entra pela primeira vez. Não é um lugar: nada o marca no mapa.
+static func center_point() -> Vector2:
 	return cell_center(center())
 
 
@@ -314,7 +313,7 @@ func region_biome(region: Vector2i) -> Biome:
 
 
 ## Clima de uma região: (terra, temperatura, umidade), cada um entre -1 e 1
-## mais ou menos. Perto da Origem, puxado para o clima de casa.
+## mais ou menos. Perto do centro, puxado para o clima de casa.
 func region_climate(region: Vector2i) -> Vector3:
 	var x := float(region.x)
 	var y := float(region.y)
@@ -332,7 +331,7 @@ func region_climate(region: Vector2i) -> Vector3:
 
 
 func _pick_biome(region: Vector2i) -> Biome:
-	if region == Vector2i.ZERO:  # a Origem fica sempre numa pradaria
+	if region == Vector2i.ZERO:  # o centro do mundo fica sempre numa pradaria
 		return Biome.PRADARIA
 	var climate := region_climate(region)
 	var land := climate.x
@@ -461,12 +460,12 @@ func biome_at(cell: Vector2i) -> Biome:
 	return _chunk_data(cell)[1][_chunk_index(cell)] as Biome
 
 
-## Ponto de encontro da região: onde as trilhas se cruzam. Na região da
-## Origem, é a própria Origem; nas outras, um ponto perto do centro.
+## Ponto de encontro da região: onde as trilhas se cruzam. Na região
+## (0, 0), é o centro do mundo; nas outras, um ponto perto do centro da região.
 func region_landmark(region: Vector2i) -> Vector2:
 	var middle := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
 	if region == Vector2i.ZERO:
-		return origin_point()
+		return center_point()
 	var spread := REGION_SIZE * 0.25
 	var offset := Vector2(_random([region.x, region.y, "px"]) - 0.5, _random([region.x, region.y, "py"]) - 0.5)
 	return middle + offset * 2.0 * spread
@@ -515,7 +514,7 @@ func is_passable(cell: Vector2i) -> bool:
 
 func is_trail(cell: Vector2i) -> bool:
 	var thing := thing_at(cell)
-	return thing == Thing.TRILHA or thing == Thing.PONTE or thing == Thing.ORIGEM
+	return thing == Thing.TRILHA or thing == Thing.PONTE
 
 
 func _generate_chunk(chunk: Vector2i) -> Array:
@@ -536,12 +535,7 @@ func _generate_chunk(chunk: Vector2i) -> Array:
 
 
 func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int, y: int) -> Thing:
-	if cell == center():
-		return Thing.ORIGEM
 	var p := cell_center(cell)
-	# O entorno da Origem é sempre livre.
-	if p.distance_to(origin_point()) < ORIGIN_CLEAR_RADIUS:
-		return Thing.NADA
 	var region := region_of(cell)
 	var biome := region_biome(region)
 	var water := _is_water(cell, region, biome)
@@ -669,8 +663,7 @@ func _bamboo_chance(cell: Vector2i, region: Vector2i, biome: Biome, around: Pack
 			return BAMBOO_WATER_CHANCE
 	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
 		return BAMBOO_WATER_CHANCE
-	if cell_center(cell).distance_to(origin_point()) >= ORIGIN_DRY_RADIUS \
-			and absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < BAMBOO_STREAM_BANK:
+	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < BAMBOO_STREAM_BANK:
 		return BAMBOO_WATER_CHANCE
 	return 0.0
 
@@ -698,8 +691,6 @@ func is_waterside(cell: Vector2i) -> bool:
 		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
 		if distance < radius + WATERSIDE_LAKE_BANK:
 			return true
-	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:
-		return false
 	return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < WATERSIDE_STREAM_BANK
 
 
@@ -716,7 +707,7 @@ func _is_clay(cell: Vector2i, region: Vector2i, biome: Biome) -> bool:
 			return true
 	if biome == Biome.BREJO and roll < CLAY_LAKE_CHANCE and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
 		return true
-	if roll < CLAY_STREAM_CHANCE and cell_center(cell).distance_to(origin_point()) >= ORIGIN_DRY_RADIUS:
+	if roll < CLAY_STREAM_CHANCE:
 		return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_BANK
 	return false
 
@@ -734,9 +725,7 @@ func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
 		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
 		if distance < radius:
 			return Thing.LAGO
-	# Riachos finos e raros, que cortam as regiões (mas não a Origem).
-	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:
-		return Thing.NADA
+	# Riachos finos e raros, que cortam as regiões .
 	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_WIDTH:
 		return Thing.RIACHO
 	return Thing.NADA
