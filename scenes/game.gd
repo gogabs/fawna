@@ -14,6 +14,7 @@ extends Node
 
 const WALK_SPEED := 1.8  # casas por segundo (cerca de 2,7 m/s; antes 1,5)
 const BACK_FACTOR := 0.6  # andar de costas é mais devagar
+const SIDE_FACTOR := 0.8  # o passo para o lado também
 ## Ritmo dos passos: quantos passos por segundo enquanto a criatura anda.
 ## Os passos seguem o relógio, como uma animação, e não a distância andada.
 ## Para deixar mais rápido ou mais lento, mude só este número (3,3 é o ritmo escolhido pelo Gabs).
@@ -1353,9 +1354,12 @@ func _wanted_motion() -> Vector2:
 	var side := Input.get_axis("passo_esquerda", "passo_direita")
 	if ahead == 0.0 and side == 0.0:
 		return Vector2.ZERO
-	var motion := Compass.forward(_heading) * ahead + Compass.right(_heading) * side
-	var speed := WALK_SPEED * Bag.speed_factor(inventory, wielded, offhand) * (BACK_FACTOR if ahead < 0.0 else 1.0)
-	return motion.normalized() * speed
+	# Cada direção tem o seu fator; na diagonal as partes se somam, sem passar da frente.
+	var motion := Compass.forward(_heading) * ahead * (BACK_FACTOR if ahead < 0.0 else 1.0) \
+			+ Compass.right(_heading) * side * SIDE_FACTOR
+	if motion.length() > 1.0:
+		motion = motion.normalized()
+	return motion * WALK_SPEED * Bag.speed_factor(inventory, wielded, offhand)
 
 
 ## Se a criatura ficou dentro de algo sólido (uma obra que chegou enquanto ela
