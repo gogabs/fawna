@@ -95,6 +95,7 @@ var _save_timer := 0.0
 
 # Lado do cliente (inclusive quem hospeda)
 var world: WorldGen
+var _connect_waited := 0.0
 var my_id := 0
 var _server_version := ""  # vem do servidor ao entrar; vazio: servidor antigo, que não manda
 var players := {}  # id -> { "name", "pos": Vector2 }
@@ -159,8 +160,7 @@ func _ready() -> void:
 
 	var err := Net.start()
 	if err != OK:
-		Speech.say("Não foi possível iniciar a conexão (erro %d)." % err)
-		_back_to_menu()
+		_back_to_menu("Não foi possível iniciar a conexão (erro %d)." % err)
 		return
 
 	if Net.is_server():
@@ -179,6 +179,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	# Quem não consegue entrar em 30 s volta ao menu, em vez de ficar parado.
+	if Net.mode == Net.Mode.CLIENT and world == null:
+		_connect_waited += delta
+		if _connect_waited >= Net.CONNECT_TIMEOUT:
+			_back_to_menu("Não foi possível conectar ao servidor: sem resposta em %d segundos. Confira o endereço e a conexão e tente de novo." % int(Net.CONNECT_TIMEOUT))
+			return
 	if state != null:
 		_save_timer += delta
 		if _save_timer >= SAVE_INTERVAL:
@@ -322,18 +328,17 @@ func request_join(player_name: String, password: String) -> void:
 ## O servidor não deixou entrar: a pessoa volta ao menu com o motivo.
 @rpc("authority", "call_local", "reliable")
 func join_refused(reason: String) -> void:
+	var text := "O servidor não deixou você entrar."
 	match reason:
 		"errada":
-			Speech.say("Senha errada para esse nome. Confira a senha nas Opções.")
+			text = "Senha errada para esse nome. Confira a senha nas Opções."
 		"curta":
-			Speech.say("A senha precisa ter pelo menos %d caracteres. Defina nas Opções." % Credentials.MIN_LENGTH)
+			text = "A senha precisa ter pelo menos %d caracteres. Defina nas Opções." % Credentials.MIN_LENGTH
 		"devagar":
-			Speech.say("Senha errada demais. Espere uns segundos e tente de novo.")
+			text = "Senha errada demais. Espere uns segundos e tente de novo."
 		"ja_conectado":
-			Speech.say("Essa criatura já está no mundo.")
-		_:
-			Speech.say("O servidor não deixou você entrar.")
-	_back_to_menu()
+			text = "Essa criatura já está no mundo."
+	_back_to_menu(text)
 
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
@@ -1408,16 +1413,18 @@ func _on_connected_to_server() -> void:
 
 
 func _on_connection_failed() -> void:
-	Speech.say("Não foi possível conectar ao servidor.")
-	_back_to_menu()
+	_back_to_menu("Não foi possível conectar ao servidor. Confira o endereço e a conexão e tente de novo.")
 
 
 func _on_server_disconnected() -> void:
-	Speech.say("A conexão com o servidor caiu.")
-	_back_to_menu()
+	_back_to_menu("A conexão com o servidor caiu.")
 
 
-func _back_to_menu() -> void:
+## Volta ao menu principal; com message, o menu mostra o aviso numa caixa.
+func _back_to_menu(message := "") -> void:
+	if not message.is_empty():
+		print("[cliente] voltando ao menu: %s" % message)
+	Net.menu_notice = message
 	Net.stop()
 	if DisplayServer.get_name() == "headless":
 		get_tree().quit(1)

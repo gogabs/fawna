@@ -24,6 +24,11 @@ var player_name := ""
 ## registra a senha na primeira vez que o nome entra; depois só entra quem
 ## souber.
 var password := ""
+## Aviso para o menu principal mostrar numa caixa (por que a pessoa voltou
+## para o menu). Vazio = nada a avisar. Quem mostra o limpa.
+var menu_notice := ""
+## Segundos sem entrar no mundo até desistir de conectar.
+const CONNECT_TIMEOUT := 30.0
 ## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
 ## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
 var vsync := false

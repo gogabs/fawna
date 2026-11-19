@@ -42,6 +42,7 @@ extends Control
 
 var name_field: MenuTextField
 var password_field: MenuTextField
+var _notice_dialog: AcceptDialog
 var ip_field: MenuTextField
 var _key_usec := -1
 var _scanner: LanDiscovery
@@ -96,10 +97,47 @@ func _ready() -> void:
 
 	_show_main(false)
 	Music.start()
-	Speech.say(Updater.take_notice() + "Fawna. Menu principal. " + MenuNav.help())
+	if Net.menu_notice.is_empty():
+		Speech.say(Updater.take_notice() + "Fawna. Menu principal. " + MenuNav.help())
+	else:
+		_show_notice_box(Net.menu_notice)
+		Net.menu_notice = ""
+
+
+## Caixa de aviso (senha errada, servidor fora do ar...): confirmar ou voltar
+## fecha e devolve o foco ao menu principal.
+func _show_notice_box(text: String) -> void:
+	_notice_dialog = AcceptDialog.new()
+	_notice_dialog.title = "Aviso"
+	_notice_dialog.dialog_text = text
+	_notice_dialog.dialog_autowrap = true
+	_notice_dialog.ok_button_text = "OK"
+	_notice_dialog.exclusive = true
+	_notice_dialog.canceled.connect(_close_notice_box)
+	_notice_dialog.confirmed.connect(_close_notice_box)
+	add_child(_notice_dialog)
+	_notice_dialog.popup_centered(Vector2i(560, 0))
+	_notice_dialog.get_ok_button().grab_focus.call_deferred()
+	Speech.say("Aviso. %s Aperte Enter ou a seta de confirmar para fechar." % text, true)
+
+
+func _close_notice_box() -> void:
+	if _notice_dialog == null:
+		return
+	_notice_dialog.queue_free()
+	_notice_dialog = null
+	connect_button.grab_focus.call_deferred()
+	Speech.say("Menu principal.", false)
 
 
 func _input(event: InputEvent) -> void:
+	if _notice_dialog != null:
+		for nav_action: String in MenuNav.ACTIONS:
+			if event.is_action(nav_action):
+				get_viewport().set_input_as_handled()
+				if event.is_pressed() and MenuNav.from_event(event) in ["confirmar", "voltar"]:
+					_close_notice_box()
+				return
 	# Sem Tab nos menus: a navegação é só pelas setas.
 	if event.is_action("ui_focus_next") or event.is_action("ui_focus_prev"):
 		get_viewport().set_input_as_handled()
@@ -117,7 +155,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") and not _editing():
+	if event.is_action_pressed("ui_cancel") and not _editing() and _notice_dialog == null:
 		get_viewport().set_input_as_handled()
 		_navigate("voltar")
 
