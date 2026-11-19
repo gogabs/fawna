@@ -516,7 +516,7 @@ func prep_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
 ## (Builds.wreck_cells) e o alcance. Quando o golpe completa a conta, a obra
 ## some: o material que volta e o estoque caem no chão, dentro do terreno.
 ## Devolve { ok, reason } nas recusas ("ferramenta", "longe", "devagar", "casa",
-## "povoado", "acesa") ou { ok, event, hits_left, total, first, cell } e, se
+## "povoado", "acesa", "nao_dono") ou { ok, event, hits_left, total, first, cell } e, se
 ## foi a última, também { kind, title, piles, back }.
 func wreck_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
 	if not players.has(id):
@@ -534,7 +534,7 @@ func wreck_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
 	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_strike[id] = now
-	var result := builds.strike_wreck(build_id)
+	var result := builds.strike_wreck(build_id, -1.0, owner_key(id))
 	if not result["ok"]:
 		return result
 	result["cell"] = cell

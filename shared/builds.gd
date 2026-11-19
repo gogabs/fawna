@@ -1311,11 +1311,15 @@ func wreck_hits(id: int) -> int:
 
 
 ## Por que não dá para desmontar agora ("" = dá): "povoado" (um marco com
-## outras construções na região: desmonte-as antes) ou "acesa" (fogueira acesa).
-func demolish_refusal(id: int, at_time := -1.0) -> String:
+## outras construções na região: desmonte-as antes), "acesa" (fogueira acesa)
+## ou "nao_dono" (a construção tem dono e "key" não é um deles).
+func demolish_refusal(id: int, at_time := -1.0, key := "") -> String:
 	var build := get_build(id)
 	if build.is_empty():
 		return "desconhecida"
+	# Construção com dono (abrigo pronto): só o dono derruba. Sem dono, é de ninguém.
+	if has_owners(build) and not build["owners"].is_empty() and not is_owner(build, key):
+		return "nao_dono"
 	if build["kind"] == "marco":
 		for other: Dictionary in in_region(build["region"]):
 			if other["id"] != id:
@@ -1385,8 +1389,8 @@ static func spread(items: Dictionary, cells: Array) -> Dictionary:
 ## recusas (demolish_refusal) ou { ok, event, hits_left, total, first }; o
 ## evento "derrubada" diz que este golpe completou a conta (quem chama então
 ## usa demolish).
-func strike_wreck(id: int, at_time := -1.0) -> Dictionary:
-	var reason := demolish_refusal(id, at_time)
+func strike_wreck(id: int, at_time := -1.0, key := "") -> Dictionary:
+	var reason := demolish_refusal(id, at_time, key)
 	if not reason.is_empty():
 		return {"ok": false, "reason": reason}
 	if at_time < 0.0:
@@ -1415,6 +1419,9 @@ func demolish(id: int) -> Dictionary:
 	var back := salvage(build)
 	for item: String in build["stock"]:
 		back[item] = int(back.get(item, 0)) + int(build["stock"][item])
+	for locker: Dictionary in build["lockers"].values():
+		for item: String in locker:
+			back[item] = int(back.get(item, 0)) + int(locker[item])
 	var piles := spread(back, spill_cells(build))
 	var kind: String = build["kind"]
 	remove_build(id)

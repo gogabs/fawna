@@ -649,7 +649,7 @@ func request_wreck(build_id: int, cell: Vector2i) -> void:
 	_tell_others_handled(id, "golpeou")
 	var result := state.wreck_build(id, build_id, cell)
 	if not result["ok"]:
-		if state.players.has(id) and result["reason"] in ["ferramenta", "povoado", "acesa"]:
+		if state.players.has(id) and result["reason"] in ["ferramenta", "povoado", "acesa", "nao_dono"]:
 			action_failed.rpc_id(id, "desmontar_" + result["reason"], str(result.get("tool", "")))
 		return
 	_dirty = true
@@ -1265,6 +1265,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Só dá para marcar o terreno de uma obra na região em que você está.")
 		"desmontar_povoado":
 			Speech.say("O marco só se desmonta quando não resta outra construção no povoado. Desmonte as outras antes.")
+		"desmontar_nao_dono":
+			Speech.say("Só o dono derruba esta construção.")
 		"desmontar_acesa":
 			Speech.say("A fogueira está acesa. Espere apagar para desmontá-la.")
 		"desmontar_ferramenta":

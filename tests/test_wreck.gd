@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_large()
 	_test_refusals()
 	_test_cleared_and_mirror()
+	_test_owners()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -135,3 +136,17 @@ func _test_cleared_and_mirror() -> void:
 	# Cliente que já tinha a obra e recebe um snapshot novo (reconexão).
 	mirror.builds.apply_snapshot([])
 	_check(not mirror.world.removed.has(cell), "snapshot vazio zera as casas limpas")
+
+
+func _test_owners() -> void:
+	var state := WorldState.new(173)
+	var builds := state.builds
+	var home := _large(state, "abrigo", 1, true)
+	_check(builds.demolish_refusal(1, -1.0, "Ana") == "", "abrigo sem dono: qualquer um derruba")
+	home["owners"] = ["Ana"]
+	home["lockers"] = {"Ana": {"bambu": 3}}
+	_check(builds.demolish_refusal(1, -1.0, "Bia") == "nao_dono", "abrigo de Ana: Bia não derruba")
+	_check(not builds.strike_wreck(1, -1.0, "Bia")["ok"], "golpe de quem não é dono é recusado")
+	_check(builds.demolish_refusal(1, -1.0, "Ana") == "", "Ana derruba")
+	var gone := builds.demolish(1)
+	_check(int(gone["back"].get("bambu", 0)) >= 3, "o armário pessoal cai no chão")
