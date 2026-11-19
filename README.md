@@ -139,9 +139,10 @@ O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
 manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
 trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
 o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
-curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
-vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
-beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
+curva da rota é um beacon. O coração (um tambor bem abafado) bate a 70 batidas
+por minuto vindo da direção a seguir, que aponta um pouco à frente na rota e
+só gira aos poucos, como um carro fazendo a curva: nunca pula, nem ao trocar
+de beacon. Na
 Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso

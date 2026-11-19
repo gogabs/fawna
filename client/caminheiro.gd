@@ -10,8 +10,9 @@ extends Node
 ##   - de frente para ele, cada pancada é precedida por uma "suga" (um ruído
 ##     escuro ao contrário, que sobe e some suave); fora de frente, a batida
 ##     fica mais baixa e abafada, e abre até o normal perto da frente;
-##   - ao chegar num beacon, um woosh sai de perto da criatura e voa na
-##     direção do próximo, e as batidas recomeçam de lá;
+##   - a direção do som é contínua: ela nunca pula. Aponta para um ponto da rota
+##     um pouco à frente, e gira devagar até lá, como um carro fazendo a curva,
+##     seja numa esquina da rota, ao trocar de beacon ou ao traçar de novo;
 ##   - no destino, o cristal se apaga.
 ## Se a criatura se afasta muito da rota, o caminho é traçado de novo.
 
@@ -41,11 +42,11 @@ const STEREO_WIDEN := 0.15
 ## olha. A criatura gira de 45 em 45 graus, então metade do giro (22,5°) é a
 ## menor tolerância que sempre deixa um rumo de frente: é o rumo certo dos 8.
 const FACING_TOLERANCE_DEG := 22.5
-const WOOSH_DB := -8.0
-const WOOSH_FROM := 0.6  # casas à frente da criatura, rumo ao próximo beacon
-const WOOSH_TO := 7.0
-const WOOSH_SECONDS := 0.75
-const PAUSE_AFTER_WOOSH := 0.45  # silêncio antes da primeira batida do novo beacon
+## O som aponta para este ponto da rota, a tantas casas à frente da criatura
+## (e não para o beacon em si), então as esquinas da rota são abertas em curva.
+const LOOKAHEAD := 4.0
+## Velocidade máxima de giro da direção do som, em graus por segundo.
+const TURN_RATE_DEG := 40.0
 
 var active := false
 var place_name := ""
@@ -63,8 +64,9 @@ var _next_beat := 0
 ## A suga, também em rodízio, na mesma posição da batida.
 var _layer_players: Array[AudioStreamPlayer3D] = []
 var _forward := Vector2.ZERO  # para onde a criatura olha (zero: não se sabe)
-var _woosh_player: AudioStreamPlayer3D
-var _woosh_tween: Tween
+## Direção a seguir que o som indica agora (zero: ainda não definida). Só gira
+## aos poucos, com no máximo TURN_RATE_DEG por segundo.
+var _heading := Vector2.ZERO
 
 
 ## As duas fontes de som ficam criadas desde o começo e são reaproveitadas:
@@ -88,10 +90,6 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 					player.name = "Caminheiro_suga_%d" % i
 					player.stream = layer_stream
 					_layer_players.append(player)
-		_woosh_player = audio.make_far_voice(WOOSH_TO + 6.0)
-		if _woosh_player != null:
-			_woosh_player.name = "Caminheiro_woosh"
-			_woosh_player.stream = Sounds.woosh()
 
 
 ## Acende o cristal rumo a um lugar. Devolve false se não achou caminho.
@@ -104,6 +102,7 @@ func start(from: Vector2, destination: Vector2, new_place_name: String) -> bool:
 	_previous = from
 	_beacon = _finder.current()
 	_beat_timer = 0.15
+	_heading = Vector2.ZERO  # a primeira direção vem direto, sem girar de lugar nenhum
 	return _beacon != null
 
 
@@ -143,6 +142,8 @@ func update(pos: Vector2, delta: float, forward := Vector2.ZERO) -> void:
 	if _off_route(pos):
 		_replan(pos)
 		return
+	_steer(pos, delta)
+	_follow_heading(pos)
 	_beat_timer -= delta
 	if _beat_timer <= 0.0:
 		# Soma em vez de reiniciar: a sobra do quadro não se perde, então um
@@ -161,8 +162,6 @@ func _reach(pos: Vector2) -> void:
 		stop()
 		arrived.emit(name_reached)
 		return
-	_woosh(pos, _beacon)
-	_beat_timer = WOOSH_SECONDS + PAUSE_AFTER_WOOSH
 
 
 ## Se a criatura cortou caminho e já está num beacon mais adiante, pula para ele.
@@ -193,23 +192,57 @@ func _replan(pos: Vector2) -> void:
 	_beat_timer = 0.3
 
 
+## Gira _heading rumo ao ponto à frente na rota, com a velocidade limitada.
+func _steer(pos: Vector2, delta: float) -> void:
+	var target := (lookahead_point(pos, [_beacon] + _finder.pending().slice(1), LOOKAHEAD) - pos)
+	if target.length() < 0.001:
+		return
+	_heading = steer_toward(_heading, target.normalized(), deg_to_rad(TURN_RATE_DEG) * delta)
+
+
+## Para onde o som aponta, a "abertura" da batida e o estéreo ampliado, a
+## partir da direção atual e de para onde a criatura olha.
+func _sound_direction() -> Vector2:
+	if _forward == Vector2.ZERO:
+		return _heading
+	return widen_direction(_forward, _heading)
+
+
+func _openness() -> float:
+	if _forward == Vector2.ZERO:
+		return 1.0
+	return openness_at(absf(rad_to_deg(_forward.angle_to(_heading))))
+
+
+## A cada quadro, leva as fontes (e o volume da batida, que depende de para
+## onde se olha) para a direção atual, sem esperar a próxima batida: o som
+## acompanha a curva mesmo no meio da cauda.
+func _follow_heading(pos: Vector2) -> void:
+	if _heading == Vector2.ZERO:
+		return
+	var where := SpatialAudio.point_to_3d(pos + _sound_direction() * BEAT_DISTANCE)
+	var volume := BEAT_DB + _gain() + (1.0 - _openness()) * BEAT_BEHIND_DB
+	for player in _beat_players:
+		player.position = where
+		player.volume_db = volume
+	for player in _layer_players:
+		player.position = where
+
+
 func _beat(pos: Vector2, beacon: Vector2) -> void:
 	if _beat_players.is_empty():
 		return
+	if _heading == Vector2.ZERO:
+		_heading = (beacon - pos).normalized()
 	var index := _next_beat
 	_next_beat = (_next_beat + 1) % _beat_players.size()
-	var direction := (beacon - pos).normalized()
-	var openness := 1.0
 	var off := 0.0
+	var openness := _openness()
 	if _forward != Vector2.ZERO:
-		off = absf(rad_to_deg(_forward.angle_to(direction)))
-		openness = openness_at(off)
-		direction = widen_direction(_forward, direction)
-	var where := SpatialAudio.point_to_3d(pos + direction * BEAT_DISTANCE)
+		off = absf(rad_to_deg(_forward.angle_to(_heading)))
+	_follow_heading(pos)
 	var player := _beat_players[index]
-	player.position = where
 	player.stream = Sounds.heartbeat_level(roundi(openness * (BEAT_LEVELS - 1)))
-	player.volume_db = BEAT_DB + _gain() + (1.0 - openness) * BEAT_BEHIND_DB
 	# A batida entra depois da suga.
 	get_tree().create_timer(SUCK_LEAD).timeout.connect(func():
 		if active:
@@ -217,10 +250,32 @@ func _beat(pos: Vector2, beacon: Vector2) -> void:
 			player.play())
 	if _forward != Vector2.ZERO and off <= FACING_TOLERANCE_DEG + 0.0001 and index < _layer_players.size():
 		var layer := _layer_players[index]
-		layer.position = where
 		layer.volume_db = SUCK_DB + _gain()
 		layer.stop()
 		layer.play()
+
+
+## Gira "current" rumo a "target" (ambos unitários) no máximo "max_angle"
+## radianos. Sem direção atual (zero), vai direto.
+static func steer_toward(current: Vector2, target: Vector2, max_angle: float) -> Vector2:
+	if current == Vector2.ZERO:
+		return target
+	var angle := current.angle_to(target)
+	return current.rotated(clampf(angle, -max_angle, max_angle)).normalized()
+
+
+## O ponto da rota (pos -> points em ordem) a "distance" casas de caminho a
+## partir de pos; se a rota acaba antes, o último ponto.
+static func lookahead_point(pos: Vector2, points: Array, distance: float) -> Vector2:
+	var from := pos
+	var left := distance
+	for point: Vector2 in points:
+		var leg := from.distance_to(point)
+		if leg >= left:
+			return from.lerp(point, left / leg)
+		left -= leg
+		from = point
+	return from
 
 
 ## Quão aberta soa a batida (0 = bem atrás, abafada; 1 = de frente, normal),
@@ -243,22 +298,6 @@ static func is_facing(pos: Vector2, beacon: Vector2, forward: Vector2) -> bool:
 		return false
 	var off := absf(forward.angle_to(beacon - pos))
 	return off <= deg_to_rad(FACING_TOLERANCE_DEG) + 0.0001
-
-
-## O woosh sai de perto da criatura e voa rumo ao próximo beacon.
-func _woosh(pos: Vector2, next: Vector2) -> void:
-	if _woosh_player == null:
-		return
-	var direction := (next - pos).normalized()
-	if _woosh_tween != null:
-		_woosh_tween.kill()
-	_woosh_player.position = SpatialAudio.point_to_3d(pos + direction * WOOSH_FROM)
-	_woosh_player.volume_db = WOOSH_DB + _gain()
-	_woosh_player.stop()
-	_woosh_player.play()
-	_woosh_tween = create_tween()
-	_woosh_tween.tween_property(_woosh_player, "position", SpatialAudio.point_to_3d(pos + direction * WOOSH_TO), WOOSH_SECONDS) \
-		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
 
 
 func _gain() -> float:

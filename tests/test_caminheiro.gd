@@ -20,6 +20,7 @@ func _ready() -> void:
 	_test_region_change()
 	_test_facing()
 	_test_beat_openness()
+	_test_steering()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -348,3 +349,26 @@ func _test_beat_openness() -> void:
 		var dir := forward.rotated(angle)
 		var widened := Caminheiro.widen_direction(forward, dir)
 		_check(absf(angle_difference(dir.angle(), widened.angle())) < deg_to_rad(10.0), "ampliação pequena (%f)" % angle)
+
+
+## A direção do som gira aos poucos (como um carro) e o ponto à frente abre as esquinas.
+func _test_steering() -> void:
+	var east := Vector2(1, 0)
+	var north := Vector2(0, -1)
+	_check(Caminheiro.steer_toward(Vector2.ZERO, north, 0.1).distance_to(north) < 0.0001, "sem direção atual, vai direto")
+	var step := deg_to_rad(Caminheiro.TURN_RATE_DEG) / 60.0
+	var heading := east
+	var last_angle := 0.0
+	var frames := 0
+	while heading.distance_to(north) > 0.0001 and frames < 1000:
+		var next := Caminheiro.steer_toward(heading, north, step)
+		_check(absf(heading.angle_to(next)) <= step + 0.0001, "nenhum quadro gira mais que o limite")
+		heading = next
+		frames += 1
+	_check(frames > 130 and frames < 140, "90° leva ~2,25 s a 40°/s (%d quadros)" % frames)
+	var behind := Caminheiro.steer_toward(east, -east, step)
+	_check(absf(east.angle_to(behind)) <= step + 0.0001, "virar 180° também é gradual")
+	var route: Array = [Vector2(2, 0), Vector2(2, -10)]
+	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 1.0).distance_to(Vector2(1, 0)) < 0.0001, "ponto à frente no primeiro trecho")
+	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 4.0).distance_to(Vector2(2, -2)) < 0.0001, "ponto à frente passa a esquina")
+	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 50.0).distance_to(Vector2(2, -10)) < 0.0001, "rota curta: o último ponto")

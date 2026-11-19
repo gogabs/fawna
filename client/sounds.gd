@@ -289,8 +289,8 @@ static func _pick_fresh(key: String) -> AudioStream:
 
 
 ## Batida do Caminheiro (tambor abafado, como um coração, com passa-baixa e
-## reverb já no arquivo: tools/som_caminheiro.py) e o woosh de chegada a um
-## beacon. Sem os arquivos, sons gerados por código.
+## reverb já no arquivo: tools/som_caminheiro.py).
+## Sem os arquivos, sons gerados por código.
 static func heartbeat() -> AudioStream:
 	return _pick("caminheiro_batida", SoundBank.heartbeat)
 
@@ -308,10 +308,6 @@ static func heartbeat_level(level: int) -> AudioStream:
 ## arquivo, sem suga.
 static func heartbeat_suck() -> AudioStream:
 	return _pick("caminheiro_suga", func(): return null)
-
-
-static func woosh() -> AudioStream:
-	return _pick("caminheiro_woosh", SoundBank.woosh)
 
 
 ## Machado: o golpe no ar, a lâmina batendo (no bambu, por exemplo) e o
