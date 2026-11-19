@@ -482,7 +482,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}, "owners": [], "lockers": {}}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -748,20 +748,109 @@ static func inside(build: Dictionary, pos: Vector2) -> bool:
 	return inner.x >= 1 and inner.y >= 1 and inner.x <= size - 2 and inner.y <= size - 2
 
 
-## Esta construção guarda itens?
+## Donos: quem mora na construção. O dono é uma chave de texto (hoje o nome da
+## criatura; com login, o id da conta), vinda de WorldState.owner_key.
+static func owner_slots(build: Dictionary) -> int:
+	return Crafting.owner_slots(str(build.get("kind", "")), int(build.get("size", 1)))
+
+
+static func has_owners(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and owner_slots(build) > 0
+
+
+static func is_owner(build: Dictionary, key: String) -> bool:
+	return build.get("owners", []).has(key)
+
+
+## "sem dono", "dono: Ana" ou "donos: Ana e Bia (vaga para mais 0)".
+static func owners_text(build: Dictionary) -> String:
+	var owners: Array = build.get("owners", [])
+	var free := owner_slots(build) - owners.size()
+	if owners.is_empty():
+		return "sem dono, %s" % ("uma vaga" if free == 1 else "%d vagas" % free)
+	var text := "dono: %s" % owners[0] if owners.size() == 1 else "donos: %s" % " e ".join(owners)
+	return text + (", mais uma vaga" if free == 1 else "")
+
+
+## A construção pronta do mesmo tipo de que a criatura já é dona ({} se nenhuma).
+func owned_by(key: String, kind: String) -> Dictionary:
+	for build: Dictionary in _builds.values():
+		if build["kind"] == kind and is_owner(build, key):
+			return build
+	return {}
+
+
+## A criatura passa a ser dona da construção. Uma criatura tem um só abrigo.
+## Devolve { ok, reason }. reason: "desconhecida", "sem_dono" (não tem dono),
+## "nao_pronta", "ja_dono", "ja_tem_outro", "lotada".
+func claim(id: int, key: String) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if owner_slots(build) <= 0:
+		return {"ok": false, "reason": "sem_dono"}
+	if not build["done"]:
+		return {"ok": false, "reason": "nao_pronta"}
+	if is_owner(build, key):
+		return {"ok": false, "reason": "ja_dono"}
+	if not owned_by(key, build["kind"]).is_empty():
+		return {"ok": false, "reason": "ja_tem_outro"}
+	if build["owners"].size() >= owner_slots(build):
+		return {"ok": false, "reason": "lotada"}
+	build["owners"].append(key)
+	_adopt_stock(build)
+	return {"ok": true, "reason": ""}
+
+
+## A criatura deixa de ser dona. reason: "desconhecida", "nao_dono".
+func release(id: int, key: String) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not is_owner(build, key):
+		return {"ok": false, "reason": "nao_dono"}
+	build["owners"].erase(key)
+	return {"ok": true, "reason": ""}
+
+
+## Esta construção tem onde guardar (pronta e do tipo de STORAGE)? Mesmo onde
+## já não se guarda mais (abrigo de 3 ou 5), o dono ainda pega o que sobrou.
 static func stores(build: Dictionary) -> bool:
 	return bool(build.get("done", false)) and Crafting.STORAGE.has(str(build.get("kind", "")))
 
 
-## Quanto peso a construção guarda no total.
+## O guardado é pessoal (um armário por dono) em vez de comum?
+static func personal(build: Dictionary) -> bool:
+	return Crafting.STORAGE.get(str(build.get("kind", "")), {}).has("per_owner")
+
+
+## Aceita guardar coisas novas? No abrigo, só nos tamanhos de "sizes".
+static func can_store(build: Dictionary) -> bool:
+	if not stores(build):
+		return false
+	var sizes: Array = Crafting.STORAGE[build["kind"]].get("sizes", [])
+	return sizes.is_empty() or sizes.has(int(build.get("size", 1)))
+
+
+## Quanto peso cabe: o armário de cada dono, ou a construção toda.
 static func capacity(build: Dictionary) -> int:
+	var rule: Dictionary = Crafting.STORAGE.get(str(build["kind"]), {})
+	if rule.has("per_owner"):
+		return int(rule["per_owner"]) if can_store(build) else 0
 	var size := int(build.get("size", 1))
-	return int(Crafting.STORAGE.get(str(build["kind"]), {}).get("per_cell", 0)) * size * size
+	return int(rule.get("per_cell", 0)) * size * size
 
 
-## Peso guardado agora.
-static func stock_load(build: Dictionary) -> int:
-	return Bag.weight_of_items(build.get("stock", {}))
+## O estoque que "key" enxerga: o armário dele (abrigo) ou o comum. Só leitura.
+static func stock_of(build: Dictionary, key := "") -> Dictionary:
+	if personal(build):
+		return build.get("lockers", {}).get(key, {})
+	return build.get("stock", {})
+
+
+## Peso guardado agora (no armário de "key", se o guardado é pessoal).
+static func stock_load(build: Dictionary, key := "") -> int:
+	return Bag.weight_of_items(stock_of(build, key))
 
 
 ## Esta construção aceita o item (pela categoria)?
@@ -770,53 +859,89 @@ static func accepts(build: Dictionary, item: String) -> bool:
 
 
 ## "Armazém, 12 de 128" (peso guardado e capacidade).
-static func stock_label(build: Dictionary) -> String:
-	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build), capacity(build)]
+static func stock_label(build: Dictionary, key := "") -> String:
+	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build, key), capacity(build)]
 
 
-## Guarda itens da bolsa "bag" (muda a bolsa). Devolve { ok, reason, item,
-## amount }. reason: "desconhecida", "nao_guarda" (a construção não guarda
-## nada), "nao_aceita" (categoria errada), "nao_tem", "cheio".
-func store(id: int, bag: Dictionary, item: String, amount: int) -> Dictionary:
+## Quem pode mexer no estoque: qualquer um, ou, no guardado pessoal, só um dono.
+static func may_use_stock(build: Dictionary, key: String) -> bool:
+	return not personal(build) or is_owner(build, key)
+
+
+## O estoque de verdade, para escrever (cria o armário na primeira vez).
+func _stock_for_write(build: Dictionary, key: String) -> Dictionary:
+	if personal(build):
+		if not build["lockers"].has(key):
+			build["lockers"][key] = {}
+		return build["lockers"][key]
+	return build["stock"]
+
+
+## O que ficou no estoque comum de um abrigo antigo (de antes dos armários)
+## passa para o armário do dono.
+static func _adopt_stock(build: Dictionary) -> void:
+	if not personal(build) or build["stock"].is_empty() or build["owners"].is_empty():
+		return
+	var key: String = build["owners"][0]
+	if not build["lockers"].has(key):
+		build["lockers"][key] = {}
+	for item in build["stock"]:
+		build["lockers"][key][item] = int(build["lockers"][key].get(item, 0)) + int(build["stock"][item])
+	build["stock"] = {}
+
+
+## Guarda itens da bolsa "bag" (muda a bolsa), no armário de "key" se o guardado
+## for pessoal. Devolve { ok, reason, item, amount }. reason: "desconhecida",
+## "nao_guarda" (não se guarda aqui), "nao_dono", "nao_aceita" (categoria
+## errada), "nao_tem", "cheio".
+func store(id: int, bag: Dictionary, item: String, amount: int, key := "") -> Dictionary:
 	var build := get_build(id)
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
-	if not stores(build):
+	if not can_store(build):
 		return {"ok": false, "reason": "nao_guarda"}
+	if not may_use_stock(build, key):
+		return {"ok": false, "reason": "nao_dono"}
 	if not accepts(build, item):
 		return {"ok": false, "reason": "nao_aceita", "item": item}
 	var have := int(bag.get(item, 0))
 	if have <= 0 or amount <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
-	var room := (capacity(build) - stock_load(build)) / maxi(1, Bag.weight_of(item))
+	var room := (capacity(build) - stock_load(build, key)) / maxi(1, Bag.weight_of(item))
 	var moved := mini(mini(amount, have), room)
 	if moved <= 0:
 		return {"ok": false, "reason": "cheio", "item": item}
 	bag[item] = have - moved
 	if int(bag[item]) <= 0:
 		bag.erase(item)
-	build["stock"][item] = int(build["stock"].get(item, 0)) + moved
+	var stock := _stock_for_write(build, key)
+	stock[item] = int(stock.get(item, 0)) + moved
 	return {"ok": true, "item": item, "amount": moved}
 
 
 ## Tira itens do estoque para a bolsa "bag", até onde cabe na carga. Devolve
-## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda",
+## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda", "nao_dono",
 ## "nao_tem" (não há isso lá), "carga" (a criatura não aguenta mais peso).
-func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int) -> Dictionary:
+func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int, key := "") -> Dictionary:
 	var build := get_build(id)
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
 	if not stores(build):
 		return {"ok": false, "reason": "nao_guarda"}
-	var have := int(build["stock"].get(item, 0))
+	if not may_use_stock(build, key):
+		return {"ok": false, "reason": "nao_dono"}
+	var stock := _stock_for_write(build, key)
+	var have := int(stock.get(item, 0))
 	if have <= 0 or amount <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
 	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item))
 	if moved <= 0:
 		return {"ok": false, "reason": "carga", "item": item}
-	build["stock"][item] = have - moved
-	if int(build["stock"][item]) <= 0:
-		build["stock"].erase(item)
+	stock[item] = have - moved
+	if int(stock[item]) <= 0:
+		stock.erase(item)
+		if personal(build) and stock.is_empty():
+			build["lockers"].erase(key)
 	bag[item] = int(bag.get(item, 0)) + moved
 	return {"ok": true, "item": item, "amount": moved}
 
@@ -927,7 +1052,8 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
-		"stock": build["stock"].duplicate(),
+		"stock": build["stock"].duplicate(), "owners": build["owners"].duplicate(),
+		"lockers": build["lockers"].duplicate(true),
 	}
 
 
@@ -979,7 +1105,7 @@ func to_save() -> Dictionary:
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
-			"stock": build["stock"],
+			"stock": build["stock"], "owners": build["owners"], "lockers": build["lockers"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -1034,6 +1160,21 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 		if int(data["stock"][item]) > 0:
 			stock[str(item)] = int(data["stock"][item])
 	build["stock"] = stock
+	var owners := []
+	for owner in data.get("owners", []):
+		if not str(owner).is_empty() and not owners.has(str(owner)):
+			owners.append(str(owner))
+	build["owners"] = owners
+	var lockers := {}
+	for owner in data.get("lockers", {}):
+		var locker := {}
+		for item in data["lockers"][owner]:
+			if int(data["lockers"][owner][item]) > 0:
+				locker[str(item)] = int(data["lockers"][owner][item])
+		if not locker.is_empty():
+			lockers[str(owner)] = locker
+	build["lockers"] = lockers
+	_adopt_stock(build)
 	return build
 
 
@@ -1098,6 +1239,8 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		return text + (" acesa" if is_lit(id, at_time) else " apagada")
+	if owner_slots(build) > 0:
+		return text + (" sem dono" if build["owners"].is_empty() else " de " + " e ".join(build["owners"]))
 	return text
 
 
