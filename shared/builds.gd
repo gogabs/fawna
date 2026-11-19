@@ -1239,6 +1239,8 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		return text + (" acesa" if is_lit(id, at_time) else " apagada")
+	if owner_slots(build) > 0:
+		return text + (" sem dono" if build["owners"].is_empty() else " de " + " e ".join(build["owners"]))
 	return text
 
 

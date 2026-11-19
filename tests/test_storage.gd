@@ -195,6 +195,14 @@ func _test_shelter_sizes() -> void:
 	old["stock"] = {"bambu": 2}
 	builds.claim(8, "Caio")
 	_check(Builds.stock_of(old, "Caio").get("bambu", 0) == 2 and old["stock"].is_empty(), "estoque antigo vira armário do dono")
+	_check(builds.spoken_name(5) == "abrigo sem dono" or builds.spoken_name(5) == "abrigo de Ana5", "nome falado do abrigo de 5")
+	_check(builds.spoken_name(6) == "abrigo de Ana6 e Bia", "abrigo de dois donos")
+	builds.release(6, "Ana6")
+	builds.release(6, "Bia")
+	_check(builds.spoken_name(6) == "abrigo sem dono", "abrigo sem dono")
+	builds.claim(6, "Bia")
+	_check(builds.spoken_name(6) == "abrigo de Bia", "abrigo de um dono só")
+	builds.claim(6, "Ana6")
 	# Persistência
 	var copy := Builds.new(state.world)
 	copy.load_save(builds.to_save())
