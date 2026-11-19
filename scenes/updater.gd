@@ -34,6 +34,9 @@ var _latest_url := Updater.LATEST_URL
 var _download_path := ""
 var _last_spoken_quarter := 0
 var _leaving := false
+var _last_percent := -1
+var _worker: Thread = null
+var _worker_problem := ""
 
 
 func _ready() -> void:
@@ -67,6 +70,10 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if state == State.DOWNLOADING:
 		_update_progress()
+	elif state == State.INSTALLING and _worker != null and not _worker.is_alive():
+		_worker.wait_to_finish()
+		_worker = null
+		_finish_install()
 
 
 func _input(event: InputEvent) -> void:
@@ -269,6 +276,7 @@ func _start_download() -> void:
 	state = State.DOWNLOADING
 	title_label.text = "Baixando a versão %s" % _remote_version()
 	status_label.text = "Baixando... 0%"
+	_last_percent = 0
 	notes_text.hide()
 	progress_bar.value = 0
 	progress_bar.show()
@@ -297,8 +305,13 @@ func _percent() -> int:
 
 func _update_progress() -> void:
 	var percent := _percent()
-	progress_bar.value = percent
-	status_label.text = "Baixando... %d%%" % percent
+	# Só mexe nos controles quando o número muda: texto e barra trocados a cada
+	# quadro (60 vezes por segundo) viram uma enxurrada de eventos para o
+	# leitor de tela.
+	if percent != _last_percent:
+		_last_percent = percent
+		progress_bar.value = percent
+		status_label.text = "Baixando... %d%%" % percent
 	var quarter := percent / 25
 	if quarter > _last_spoken_quarter and quarter < 4:
 		_last_spoken_quarter = quarter
@@ -310,10 +323,6 @@ func _on_download_done(result: int, code: int) -> void:
 		_fail("o download não terminou")
 		return
 	progress_bar.value = 100
-	var problem := Updater.verify_download(_download_path, asset)
-	if not problem.is_empty():
-		_fail(problem)
-		return
 	_install()
 
 
@@ -326,14 +335,34 @@ func _install() -> void:
 	progress_bar.hide()
 	_show_buttons([])
 	Speech.say("Download completo. Instalando. %s" % status_label.text)
-	var staged := ProjectSettings.globalize_path(Updater.WORK_DIR.path_join("nova_versao"))
-	var err := Updater.extract_zip(_download_path, staged)
+	# Conferir e extrair o zip leva vários segundos. Numa thread, a janela
+	# continua respondendo; parada, o leitor de tela fica esperando por ela.
+	_worker_problem = ""
+	_worker = Thread.new()
+	if _worker.start(_prepare_install) != OK:
+		_worker = null
+		_worker_problem = _prepare_install()
+		_finish_install()
+
+
+## Roda fora da thread principal. Devolve o motivo da falha, ou "" se deu certo.
+func _prepare_install() -> String:
+	var problem := Updater.verify_download(_download_path, asset)
+	if problem.is_empty():
+		var staged := ProjectSettings.globalize_path(Updater.WORK_DIR.path_join("nova_versao"))
+		if Updater.extract_zip(_download_path, staged) != OK:
+			problem = "não deu para abrir o arquivo baixado"
 	DirAccess.remove_absolute(_download_path)
-	if err != OK:
-		_fail("não deu para abrir o arquivo baixado")
+	_worker_problem = problem
+	return problem
+
+
+func _finish_install() -> void:
+	if not _worker_problem.is_empty():
+		_fail(_worker_problem)
 		return
-	err = Updater.launch_installer(staged, _remote_version())
-	if err != OK:
+	var staged := ProjectSettings.globalize_path(Updater.WORK_DIR.path_join("nova_versao"))
+	if Updater.launch_installer(staged, _remote_version()) != OK:
 		_fail("não deu para começar a instalação")
 		return
 	# Tempo para a fala terminar antes de fechar.
