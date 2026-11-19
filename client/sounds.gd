@@ -106,6 +106,8 @@ const MANIFEST := {
 	"fogo_lenha": ["obras/lenha_1.ogg", "obras/lenha_2.ogg"],
 	"fogo_apagar": ["obras/apagar.ogg"],
 	"fogo_crepitar": ["obras/crepitar.ogg"],
+	# Tocha acesa na mão (loop do pacote world, escolha do Gabs).
+	"tocha_acesa": ["world/loop_torch1.ogg"],
 	# Passar de uma região para outra. Sem o arquivo, gerado por código.
 	"regiao": ["world/regiao.ogg"],
 	# Itens no chão: o baque de largar e o tique baixinho do monte. Sem
@@ -409,6 +411,14 @@ static func fire_out() -> AudioStream:
 
 static func fire_loop() -> AudioStream:
 	var stream := _pick_variant("fogo_crepitar", SoundBank.fire_loop)
+	if stream != null:
+		_make_loop(stream)
+	return stream
+
+
+## O crepitar da tocha acesa, em loop (sem o arquivo, o da fogueira).
+static func torch_loop() -> AudioStream:
+	var stream := _pick_first("tocha_acesa", SoundBank.fire_loop)
 	if stream != null:
 		_make_loop(stream)
 	return stream

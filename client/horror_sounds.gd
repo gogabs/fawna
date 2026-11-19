@@ -2,8 +2,7 @@ class_name HorrorSounds
 extends RefCounted
 ## Sons dos horrores, gerados por código (sons do próprio projeto).
 ##
-## O Calado não faz som nenhum; só quem escuta com atenção (segurando o Tab)
-## ouve a respiração dele: lenta, grave e longa demais para ser de gente.
+## O Calado não faz som nenhum; só se ouve a respiração dele: lenta, grave e longa demais para ser de gente.
 ## Uma gravação em assets/sounds/horrores/calado_respiracao.ogg|wav entra no
 ## lugar do som gerado.
 

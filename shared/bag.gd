@@ -39,8 +39,30 @@ const WEIGHTS := {
 	"lanca": 2,
 	"clava": 4,
 	"enxada": 3,
+	"silex": 1,
+	"cipo": 1,
+	"fibra": 1,
+	"resina": 1,
+	"faca": 2,
+	"tocha": 2,
 }
 const DEFAULT_WEIGHT := 1
+
+## Categoria de cada recurso ou item (pela chave sem tamanho: "pedra_grande"
+## vale como "pedra"). Decide onde cada coisa pode ser guardada (Crafting.STORAGE).
+## O que não estiver aqui é "material".
+const CATEGORIES := {
+	"machado": "ferramenta",
+	"enxada": "ferramenta",
+	"lanca": "arma",
+	"clava": "arma",
+	"frutas": "comida",
+}
+const DEFAULT_CATEGORY := "material"
+
+
+static func category_of(item: String) -> String:
+	return str(CATEGORIES.get(Economy.base_of(item), DEFAULT_CATEGORY))
 
 ## Itens que podem ser empunhados (vão para o Equipamento) e a dica falada
 ## ao empunhar.
@@ -49,7 +71,13 @@ const WIELDABLE := {
 	"lanca": "J para golpear.",
 	"clava": "J para golpear.",
 	"enxada": "J para capinar a grama de uma obra.",
+	"faca": "J no tronco de uma árvore, poucas vezes, para tirar resina.",
+	"tocha": "Vai na mão não dominante. Para acendê-la, use Equipamento perto de uma fogueira acesa; longe de uma, risque faca ou sílex numa pedra pequena com Espaço.",
 }
+
+## Itens que vão na mão não dominante, a segunda peça de equipamento: não
+## tiram o que está na mão principal.
+const OFFHAND := ["tocha"]
 
 ## Nomes dos itens da bolsa que ainda não estão em Economy.ITEM_NAMES.
 const NAMES := {
@@ -57,11 +85,13 @@ const NAMES := {
 	"lanca": ["lança de bambu", "lanças de bambu"],
 	"clava": ["clava de pedra", "clavas de pedra"],
 	"enxada": ["enxada", "enxadas"],
+	"faca": ["faca bruta de sílex", "facas brutas de sílex"],
+	"tocha": ["tocha", "tochas"],
 }
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira"]
+const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira", "faca", "tocha", "fibra", "resina"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".
@@ -123,6 +153,10 @@ static func can_wield(item: String) -> bool:
 	return WIELDABLE.has(item)
 
 
+static func is_offhand(item: String) -> bool:
+	return OFFHAND.has(item)
+
+
 ## Dá os itens iniciais a quem ainda não os tem (nem na bolsa, nem nas mãos).
 ## Vale para criaturas novas e para quem já existia antes da bolsa.
 static func give_starter(bag: Dictionary, wielded: String) -> void:
@@ -144,25 +178,26 @@ static func weight_of_items(items: Dictionary) -> int:
 
 
 ## Carga atual: a bolsa mais o que está nas mãos.
-static func load_of(bag: Dictionary, wielded := "") -> int:
-	return weight_of_items(bag) + (0 if wielded.is_empty() else weight_of(wielded))
+static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
+	return weight_of_items(bag) + (0 if wielded.is_empty() else weight_of(wielded)) \
+			+ (0 if offhand.is_empty() else weight_of(offhand))
 
 
 ## Quanto peso ainda cabe (0 se a criatura já está no limite ou acima dele,
 ## como quem vem de um mundo salvo antes do limite existir).
-static func free_space(bag: Dictionary, wielded := "") -> int:
-	return maxi(0, CAPACITY - load_of(bag, wielded))
+static func free_space(bag: Dictionary, wielded := "", offhand := "") -> int:
+	return maxi(0, CAPACITY - load_of(bag, wielded, offhand))
 
 
 ## Quantas unidades de "item" ainda cabem.
-static func room_for(bag: Dictionary, wielded: String, item: String) -> int:
-	return free_space(bag, wielded) / maxi(1, weight_of(item))
+static func room_for(bag: Dictionary, wielded: String, item: String, offhand := "") -> int:
+	return free_space(bag, wielded, offhand) / maxi(1, weight_of(item))
 
 
 ## Separa o que cabe do que não cabe, pondo primeiro o mais pesado (o que
 ## sobra de fora é o miúdo). Devolve [cabe, não cabe], cada um item -> quantidade.
-static func split_to_fit(bag: Dictionary, wielded: String, items: Dictionary) -> Array:
-	var free := free_space(bag, wielded)
+static func split_to_fit(bag: Dictionary, wielded: String, items: Dictionary, offhand := "") -> Array:
+	var free := free_space(bag, wielded, offhand)
 	var keys := items.keys()
 	keys.sort_custom(func(a, b):
 		return weight_of(a) > weight_of(b) if weight_of(a) != weight_of(b) else str(a) < str(b))
@@ -193,5 +228,5 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 
 
 ## "Carga, 18 de 24".
-static func load_label(bag: Dictionary, wielded := "") -> String:
-	return "Carga, %d de %d" % [load_of(bag, wielded), CAPACITY]
+static func load_label(bag: Dictionary, wielded := "", offhand := "") -> String:
+	return "Carga, %d de %d" % [load_of(bag, wielded, offhand), CAPACITY]

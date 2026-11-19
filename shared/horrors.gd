@@ -24,6 +24,7 @@ const SIGHT := 22.0  # até onde encarar o segura
 ## então 30° para cada lado garantem que sempre há uma direção que serve.
 const FACING_COS := 0.866
 const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
+const TORCH_SAFE := 5.0  # tocha acesa na mão: espanta a até 7,5 m
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
 const ORIGIN_SAFE := 6.0  # onde se reaparece depois de levado: ele não nasce ali
 const GIVE_UP_DISTANCE := 45.0
@@ -105,13 +106,30 @@ func hunting(peer: int) -> Dictionary:
 	return {}
 
 
+## Uma das três direções de trás (traseira esquerda, trás, traseira direita),
+## sorteada, para o jogador ter que procurar por ele.
+func _rear_direction(heading: int) -> Vector2:
+	return Compass.forward(heading + 4 + _rng.randi_range(-1, 1))
+
+
+## Barulho feito por este jogador (batidas de pedra): soma "seconds" ao tempo
+## exposto, então o Calado pode chegar mais cedo. Não vale durante o sossego
+## depois de uma visita, nem com um já atrás dele.
+func hear_noise(peer: int, seconds: float) -> void:
+	if not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
+		return
+	if not _need.has(peer):
+		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
+	_exposure[peer] = float(_exposure.get(peer, 0.0)) + seconds
+
+
 ## Faz o Calado aparecer atrás de um jogador (testes e, um dia, eventos).
 ## Devolve o id, ou -1 se o jogador não existe ou já tem um atrás de si.
 func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:
 	if not players.has(peer) or not hunting(peer).is_empty():
 		return -1
 	var player: Dictionary = players[peer]
-	var behind := -Compass.forward(int(player.get("heading", 0)))
+	var behind := _rear_direction(int(player.get("heading", 0)))
 	var horror := {
 		"id": _next_id, "target": peer, "pos": (player["pos"] as Vector2) + behind * distance,
 		"mode": Mode.STALK, "stare": 0.0, "wait": 0.0, "retreat_s": 0.0, "watchers": {},
@@ -138,9 +156,13 @@ static func is_facing(player_pos: Vector2, heading: int, point: Vector2) -> bool
 
 
 ## Há fogueira acesa a até FIRE_SAFE deste ponto?
+## Cada item de "fires" é um Vector2 (fogueira, alcance FIRE_SAFE) ou um
+## Vector3 (x, y, alcance: uma tocha acesa na mão de alguém).
 static func fire_near(point: Vector2, fires: Array) -> bool:
-	for fire: Vector2 in fires:
-		if fire.distance_to(point) <= FIRE_SAFE:
+	for fire in fires:
+		var at: Vector2 = Vector2(fire.x, fire.y)
+		var reach: float = float(fire.z) if fire is Vector3 else FIRE_SAFE
+		if at.distance_to(point) <= reach:
 			return true
 	return false
 
@@ -189,7 +211,7 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		# sumir e só voltar depois do sossego. Só desiste de um salto muito
 		# grande, ou se a criatura ficou a salvo (mar, fogueira).
 		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
-			var behind := -Compass.forward(int(players[peer].get("heading", 0)))
+			var behind := _rear_direction(int(players[peer].get("heading", 0)))
 			horror["pos"] = target + behind * SPAWN_DISTANCE
 			horror["stare"] = 0.0
 			horror["mode"] = Mode.STALK

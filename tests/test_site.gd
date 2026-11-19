@@ -14,9 +14,21 @@ func _init() -> void:
 	_test_persistence()
 	_test_server_and_tools()
 	_test_eject()
+	_test_sectors()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
+
+
+## As 9 partes da obra grande: noroeste a sudeste, em terços do quadrado.
+func _test_sectors() -> void:
+	var build := {"cell": Vector2i(10, 20), "size": 4}
+	_check(Builds.sector_name(build, Vector2i(10, 20)) == "noroeste", "parte noroeste")
+	_check(Builds.sector_name(build, Vector2i(13, 20)) == "nordeste", "parte nordeste")
+	_check(Builds.sector_name(build, Vector2i(13, 23)) == "sudeste", "parte sudeste")
+	_check(Builds.sector_name(build, Vector2i(10, 23)) == "sudoeste", "parte sudoeste")
+	_check(Builds.sector_name(build, Vector2i(12, 22)) == "centro", "parte do centro")
+	_check(Builds.sector_name({"cell": Vector2i(0, 0), "size": 3}, Vector2i(1, 2)) == "sul", "tamanho 3: sul")
 
 
 func _check(condition: bool, message: String) -> void:

@@ -25,7 +25,7 @@ extends RefCounted
 ## para a argila secar (Crafting, "dry"): dá para trabalhar antes, mas cada
 ## batida vale metade; uma fogueira acesa na região seca em metade do tempo.
 ## Fogueira pronta:
-##   apagada com lenha -> batidas de pedra (faíscas) -> acesa -> queima a
+##   apagada com lenha -> batidas de pedra (faíscas; reacender pede lenha e 1 sílex dentro da fogueira) -> acesa -> queima a
 ##   lenha com o tempo -> apagada. Espaço com ela acesa (ou sem lenha) põe
 ##   mais uma lenha.
 
@@ -49,8 +49,12 @@ const WATER := 2  # lago, riacho, mar ou charco: não dá
 const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
 ## Canteiros de uma construção grande: um em cada canto (NO, NE, SE, SO).
 const POSTS := 4
+## As 9 partes de uma obra grande, de noroeste a sudeste (ver sector_name).
+const SECTORS := ["noroeste", "norte", "nordeste", "oeste", "centro", "leste", "sudoeste", "sul", "sudeste"]
 ## Até onde (em casas) do canto a batida conta para aquele canteiro.
 const POST_REACH := 2.2
+## Até onde (em casas) de um móvel da oficina o Espaço ainda o alcança.
+const FURNITURE_REACH := 1.6
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
 const DOOR_REACH := 1.6  # só na frente da porta, dentro ou fora
 
@@ -114,7 +118,72 @@ static func wall_cells(build: Dictionary) -> Array:
 		var inner: Vector2i = cell - build["cell"]
 		if (inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1) and (cell != door or door_closed):
 			cells.append(cell)
+	if bool(build.get("done", false)):
+		for cell: Vector2i in furniture_cells(build).values():
+			cells.append(cell)
 	return cells
+
+
+## Para onde olha quem entra pela porta (sentido do lado da porta para dentro).
+static func inward(entrance: String) -> Vector2i:
+	match entrance:
+		"norte":
+			return Vector2i(0, 1)
+		"leste":
+			return Vector2i(-1, 0)
+		"oeste":
+			return Vector2i(1, 0)
+		_:
+			return Vector2i(0, -1)
+
+
+## Os móveis de uma construção com "furniture" (a oficina): nome -> casa. Ficam
+## dentro, na fileira junto da porta: a bancada à esquerda de quem entra e as
+## prateleiras à direita. Vazio nas outras construções.
+static func furniture_cells(build: Dictionary) -> Dictionary:
+	var kind := str(build.get("kind", ""))
+	var size := int(build.get("size", 1))
+	if not Crafting.has_furniture(kind) or size < 5:
+		return {}
+	var entrance := str(build.get("entrance", ""))
+	var facing := inward(entrance)
+	var left := Vector2i(facing.y, -facing.x)
+	var base := door_cell(build["cell"], size, entrance) + facing
+	return {"bancada": base + left, "prateleiras": base - left}
+
+
+static func has_furniture(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and not furniture_cells(build).is_empty()
+
+
+## O móvel ao alcance de quem está em "pos" e mais perto dele que a porta
+## ("" se nenhum): "bancada" ou "prateleiras".
+static func furniture_near(build: Dictionary, pos: Vector2) -> String:
+	if not has_furniture(build):
+		return ""
+	var door := WorldGen.cell_center(door_cell(build["cell"], int(build["size"]), str(build["entrance"])))
+	var best := ""
+	var best_distance := minf(FURNITURE_REACH, pos.distance_to(door) - 0.001)
+	var cells := furniture_cells(build)
+	for name: String in cells:
+		var distance := pos.distance_to(WorldGen.cell_center(cells[name]))
+		if distance <= best_distance:
+			best_distance = distance
+			best = name
+	return best
+
+
+## Há uma oficina pronta com a bancada ao alcance de "pos"?
+func bench_near(pos: Vector2) -> bool:
+	for build: Dictionary in _builds.values():
+		if furniture_near(build, pos) == "bancada":
+			return true
+	return false
+
+
+## "A bancada fica à sua esquerda ao entrar e as prateleiras à direita."
+static func furniture_hint(build: Dictionary) -> String:
+	return "A bancada fica à sua esquerda ao entrar, e as prateleiras à direita."
 
 
 ## As paredes já estão de pé? Só depois da etapa das paredes (ou da obra pronta);
@@ -140,6 +209,16 @@ static func post_cell(build: Dictionary, i: int) -> Vector2i:
 	var far := size - 1
 	var offsets := [Vector2i(0, 0), Vector2i(far, 0), Vector2i(far, far), Vector2i(0, far)]
 	return build["cell"] + offsets[i % POSTS]
+
+
+## A parte da obra em que uma casa fica, dividindo o quadrado em 3 por 3:
+## "noroeste", "norte", ..., "centro". "cell" é uma casa do mundo.
+static func sector_name(build: Dictionary, cell: Vector2i) -> String:
+	var size := maxi(1, int(build.get("size", 1)))
+	var local: Vector2i = cell - (build["cell"] as Vector2i)
+	var col := clampi(local.x * 3 / size, 0, 2)
+	var row := clampi(local.y * 3 / size, 0, 2)
+	return [["noroeste", "norte", "nordeste"], ["oeste", "centro", "leste"], ["sudoeste", "sul", "sudeste"]][row][col]
 
 
 static func post_name(i: int) -> String:
@@ -401,9 +480,9 @@ func start(kind: String, cell: Vector2i) -> Dictionary:
 
 func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: String) -> Dictionary:
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
-		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0,
+		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -566,6 +645,9 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 		if Crafting.BUILDS[build["kind"]].get("fire", false):
 			return _tend_fire(build, bag, at_time)
 		if int(build["size"]) > 1:
+			var piece := furniture_near(build, pos) if pos.x != INF else ""
+			if not piece.is_empty():
+				return {"ok": false, "reason": "movel", "furniture": piece}
 			return _use_door(build, pos)
 		return {"ok": false, "reason": "pronta"}
 	if str(build["phase"]) != "obra":
@@ -624,13 +706,16 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 		return result
 	build["done"] = true
 	_register_walls(build)
+	var done_result := {"ok": true, "event": "pronta"}
+	if Crafting.has_furniture(build["kind"]):
+		done_result["walls"] = true  # os móveis ocupam casas: quem estava nelas é levado para o lado
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		# A lenha da última etapa fica como o primeiro combustível.
 		var fuel := 0.0
 		for item: String in finished["materials"]:
 			fuel += float(Crafting.FUEL_SECONDS.get(item, 0.0)) * int(finished["materials"][item])
 		build["fuel"] = minf(fuel, Crafting.MAX_FUEL)
-	return {"ok": true, "event": "pronta"}
+	return done_result
 
 
 ## O canteiro que recebe a batida de quem está em "pos": o mais perto que
@@ -649,6 +734,91 @@ func _pick_post(build: Dictionary, id: int, pos: Vector2) -> int:
 			best_distance = distance
 			best = i
 	return best
+
+
+# --- Armazenamento ------------------------------------------------------------------
+
+## "pos" está dentro das paredes de uma construção grande (nas casas do
+## miolo, sem contar a parede e a porta)?
+static func inside(build: Dictionary, pos: Vector2) -> bool:
+	var size := int(build.get("size", 1))
+	if size < 3:
+		return false
+	var inner: Vector2i = WorldGen.cell_of(pos) - Vector2i(build["cell"])
+	return inner.x >= 1 and inner.y >= 1 and inner.x <= size - 2 and inner.y <= size - 2
+
+
+## Esta construção guarda itens?
+static func stores(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and Crafting.STORAGE.has(str(build.get("kind", "")))
+
+
+## Quanto peso a construção guarda no total.
+static func capacity(build: Dictionary) -> int:
+	var size := int(build.get("size", 1))
+	return int(Crafting.STORAGE.get(str(build["kind"]), {}).get("per_cell", 0)) * size * size
+
+
+## Peso guardado agora.
+static func stock_load(build: Dictionary) -> int:
+	return Bag.weight_of_items(build.get("stock", {}))
+
+
+## Esta construção aceita o item (pela categoria)?
+static func accepts(build: Dictionary, item: String) -> bool:
+	return Crafting.STORAGE.get(str(build["kind"]), {}).get("accepts", []).has(Bag.category_of(item))
+
+
+## "Armazém, 12 de 128" (peso guardado e capacidade).
+static func stock_label(build: Dictionary) -> String:
+	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build), capacity(build)]
+
+
+## Guarda itens da bolsa "bag" (muda a bolsa). Devolve { ok, reason, item,
+## amount }. reason: "desconhecida", "nao_guarda" (a construção não guarda
+## nada), "nao_aceita" (categoria errada), "nao_tem", "cheio".
+func store(id: int, bag: Dictionary, item: String, amount: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not stores(build):
+		return {"ok": false, "reason": "nao_guarda"}
+	if not accepts(build, item):
+		return {"ok": false, "reason": "nao_aceita", "item": item}
+	var have := int(bag.get(item, 0))
+	if have <= 0 or amount <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var room := (capacity(build) - stock_load(build)) / maxi(1, Bag.weight_of(item))
+	var moved := mini(mini(amount, have), room)
+	if moved <= 0:
+		return {"ok": false, "reason": "cheio", "item": item}
+	bag[item] = have - moved
+	if int(bag[item]) <= 0:
+		bag.erase(item)
+	build["stock"][item] = int(build["stock"].get(item, 0)) + moved
+	return {"ok": true, "item": item, "amount": moved}
+
+
+## Tira itens do estoque para a bolsa "bag", até onde cabe na carga. Devolve
+## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda",
+## "nao_tem" (não há isso lá), "carga" (a criatura não aguenta mais peso).
+func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not stores(build):
+		return {"ok": false, "reason": "nao_guarda"}
+	var have := int(build["stock"].get(item, 0))
+	if have <= 0 or amount <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item))
+	if moved <= 0:
+		return {"ok": false, "reason": "carga", "item": item}
+	build["stock"][item] = have - moved
+	if int(build["stock"][item]) <= 0:
+		build["stock"].erase(item)
+	bag[item] = int(bag.get(item, 0)) + moved
+	return {"ok": true, "item": item, "amount": moved}
 
 
 ## Espaço perto da porta de uma construção grande pronta: abre ou fecha.
@@ -686,10 +856,25 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 			return {"ok": true, "event": "alimentou", "item": wood}
 		build["fuel"] = minf(float(build["fuel"]) + seconds, Crafting.MAX_FUEL)
 		return {"ok": true, "event": "abasteceu", "item": wood}
+	# A primeira vez usa o sílex que entrou na obra. Reacender (depois que o fogo
+	# já pegou uma vez) pede lenha e um sílex dentro da fogueira: Espaço põe a
+	# lenha, depois o sílex (que passa a fazer parte dela) e só então acende,
+	# gastando esse sílex.
+	var relight := bool(build.get("ignited", false))
+	if relight and int(build.get("flint", 0)) <= 0:
+		if int(bag.get("silex", 0)) <= 0:
+			return {"ok": false, "reason": "sem_silex"}
+		bag["silex"] = int(bag["silex"]) - 1
+		if int(bag["silex"]) <= 0:
+			bag.erase("silex")
+		build["flint"] = 1
+		return {"ok": true, "event": "silex"}
 	build["sparks"] = int(build["sparks"]) + 1
 	if int(build["sparks"]) < Crafting.SPARKS_TO_LIGHT:
 		return {"ok": true, "event": "faisca", "sparks_left": Crafting.SPARKS_TO_LIGHT - int(build["sparks"])}
 	build["sparks"] = 0
+	build["flint"] = 0
+	build["ignited"] = true
 	build["burn_until"] = at_time + float(build["fuel"])
 	build["fuel"] = 0.0
 	return {"ok": true, "event": "acesa"}
@@ -736,11 +921,13 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"id": id, "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 		"stage": build["stage"], "deposited": build["deposited"].duplicate(), "work": build["work"],
 		"done": build["done"], "fuel": build["fuel"], "sparks": build["sparks"], "name": build["name"],
+		"ignited": build["ignited"], "flint": build["flint"],
 		"burn_left": maxf(0.0, float(build["burn_until"]) - at_time) if float(build["burn_until"]) > 0.0 else 0.0,
 		"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
+		"stock": build["stock"].duplicate(),
 	}
 
 
@@ -758,6 +945,7 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 		"stage": int(data.get("stage", 0)), "deposited": deposited, "work": int(data.get("work", 0)),
 		"done": bool(data.get("done", false)), "fuel": float(data.get("fuel", 0.0)),
 		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0)),
+		"ignited": bool(data.get("ignited", false)), "flint": int(data.get("flint", 0)),
 		"name": str(data.get("name", ""))}, data, at_time + dry_left if dry_left > 0.0 else 0.0))
 
 
@@ -787,10 +975,11 @@ func to_save() -> Dictionary:
 			"id": build["id"], "kind": build["kind"], "x": build["cell"].x, "y": build["cell"].y,
 			"stage": build["stage"], "deposited": build["deposited"], "work": build["work"],
 			"done": build["done"], "fuel": build["fuel"], "burn_until": build["burn_until"],
-			"sparks": build["sparks"], "name": build["name"],
+			"sparks": build["sparks"], "name": build["name"], "ignited": build["ignited"], "flint": build["flint"],
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
+			"stock": build["stock"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -808,6 +997,7 @@ func load_save(data: Dictionary) -> void:
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
 			"burn_until": float(entry.get("burn_until", 0.0)), "sparks": int(entry.get("sparks", 0)),
+			"ignited": bool(entry.get("ignited", false)), "flint": int(entry.get("flint", 0)),
 			# Mundos antigos davam o nome ao começar o marco: em obra, ele some.
 			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""},
 			entry, float(entry.get("dry_until", 0.0))))
@@ -839,6 +1029,11 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 	build["dry_until"] = dry_until
 	build["slack"] = false
 	build["door_open"] = bool(data.get("door_open", true))
+	var stock := {}
+	for item in data.get("stock", {}):
+		if int(data["stock"][item]) > 0:
+			stock[str(item)] = int(data["stock"][item])
+	build["stock"] = stock
 	return build
 
 
@@ -944,12 +1139,22 @@ func status_text(id: int, at_time := -1.0) -> String:
 		var minutes := ceili(fuel_left(id, at_time) / 60.0)
 		if is_lit(id, at_time):
 			return "%s acesa, com lenha para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
+		var needs_flint: bool = bool(build.get("ignited", false)) and int(build.get("flint", 0)) <= 0
 		if float(build["fuel"]) > 0.0:
+			if needs_flint:
+				return "%s apagada, com lenha para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
 			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-		return "%s apagada e sem lenha. Espaço põe uma lenha." % title
+		return "%s apagada e sem lenha%s. Espaço põe uma lenha." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
-		return "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
+		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]
+		if has_furniture(build):
+			text += " %s Espaço junto da bancada abre as receitas; junto das prateleiras, o armazenamento: guardam %s, %s." % [
+				furniture_hint(build), Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
+		elif stores(build):
+			text += " Guarda %s: %s. Espaço longe da porta abre o armazenamento." % [
+				Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
+		return text
 	if build["kind"] == "marco":
 		if not str(build["name"]).is_empty():
 			return "Marco do povoado %s." % build["name"]
@@ -962,21 +1167,41 @@ func status_text(id: int, at_time := -1.0) -> String:
 ## "faltam 3 coisas a arrancar: 2 arbustos e 1 árvore" / "faltam 9 casas de grama".
 func _prep_text(build: Dictionary) -> String:
 	var prep: Dictionary = build["prep"]
-	if str(build["phase"]) == "capina":
-		return "falta%s %d casa%s de grama" % ["" if prep.size() == 1 else "m", prep.size(), "" if prep.size() == 1 else "s"]
-	var counts := {}
+	var by_sector := {}
 	for cell: Vector2i in prep:
-		var thing := world.thing_at(cell)
-		counts[thing] = int(counts.get(thing, 0)) + 1
+		var sector := sector_name(build, cell)
+		if not by_sector.has(sector):
+			by_sector[sector] = []
+		by_sector[sector].append(cell)
+	var sectors: Array = by_sector.keys()
+	sectors.sort_custom(func(a: String, b: String) -> bool: return SECTORS.find(a) < SECTORS.find(b))
+	var plural := "" if prep.size() == 1 else "s"
+	if str(build["phase"]) == "capina":
+		var parts: PackedStringArray = []
+		for sector: String in sectors:
+			parts.append("%d %s" % [by_sector[sector].size(), _sector_place(sector)])
+		return "falta%s %d casa%s de grama: %s" % ["" if prep.size() == 1 else "m", prep.size(), plural, ", ".join(parts)]
 	var names := {
 		WorldGen.Thing.ARVORE: ["árvore", "árvores"], WorldGen.Thing.BAMBU: ["touceira de bambu", "touceiras de bambu"],
 		WorldGen.Thing.ARBUSTO: ["arbusto", "arbustos"], WorldGen.Thing.ARBUSTO_FRUTAS: ["arbusto com frutas", "arbustos com frutas"],
 	}
 	var parts: PackedStringArray = []
-	for thing in counts:
-		var pair: Array = names.get(thing, ["coisa", "coisas"])
-		parts.append("%d %s" % [counts[thing], pair[0] if counts[thing] == 1 else pair[1]])
-	return "falta%s %d coisa%s a arrancar: %s" % ["" if prep.size() == 1 else "m", prep.size(), "" if prep.size() == 1 else "s", ", ".join(parts)]
+	for sector: String in sectors:
+		var counts := {}
+		for cell: Vector2i in by_sector[sector]:
+			var thing := world.thing_at(cell)
+			counts[thing] = int(counts.get(thing, 0)) + 1
+		var things: PackedStringArray = []
+		for thing in counts:
+			var pair: Array = names.get(thing, ["coisa", "coisas"])
+			things.append("%d %s" % [counts[thing], pair[0] if counts[thing] == 1 else pair[1]])
+		parts.append("%s: %s" % [sector, ", ".join(things)])
+	return "falta%s %d coisa%s a arrancar. %s" % ["" if prep.size() == 1 else "m", prep.size(), plural, "; ".join(parts)]
+
+
+## "no sudeste", "no centro" (a parte da obra, dita em lugar).
+static func _sector_place(sector: String) -> String:
+	return "no centro" if sector == "centro" else "no " + sector
 
 
 ## "noroeste 3, nordeste 0, sudeste 3, sudoeste 2": quantas batidas faltam em cada canto.

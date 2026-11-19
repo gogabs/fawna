@@ -6,6 +6,7 @@ var _failures := 0
 
 
 func _init() -> void:
+	_test_player_inside_new_build()
 	_test_marco_stages()
 	_test_refusals()
 	_test_fire()
@@ -57,6 +58,18 @@ func _state_with_player(cell: Vector2i) -> WorldState:
 func _work(state: WorldState, build_id: int) -> Dictionary:
 	state._last_build.erase(2)  # sem esperar o intervalo entre batidas
 	return state.work_build(2, build_id)
+
+
+func _test_player_inside_new_build() -> void:
+	var probe := WorldGen.new(173)
+	var cell := _free_cell(probe)
+	var state := _state_with_player(cell)
+	var started := state.start_build(2, "marco", cell)
+	# Posição do servidor atrasada: a criatura já andou para dentro da casa.
+	state.players[2]["pos"] = WorldGen.cell_center(cell)
+	_check(not state.world.is_free(state.players[2]["pos"]), "dentro da obra não é livre")
+	var moved := state.eject_from_walls(started["id"])
+	_check(moved.size() == 1 and state.world.is_free(state.players[2]["pos"]), "quem ficou dentro da obra é levado para fora")
 
 
 func _test_marco_stages() -> void:
@@ -126,7 +139,7 @@ func _test_fire() -> void:
 	var state := _state_with_player(cell)
 	var id: int = state.start_build(2, "fogueira", cell)["id"]
 	var inv := state.inventory_of(2)
-	for item in ["pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena"]:
+	for item in ["pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "silex"]:
 		inv[item] = 10
 	var result := {}
 	for i in 20:
@@ -139,11 +152,14 @@ func _test_fire() -> void:
 	_check(is_equal_approx(builds.fuel_left(id), expected), "a lenha da última etapa é o primeiro combustível")
 	_check(not builds.is_lit(id), "pronta, mas apagada")
 	var t := Builds.now()
+	_check(int(inv["silex"]) == 9, "o sílex entra na obra (1 gasto na etapa da lenha)")
+	inv.erase("silex")
 	for i in Crafting.SPARKS_TO_LIGHT - 1:
 		result = builds.work(id, inv, t)
 		_check(result["event"] == "faisca", "batidas de pedra soltam faíscas")
 	result = builds.work(id, inv, t)
 	_check(result["event"] == "acesa" and builds.is_lit(id, t), "acende na quarta batida")
+	_check(not inv.has("silex"), "a primeira vez não gasta sílex da bolsa")
 	var lenha_before := int(inv["lenha_media"])
 	result = builds.work(id, inv, t)
 	_check(result["event"] == "alimentou" and int(inv["lenha_media"]) == lenha_before - 1, "acesa, Espaço põe uma lenha média")
@@ -159,7 +175,15 @@ func _test_fire() -> void:
 	result = builds.work(id, inv, out_at)
 	_check(result["event"] == "abasteceu" and is_equal_approx(builds.fuel_left(id, out_at), Crafting.FUEL_SECONDS["lenha_pequena"]), "lenha numa fogueira apagada fica guardada")
 	result = builds.work(id, inv, out_at)
-	_check(result["event"] == "faisca", "com lenha, Espaço volta a bater as pedras")
+	_check(not result["ok"] and result["reason"] == "sem_silex", "apagada, com lenha e sem sílex na bolsa: avisa")
+	inv["silex"] = 1
+	result = builds.work(id, inv, out_at)
+	_check(result["event"] == "silex" and not inv.has("silex"), "Espaço põe o sílex na fogueira")
+	for i in Crafting.SPARKS_TO_LIGHT - 1:
+		result = builds.work(id, inv, out_at)
+		_check(result["event"] == "faisca", "com lenha e sílex dentro, Espaço bate as pedras")
+	result = builds.work(id, inv, out_at)
+	_check(result["event"] == "acesa" and int(builds.get_build(id)["flint"]) == 0, "o sílex vira parte da fogueira e se gasta ao acender")
 
 
 func _test_weapons() -> void:
@@ -169,10 +193,10 @@ func _test_weapons() -> void:
 	_check(not result["ok"] and result["reason"] == "faltam", "sem materiais, não faz a lança")
 	var inv := state.inventory_of(2)
 	inv["bambu"] = 2
-	inv["pedra_pequena"] = 1
+	inv["silex"] = 1
 	result = state.craft(2, "lanca")
 	_check(result["ok"] and int(inv["lanca"]) == 1, "faz a lança")
-	_check(int(inv["bambu"]) == 1 and not inv.has("pedra_pequena"), "gastando 1 bambu e 1 pedra pequena")
+	_check(int(inv["bambu"]) == 1 and not inv.has("silex"), "gastando 1 bambu e 1 sílex")
 	_check(state.equip(2, "lanca")["ok"] and state.wielding(2) == "lanca", "a lança pode ser empunhada")
 	inv["lenha_media"] = 1
 	inv["pedra_media"] = 1
@@ -220,7 +244,7 @@ func _test_texts() -> void:
 ## Constrói até o fim, com a bolsa cheia do que for preciso.
 func _finish(state: WorldState, id: int) -> void:
 	var inv := state.inventory_of(2)
-	for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena"]:
+	for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "silex"]:
 		inv[item] = 20
 	for i in 40:
 		if state.builds.get_build(id)["done"]:

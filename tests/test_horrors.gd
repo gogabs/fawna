@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_appears_when_exposed()
 	_test_safe_places()
 	_test_stalks_from_behind()
+	_test_rear_directions()
 	_test_caught_consequences()
 	_test_stare_holds_and_repels()
 	_test_fire_repels()
@@ -132,6 +133,22 @@ func _test_safe_places() -> void:
 			break
 
 
+func _test_rear_directions() -> void:
+	var world := WorldGen.new(42)
+	var spot := _forest_spot(world)
+	var seen := {}
+	for i in 60:
+		var horrors := Horrors.new(world)
+		horrors._rng.seed = i
+		var players := {1: _player(spot)}
+		var horror: Dictionary = horrors.horrors[horrors.summon(1, players)]
+		var offset: Vector2 = (horror["pos"] as Vector2) - spot
+		var heading := int(players[1].get("heading", 0))
+		_check(offset.dot(Compass.forward(heading)) < 0.0, "o Calado deveria sempre nascer atrás")
+		seen[posmod(roundi(Compass.bearing(offset) * 8.0 / TAU), 8)] = true
+	_check(seen.size() == 3, "o Calado deveria nascer em 3 direções de trás (viu %d)" % seen.size())
+
+
 func _test_stalks_from_behind() -> void:
 	var world := WorldGen.new(42)
 	var horrors := Horrors.new(world)
@@ -202,19 +219,24 @@ func _test_stare_holds_and_repels() -> void:
 	var id := horrors.summon(1, players)
 	var horror: Dictionary = horrors.horrors[id]
 	_run(horrors, players, [], 0, 2.0)
-	# Vira para o sul: de frente para ele.
-	players[1]["heading"] = 4
-	_check(Horrors.is_facing(spot, 4, horror["pos"]), "virado para o sul, o alvo deveria estar encarando o Calado")
-	_check(not Horrors.is_facing(spot, 0, horror["pos"]), "virado para o norte, não")
+	# Ele vem de uma das três direções de trás: vira para a que o encara.
+	var face := 4
+	for heading in [3, 4, 5]:
+		if Horrors.is_facing(spot, heading, horror["pos"]):
+			face = heading
+	var away := (face + 4) % 8
+	players[1]["heading"] = face
+	_check(Horrors.is_facing(spot, face, horror["pos"]), "virado para ele, o alvo deveria estar encarando o Calado")
+	_check(not Horrors.is_facing(spot, away, horror["pos"]), "virado para o lado oposto, não")
 	var before: Vector2 = horror["pos"]
 	_run(horrors, players, [], 2000, 2.0)
 	_check(horror["mode"] == Horrors.Mode.HELD, "encarado, o Calado deveria parar")
 	_check((horror["pos"] as Vector2).is_equal_approx(before), "encarado, o Calado não deveria sair do lugar")
 	# Desvia o olhar: ele volta a andar, e o tempo encarado não se perde.
-	players[1]["heading"] = 0
+	players[1]["heading"] = away
 	_run(horrors, players, [], 4000, 1.0)
 	_check(horror["mode"] == Horrors.Mode.STALK, "sem o olhar, o Calado deveria voltar a se aproximar")
-	players[1]["heading"] = 4
+	players[1]["heading"] = face
 	_run(horrors, players, [], 5000, Horrors.STARE_SECONDS - 2.0 + 0.5)
 	_check(horror["mode"] == Horrors.Mode.RETREAT, "encarado por tempo bastante, o Calado deveria recuar")
 	var far: float = (horror["pos"] as Vector2).distance_to(spot)

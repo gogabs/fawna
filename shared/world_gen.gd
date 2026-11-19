@@ -25,7 +25,7 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE }
+enum Thing { NADA, RIACHO, ARBUSTO, ORIGEM, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -95,6 +95,9 @@ const THING_NAMES := {
 	Thing.MAR: "mar",
 	Thing.CHARCO: "charco",
 	Thing.ARVORE: "árvore",
+	Thing.CIPO: "cipó",
+	Thing.FIBRA: "fibra vegetal",
+	Thing.SILEX: "sílex",
 }
 
 ## Coisas que não deixam passar.
@@ -215,6 +218,15 @@ const CLAY_STREAM_CHANCE := 0.05
 ## em casas que ficariam vazias, então o resto do mundo de cada semente não muda.
 const STONE_CHANCE := 0.004
 const STONE_WATER_CHANCE := 0.03
+## Cipó e fibra vegetal: chance por casa vazia de mata fechada. O bosque é
+## denso (as árvores ocupam a maior parte), então a chance é maior que na
+## floresta gelada, que é aberta entre as árvores (FROZEN_FOREST_SCALE).
+const VINE_CHANCE := 0.03
+const FIBER_CHANCE := 0.04
+const FROZEN_FOREST_SCALE := 0.2
+## Sílex: nódulos soltos nos campos (por bioma) e, mais comuns, na beira da água.
+const FLINT_CHANCE := {Biome.PRADARIA: 0.003, Biome.DESERTO_GELADO: 0.006}
+const FLINT_WATER_CHANCE := 0.008
 const WATERSIDE_LAKE_BANK := 3.0  # casas além da margem da lagoa
 const WATERSIDE_STREAM_BANK := 0.07  # no ruído dos riachos
 const STREAM_WIDTH := 0.02  # no ruído dos riachos
@@ -558,6 +570,20 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 		stone_chance = maxf(stone_chance, STONE_WASTE_CHANCE)
 	if cell_random(cell, "pedra") < stone_chance:
 		return Thing.PEDRAS
+	# Cipó e fibra só crescem nas matas fechadas; o sílex, nos campos e na beira
+	# da água. Todos só ocupam casas que ficariam vazias, então o resto do mundo
+	# de cada semente não muda.
+	if cover_of(region) == Cover.FECHADA:
+		var forest_scale := 1.0 if biome == Biome.BOSQUE else FROZEN_FOREST_SCALE
+		if cell_random(cell, "cipo") < VINE_CHANCE * forest_scale:
+			return Thing.CIPO
+		if cell_random(cell, "fibra") < FIBER_CHANCE * forest_scale:
+			return Thing.FIBRA
+	var flint_chance: float = FLINT_CHANCE.get(biome, 0.0)
+	if is_waterside(cell):
+		flint_chance = maxf(flint_chance, FLINT_WATER_CHANCE)
+	if flint_chance > 0.0 and cell_random(cell, "silex") < flint_chance:
+		return Thing.SILEX
 	return Thing.NADA
 
 
@@ -894,6 +920,26 @@ func blocker_at(pos: Vector2, radius := PLAYER_RADIUS) -> Vector2i:
 
 func is_free(pos: Vector2, radius := PLAYER_RADIUS) -> bool:
 	return blocker_at(pos, radius) == NO_CELL
+
+
+## O ponto livre mais perto de "pos" (procura em anéis de meia casa). Devolve
+## o próprio "pos" se já está livre ou se não achou nada num raio de 4 casas.
+func nearest_free(pos: Vector2) -> Vector2:
+	if is_free(pos):
+		return pos
+	var best := pos
+	var best_distance := INF
+	for ring in range(1, 8):
+		for dx in range(-ring, ring + 1):
+			for dy in range(-ring, ring + 1):
+				var point := pos + Vector2(dx, dy) * 0.5
+				var distance := point.distance_to(pos)
+				if distance < best_distance and is_free(point):
+					best_distance = distance
+					best = point
+		if best_distance < INF:
+			break
+	return best
 
 
 # --- Aleatório fixo ------------------------------------------------------------

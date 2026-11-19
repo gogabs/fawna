@@ -26,6 +26,10 @@ const MATERIAL_NAMES := {
 	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
+	"silex": ["sílex", "sílex"],
+	"cipo": ["cipó", "cipós"],
+	"fibra": ["fibra vegetal", "fibras vegetais"],
+	"resina": ["resina", "resinas"],
 }
 
 ## Construções. Cada etapa: "name" (falado), "materials" (item -> quantidade)
@@ -50,7 +54,7 @@ const BUILDS := {
 		"fire": true,
 		"stages": [
 			{"name": "o anel de pedras", "materials": {"pedra_media": 4, "pedra_pequena": 4}, "work": 3},
-			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3}, "work": 2},
+			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3, "silex": 1}, "work": 2},
 		],
 	},
 	"abrigo": {
@@ -65,10 +69,50 @@ const BUILDS := {
 			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
 		],
 	},
+	# Barracão com porta e dois móveis dentro (Builds.furniture_cells): a bancada,
+	# à esquerda de quem entra, onde se fazem as receitas de WORKSHOP; e as
+	# prateleiras, à direita, onde se guardam ferramentas e armas. Os móveis pedem
+	# um lado de pelo menos 5 casas, para caberem os dois ao lado da porta.
+	"oficina": {
+		"name": ["oficina", "oficinas"],
+		"article": "a",
+		"settlement": true,
+		"furniture": true,
+		"size": {"min": 5, "max": 8, "default": 5, "reference": 5},
+		"stages": [
+			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
+			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
+			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
+			{"name": "a bancada e as prateleiras", "materials": {"madeira": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
+		],
+	},
+	"armazem": {
+		"name": ["armazém", "armazéns"],
+		"article": "o",
+		"settlement": true,
+		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
+		"stages": [
+			{"name": "o chão", "materials": {"pedra_grande": 4, "argila": 6}, "work": 8, "dry": 240.0},
+			{"name": "os esteios", "materials": {"madeira": 6}, "work": 10},
+			{"name": "as paredes", "materials": {"bambu": 14, "argila": 6}, "work": 14, "walls": true},
+			{"name": "o telhado", "materials": {"bambu": 10, "lenha_media": 4}, "work": 10},
+		],
+	},
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo"]
+const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
+
+## Armazenamento: construções grandes prontas guardam itens, cada uma só de
+## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
+## terreno (um 4 por 4 com 8 guarda 128, o tamanho 6 por 6 guarda 288). Para
+## uma oficina guardar ferramentas, basta acrescentá-la aqui.
+const STORAGE := {
+	"armazem": {"accepts": ["material"], "per_cell": 8, "label": "materiais"},
+	"abrigo": {"accepts": ["roupa"], "per_cell": 4, "label": "roupas"},
+	"oficina": {"accepts": ["ferramenta", "arma"], "per_cell": 2, "label": "ferramentas e armas"},
+}
 
 ## Construções grandes (as de BUILDS com "size"): ocupam um quadrado de lados
 ## "size" (em casas) em vez de uma casa só. O lugar é escolhido por âncoras
@@ -92,7 +136,7 @@ const WEED_HITS := 2
 ## Ferramenta de cada fase de preparo.
 const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
-## Fogo: batidas de pedra até acender, quanto cada lenha queima e o máximo
+## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada lenha queima e o máximo
 ## que a fogueira guarda. A lenha da última etapa da fogueira já é o
 ## primeiro combustível.
 const SPARKS_TO_LIGHT := 4
@@ -105,7 +149,7 @@ const FUEL_ORDER := ["lenha_grande", "lenha_media", "lenha_pequena"]
 ## ser empunhadas (Bag.WIELDABLE).
 const WEAPONS := {
 	"lanca": {"name": ["lança de bambu", "lanças de bambu"], "article": "a",
-		"materials": {"bambu": 1, "pedra_pequena": 1}},
+		"materials": {"bambu": 1, "silex": 1}},
 	"clava": {"name": ["clava de pedra", "clavas de pedra"], "article": "a",
 		"materials": {"lenha_media": 1, "pedra_media": 1}},
 }
@@ -121,8 +165,29 @@ const TOOLS := {
 			{"say": "Você afeiçoa o cabo de bambu.", "knocks": 5, "sound": "madeira"},
 			{"say": "Você encaixa o cabo na pedra furada.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Dois sílex: um vira a lâmina, o outro se perde nas lascas.
+	"faca": {"name": ["faca bruta de sílex", "facas brutas de sílex"], "article": "a",
+		"materials": {"silex": 2, "lenha_pequena": 1},
+		"steps": [
+			{"say": "Você lasca o sílex contra a pedra, até sair um fio.", "knocks": 6, "sound": "pedra"},
+			{"say": "Você afeiçoa o cabo de lenha.", "knocks": 3, "sound": "madeira"},
+			{"say": "Você prende a lâmina no cabo.", "knocks": 2, "sound": "encaixe"},
+		]},
 }
-const TOOL_ORDER := ["enxada"]
+const TOOL_ORDER := ["enxada", "faca"]
+
+## Receitas da bancada da oficina (ainda sem o menu da bancada: quem faz a
+## oficina liga aqui). Mesmo formato das ferramentas; Crafting.recipe as acha.
+const WORKSHOP := {
+	"tocha": {"name": ["tocha", "tochas"], "article": "a",
+		"materials": {"lenha_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
+		"steps": [
+			{"say": "Você enrola a fibra na ponta da lenha.", "knocks": 4, "sound": "madeira"},
+			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
+			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
+		]},
+}
+const WORKSHOP_ORDER := ["tocha"]
 
 
 static func material_text(item: String, amount: int) -> String:
@@ -198,6 +263,8 @@ static func build_title(kind: String) -> String:
 static func weapon_name(kind: String) -> String:
 	if TOOLS.has(kind):
 		return TOOLS[kind]["name"][0]
+	if WORKSHOP.has(kind):
+		return WORKSHOP[kind]["name"][0]
 	return WEAPONS[kind]["name"][0] if WEAPONS.has(kind) else kind
 
 
@@ -205,15 +272,26 @@ static func weapon_name(kind: String) -> String:
 static func recipe(kind: String) -> Dictionary:
 	if WEAPONS.has(kind):
 		return WEAPONS[kind]
+	if WORKSHOP.has(kind):
+		return WORKSHOP[kind]
 	return TOOLS.get(kind, {})
 
 
+## A receita só se faz na bancada de uma oficina?
+static func needs_bench(kind: String) -> bool:
+	return WORKSHOP.has(kind)
+
+
+static func has_furniture(kind: String) -> bool:
+	return BUILDS.has(kind) and BUILDS[kind].get("furniture", false)
+
+
 static func is_tool_recipe(kind: String) -> bool:
-	return TOOLS.has(kind)
+	return TOOLS.has(kind) or WORKSHOP.has(kind)
 
 
 static func weapon_title(kind: String) -> String:
-	var text := weapon_name(kind) if WEAPONS.has(kind) else str(TOOLS.get(kind, {}).get("name", [kind])[0])
+	var text := weapon_name(kind)
 	return text.left(1).to_upper() + text.substr(1)
 
 

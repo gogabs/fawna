@@ -30,6 +30,8 @@ const RESOURCE_VOLUME_DB := -14.0
 const FIRE_SOURCES := 4
 const FIRE_RADIUS := 14  # casas (uns 21 m)
 const FIRE_VOLUME_DB := -6.0
+const TORCH_SOURCES := 4  # tochas acesas ouvidas ao mesmo tempo (a sua e as dos outros)
+const TORCH_VOLUME_DB := -9.0
 ## Itens no chão: um tique baixo em cada monte, em fontes fixas e reaproveitadas
 ## (como os recursos), para achá-los de ouvido.
 const PILE_SOURCES := 4
@@ -44,6 +46,7 @@ var _harvest: Harvest
 var _resource_players: Array[AudioStreamPlayer3D] = []
 var _resource_cells := {}  # Vector2i -> AudioStreamPlayer3D tocando ali
 var _fire_players: Array[AudioStreamPlayer3D] = []
+var _torch_players: Array[AudioStreamPlayer3D] = []
 var _fire_cells := {}  # Vector2i -> AudioStreamPlayer3D crepitando ali
 var _lit_fires: Array = []  # casas das fogueiras acesas (o jogo manda)
 var _pile_players: Array[AudioStreamPlayer3D] = []
@@ -88,6 +91,10 @@ func _ready() -> void:
 		var player := make_far_voice(FIRE_RADIUS + 1)
 		player.name = "Fogueira_%d" % i
 		_fire_players.append(player)
+	for i in TORCH_SOURCES:
+		var player := make_far_voice(FIRE_RADIUS + 1)
+		player.name = "Tocha_%d" % i
+		_torch_players.append(player)
 	for i in PILE_SOURCES:
 		var player := make_far_voice(PILE_RADIUS + 1)
 		player.name = "Monte_%d" % i
@@ -261,26 +268,8 @@ func _nearest_sounding_cells(center: Vector2i) -> Array:
 
 ## Põe os sons dos recursos mais próximos (que ainda não foram colhidos) nas
 ## fontes fixas. Chamado ao trocar de casa e quando algo é colhido ou rebrota.
-## Escutar com atenção: os sons dos recursos sobem enquanto o Tab está
-## segurado. Só muda o volume das fontes fixas que já existem.
-const RESOURCE_FOCUS_DB := 6.0
-var _resource_focus := false
-var _resource_tween: Tween
-
-
-func set_resource_focus(on: bool, seconds := 0.4) -> void:
-	_resource_focus = on
-	if _resource_tween != null:
-		_resource_tween.kill()
-	if _resource_players.is_empty():
-		return
-	_resource_tween = create_tween().set_parallel()
-	for player in _resource_players:
-		_resource_tween.tween_property(player, "volume_db", _resource_db(), seconds)
-
-
 func _resource_db() -> float:
-	return RESOURCE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0) + (RESOURCE_FOCUS_DB if _resource_focus else 0.0)
+	return RESOURCE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
 
 
 func refresh_resources() -> void:
@@ -343,6 +332,28 @@ func _refresh_fires() -> void:
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
 		_fire_cells[cell] = player
+
+
+## As tochas acesas que se ouvem agora, em pontos (casas), a mais perto
+## primeiro. Chamado a cada quadro pelo jogo: cada tocha usa uma fonte fixa
+## (nunca se cria fonte nova na hora) e acompanha quem a leva.
+func set_torches(points: Array) -> void:
+	if _camera == null:
+		return
+	var sorted := points.duplicate()
+	sorted.sort_custom(func(a: Vector2, b: Vector2): return a.distance_squared_to(_listener_pos) < b.distance_squared_to(_listener_pos))
+	for i in _torch_players.size():
+		var player := _torch_players[i]
+		if i >= sorted.size() or sorted[i].distance_to(_listener_pos) > FIRE_RADIUS:
+			if player.playing:
+				player.stop()
+			continue
+		player.position = point_to_3d(sorted[i])
+		if not player.playing:
+			var stream := Sounds.torch_loop()
+			player.stream = stream
+			player.volume_db = TORCH_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
+			player.play(randf() * stream.get_length())
 
 
 ## Os montes de itens no chão mudaram (largou, pegou, entrou no mundo).
