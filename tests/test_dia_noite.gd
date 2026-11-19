@@ -9,6 +9,7 @@ var _failures := 0
 func _init() -> void:
 	_test_phases()
 	_test_describe()
+	_test_moments()
 	_test_save()
 	_test_horror_only_at_night()
 	_test_horror_leaves_at_dawn()
@@ -53,6 +54,22 @@ func _test_describe() -> void:
 	_check(text.begins_with("Tarde, 14 horas e 30"), "descreve a tarde: " + text)
 	_check(DayCycle.describe(_at(3.0), 1800.0).begins_with("Madrugada"), "descreve a madrugada")
 	_check(DayCycle.announcement(DayCycle.Phase.NIGHT) == "Anoiteceu.", "aviso de noite")
+
+
+func _test_moments() -> void:
+	var secs := 1800.0
+	var coro := DayCycle.moment_hour("coro", secs)
+	_check(coro < DayCycle.DAWN_HOUR and DayCycle.phase_of(DayCycle.hour_to_t(coro)) == DayCycle.Phase.NIGHT, "o atalho do coro cai pouco antes do amanhecer")
+	_check(is_equal_approx(DayCycle.seconds_to_next_phase(DayCycle.hour_to_t(coro), secs), DayCycle.JUMP_LEAD), "a virada vem em JUMP_LEAD segundos")
+	var noite := DayCycle.moment_hour("noite", secs)
+	_check(DayCycle.phase_of(DayCycle.hour_to_t(noite)) == DayCycle.Phase.DUSK, "o atalho da noite cai pouco antes de anoitecer")
+	_check(is_equal_approx(DayCycle.moment_hour("meio_dia", secs), 12.0), "meio-dia exato")
+	var grilos := DayCycle.moment_hour("grilos", secs)
+	_check(DayCycle.darkness(DayCycle.hour_to_t(grilos)) < 0.2 and DayCycle.darkness(DayCycle.hour_to_t(grilos)) > 0.05, "os grilos começam a se ouvir")
+	_check(DayCycle.moment_hour("nada", secs) < 0.0, "momento desconhecido")
+	for moment in DayCycle.MOMENTS:
+		_check(DayCycle.moment_hour(moment[0], secs) >= 0.0, "momento %s existe" % moment[0])
+	_check(SoundBank.frogs().data.size() > 0 and SoundBank.crickets().data.size() > 0, "sons da noite gerados")
 
 
 func _test_save() -> void:

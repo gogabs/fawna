@@ -8,7 +8,7 @@ extends Node
 ## a hora se percebe assim:
 ##   - pássaros do dia dormem à noite e a coruja assume; ao amanhecer, o coro;
 ##   - grilos ao fundo, cada vez mais, do entardecer até a noite plena
-##     (menos no mar e no frio);
+##     (menos no mar e no frio), e sapinhos na lagoa e no brejo;
 ##   - um aviso falado quando entardece, anoitece e amanhece;
 ##   - a tecla T diz que horas são.
 ## E o Calado só ronda de noite (ver Horrors).
@@ -16,7 +16,9 @@ extends Node
 const SYNC_SECONDS := 15.0  # o servidor reafirma a hora a cada tanto
 const CRICKETS_DB := -24.0  # grilos na noite plena
 const CRICKETS_FADE := 12.0  # dB por segundo, para subir e descer sem susto
+const FROGS_DB := -22.0  # sapinhos na noite plena, na beira da água
 const SILENT_DB := -70.0
+const WATER_BIOMES := [WorldGen.Biome.LAGOA, WorldGen.Biome.BREJO]
 const MUTE_BIOMES := [WorldGen.Biome.MAR, WorldGen.Biome.FLORESTA_GELADA, WorldGen.Biome.DESERTO_GELADO]
 
 ## A hora do mundo (fração do dia) e quanto dura um dia, em segundos de verdade.
@@ -27,6 +29,8 @@ var _state: WorldState  # só no servidor
 var _since_sync := 0.0
 var _phase := -1
 var _crickets: AudioStreamPlayer
+var _frogs: AudioStreamPlayer
+var _frogs_on := false
 var _biome_check := 0.0
 var _crickets_on := true
 var _playing := false  # este nó é de quem joga (não de um servidor dedicado)
@@ -47,12 +51,17 @@ func start_client() -> void:
 	_playing = true
 	_phase = DayCycle.phase_of(t)
 	if _crickets == null and DisplayServer.get_name() != "headless":
-		var stream := SoundBank.crickets()
-		_crickets = AudioStreamPlayer.new()
-		_crickets.name = "Grilos"
-		_crickets.stream = stream
-		_crickets.volume_db = SILENT_DB
-		add_child(_crickets)
+		_crickets = _make_player("Grilos", SoundBank.crickets())
+		_frogs = _make_player("Sapinhos", SoundBank.frogs())
+
+
+func _make_player(player_name: String, stream: AudioStream) -> AudioStreamPlayer:
+	var player := AudioStreamPlayer.new()
+	player.name = player_name
+	player.stream = stream
+	player.volume_db = SILENT_DB
+	add_child(player)
+	return player
 
 
 func is_night() -> bool:
@@ -74,6 +83,17 @@ func set_hour(hour: float) -> void:
 	if _state != null:
 		_state.day_t = t
 		_sync_all()
+
+
+## Só no servidor: vai para um momento relevante (DayCycle.MOMENTS), poucos
+## segundos antes dele. Devolve o texto do que fez, ou "" se a chave não existe.
+## É o que o menu de depuração chama.
+func jump_to(key: String) -> String:
+	var hour := DayCycle.moment_hour(key, day_seconds)
+	if hour < 0.0:
+		return ""
+	set_hour(hour)
+	return "%s: %s" % [DayCycle.moment_label(key), describe()]
 
 
 ## Só no servidor: manda a hora para quem acabou de entrar.
@@ -102,7 +122,7 @@ func _process(delta: float) -> void:
 			_sync_all()
 	_track_phase()
 	if _crickets != null:
-		_update_crickets(delta)
+		_update_night_sounds(delta)
 
 
 ## Avisa quando o período muda. Na entrada, não diz nada: a tecla T responde.
@@ -115,20 +135,30 @@ func _track_phase() -> void:
 		Speech.say(DayCycle.announcement(phase), false)
 
 
-func _update_crickets(delta: float) -> void:
+## Sons da noite que dependem do bioma: grilos em terra, sapinhos na água.
+func _update_night_sounds(delta: float) -> void:
 	_biome_check -= delta
 	if _biome_check <= 0.0:
 		_biome_check = 1.0
 		var game := get_parent()
-		_crickets_on = game.world == null or not MUTE_BIOMES.has(game.world.biome_at(WorldGen.cell_of(game.my_position())))
-	var target := SILENT_DB
+		var biome := -1
+		if game.world != null:
+			biome = game.world.biome_at(WorldGen.cell_of(game.my_position()))
+		_crickets_on = not MUTE_BIOMES.has(biome)
+		_frogs_on = WATER_BIOMES.has(biome)
 	var dark := darkness()
-	if _crickets_on and dark > 0.02:
-		target = lerpf(SILENT_DB, CRICKETS_DB, sqrt(dark))
-	if target <= SILENT_DB + 0.5 and _crickets.volume_db <= SILENT_DB + 0.5:
-		if _crickets.playing:
-			_crickets.stop()
+	_fade(_crickets, CRICKETS_DB, _crickets_on, dark, delta)
+	_fade(_frogs, FROGS_DB, _frogs_on, dark, delta)
+
+
+func _fade(player: AudioStreamPlayer, full_db: float, on: bool, dark: float, delta: float) -> void:
+	var target := SILENT_DB
+	if on and dark > 0.02:
+		target = lerpf(SILENT_DB, full_db, sqrt(dark))
+	if target <= SILENT_DB + 0.5 and player.volume_db <= SILENT_DB + 0.5:
+		if player.playing:
+			player.stop()
 		return
-	if not _crickets.playing:
-		_crickets.play(randf() * _crickets.stream.get_length())
-	_crickets.volume_db = move_toward(_crickets.volume_db, target, CRICKETS_FADE * delta)
+	if not player.playing:
+		player.play(randf() * player.stream.get_length())
+	player.volume_db = move_toward(player.volume_db, target, CRICKETS_FADE * delta)

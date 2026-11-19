@@ -124,3 +124,39 @@ static func describe(t: float, day_seconds: float) -> String:
 	elif left > 1:
 		until = "faltam uns %d minutos para mudar" % left
 	return "%s, %s e %02d minutos; %s." % [part, "1 hora" if hour == 1 else "%d horas" % hour, minutes, until]
+
+
+## Momentos relevantes para a depuração: [chave, rótulo, hora do jogo, chegar
+## antes (true) ou exatamente nela (false)]. Os que chegam antes caem
+## JUMP_LEAD segundos de verdade antes do momento, para dar para ouvir a
+## virada. "grilos" é a hora em que eles passam a ser audíveis; o Calado só
+## aparece de 1 a 2,5 minutos depois do começo da noite (se a criatura estiver
+## exposta), então "noite" já serve para esperar por ele.
+const JUMP_LEAD := 8.0
+const MOMENTS := [
+	["meio_dia", "Meio-dia", 12.0, false],
+	["entardecer", "Entardecer (18h)", DUSK_HOUR, true],
+	["grilos", "Grilos audíveis", 18.5, true],
+	["noite", "Começo da noite, Calado possível", NIGHT_HOUR, true],
+	["meia_noite", "Meia-noite", 0.0, false],
+	["coro", "Coro do amanhecer (5h)", DAWN_HOUR, true],
+	["dia", "Dia claro (7h)", DAY_HOUR, true],
+]
+
+
+## A hora (0 a 24) de um dos MOMENTS, ou -1 se a chave não existe.
+static func moment_hour(key: String, day_seconds: float) -> float:
+	for moment in MOMENTS:
+		if moment[0] == key:
+			var hour: float = moment[2]
+			if moment[3]:
+				hour -= JUMP_LEAD / day_seconds * 24.0
+			return fposmod(hour, 24.0)
+	return -1.0
+
+
+static func moment_label(key: String) -> String:
+	for moment in MOMENTS:
+		if moment[0] == key:
+			return moment[1]
+	return ""

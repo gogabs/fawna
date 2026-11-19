@@ -2676,6 +2676,9 @@ func _run_auto_commands() -> void:
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
 			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás
 				print("[teste] calado chamado: %d" % horrors.summon(my_id, 12.0))
+			"IR_MEIO_DIA", "IR_ENTARDECER", "IR_GRILOS", "IR_NOITE", "IR_MEIA_NOITE", "IR_CORO", "IR_DIA":  # testes, só quem hospeda: vai para um momento (DayCycle.MOMENTS)
+				if Net.is_server():
+					Speech.say(daytime.jump_to(command.trim_prefix("IR_").to_lower()))
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)

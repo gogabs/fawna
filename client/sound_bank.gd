@@ -86,6 +86,53 @@ static func crickets() -> AudioStreamWAV:
 	return _cache["grilos"]
 
 
+## Sapinhos da lagoa (em loop, 8 s): um coro de pios agudos e curtos que
+## sobem de altura (como um sapinho-de-primavera), em duas vozes, e de vez em
+## quando um coaxar grave de sapo grande, feito de pulsos rápidos. Os
+## períodos cabem inteiros no loop.
+static func frogs() -> AudioStreamWAV:
+	if _cache.has("sapos"):
+		return _cache["sapos"]
+	var seconds := 8
+	var count := RATE * seconds
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	# Pios: [altura inicial em Hz, quantos no loop, atraso em s, volume]
+	for peeper in [[2500.0, 14, 0.0, 0.05], [2900.0, 11, 0.31, 0.04]]:
+		var period: float = float(seconds) / int(peeper[1])
+		var length := 0.085
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(peeper[2]), float(seconds))
+			var local := fposmod(t, period)
+			if local >= length:
+				continue
+			var x := local / length
+			# Sobe uns 30% durante o pio.
+			var phase := TAU * float(peeper[0]) * (local + 0.15 * length * x * x)
+			samples[i] += sin(phase) * sin(PI * x) * float(peeper[3])
+	# Coaxares: [altura em Hz, quantos no loop, atraso em s, volume]
+	for croaker in [[170.0, 3, 1.1, 0.12], [210.0, 2, 4.3, 0.09]]:
+		var period: float = float(seconds) / int(croaker[1])
+		var length := 0.32
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(croaker[2]), float(seconds))
+			var local := fposmod(t, period)
+			if local >= length:
+				continue
+			var x := local / length
+			var pulses := 0.5 + 0.5 * sin(TAU * 38.0 * local)
+			var freq: float = croaker[0] * (1.0 - 0.18 * x)
+			var voice := sin(TAU * freq * local) + 0.4 * sin(TAU * freq * 2.0 * local)
+			samples[i] += voice * pulses * sin(PI * x) * float(croaker[3])
+	var peak := 0.0
+	for value in samples:
+		peak = maxf(peak, absf(value))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.5
+	_cache["sapos"] = _to_wav(samples, true)
+	return _cache["sapos"]
+
+
 ## Mar: uma onda grave e lenta que cresce, quebra num chiado e recua. O loop
 ## fecha no ponto mais baixo, entre uma onda e outra.
 static func _sea_loop() -> AudioStreamWAV:
