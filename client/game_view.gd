@@ -16,9 +16,12 @@ const BIOME_COLORS := {
 	WorldGen.Biome.DESERTO_GELADO: Color("cfd8dc"),
 	WorldGen.Biome.BAMBUZAL: Color("3f6a2f"),
 	WorldGen.Biome.BREJO: Color("5a6240"),
+	WorldGen.Biome.MONTANHA: Color("7d7468"),
 }
 const THING_COLORS := {
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
+	WorldGen.Thing.VAU: Color("6aa0e0"),
+	WorldGen.Thing.RIO: Color("2a5bb5"),
 	WorldGen.Thing.LAGO: Color("2f65b5"),
 	WorldGen.Thing.MAR: Color("1f3f6f"),
 	WorldGen.Thing.CHARCO: Color("3f5f5a"),

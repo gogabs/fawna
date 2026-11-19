@@ -26,7 +26,7 @@ const SCAN := 14
 const PIN_STEPS := 6
 
 const WATER_NAMES := {
-	WorldGen.Thing.LAGO: "lago", WorldGen.Thing.RIACHO: "riacho",
+	WorldGen.Thing.LAGO: "lago", WorldGen.Thing.RIACHO: "riacho", WorldGen.Thing.RIO: "rio", WorldGen.Thing.VAU: "vau",
 	WorldGen.Thing.MAR: "mar", WorldGen.Thing.CHARCO: "charco",
 }
 const CLEAR_NAMES := {

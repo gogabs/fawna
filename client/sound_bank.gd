@@ -37,7 +37,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStreamWAV:
 				_cache[key] = _sea_loop()
 			WorldGen.Biome.FLORESTA_GELADA:
 				_cache[key] = _cold_wind_loop(false)
-			WorldGen.Biome.DESERTO_GELADO:
+			WorldGen.Biome.DESERTO_GELADO, WorldGen.Biome.MONTANHA:
 				_cache[key] = _cold_wind_loop(true)
 			_:
 				return null
@@ -147,7 +147,7 @@ static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
 	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.ORIGEM else 0]
 	if not _cache.has(key):
 		match thing:
-			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
+			WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()

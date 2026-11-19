@@ -128,7 +128,7 @@ func _test_refusals() -> void:
 	var water := Vector2i.ZERO
 	for y in range(-60, 60):
 		for x in range(-60, 60):
-			if probe.thing_at(Vector2i(x, y)) == WorldGen.Thing.RIACHO or probe.thing_at(Vector2i(x, y)) == WorldGen.Thing.LAGO:
+			if WorldGen.WATER.has(probe.thing_at(Vector2i(x, y))):
 				water = Vector2i(x, y)
 	_check(state.builds.refusal("fogueira", water) == "lugar", "não constrói na água")
 

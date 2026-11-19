@@ -133,6 +133,7 @@ const SPAWNS := {
 	# deserto. No mar, ninguém.
 	WorldGen.Biome.FLORESTA_GELADA: [[Species.CORUJA, 0.25, 1], [Species.CORVO, 0.25, 1]],
 	WorldGen.Biome.DESERTO_GELADO: [[Species.GAVIAO, 0.08, 1], [Species.CORVO, 0.08, 1]],
+	WorldGen.Biome.MONTANHA: [[Species.GAVIAO, 0.15, 1], [Species.CORVO, 0.1, 1]],
 	WorldGen.Biome.MAR: [],
 }
 
@@ -328,8 +329,8 @@ func _update_group(group: Dictionary, now_ms: int, near: Dictionary, out: Array)
 			bird["next_song_ms"] = now_ms + _seconds(data["song_every"], 0.0, 0.2)
 		elif now_ms >= int(bird["next_song_ms"]):
 			bird["next_song_ms"] = now_ms + _seconds(data["song_every"])
-			if dread != Vector2.INF:
-				continue  # perto de um horror, ninguém canta
+			if dread != Vector2.INF or _hush_near(bird["pos"]) != Vector2.INF:
+				continue  # perto de um horror, ninguém canta (nem quem se afastou do líder)
 			var song: int = bird["songs"][_rng.randi() % bird["songs"].size()]
 			for peer in bird["watchers"]:
 				out.append([peer, "sing", [bird_id, song]])
