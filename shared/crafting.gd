@@ -111,7 +111,9 @@ const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
 ## uma oficina guardar ferramentas, basta acrescentá-la aqui.
 const STORAGE := {
 	"armazem": {"accepts": ["material"], "per_cell": 8, "label": "materiais"},
-	"abrigo": {"accepts": ["roupa"], "per_cell": 4, "label": "roupas"},
+	# O abrigo guarda só nos tamanhos de "sizes" (4 e 6) e o guardado é pessoal:
+	# cada dono tem o seu armário, de "per_owner" de peso, que só ele abre.
+	"abrigo": {"accepts": ["roupa"], "per_owner": 64, "sizes": [4, 6], "label": "roupas"},
 	"oficina": {"accepts": ["ferramenta", "arma"], "per_cell": 2, "label": "ferramentas e armas"},
 }
 

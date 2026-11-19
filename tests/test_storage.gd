@@ -10,6 +10,7 @@ func _init() -> void:
 	_test_store_and_fetch()
 	_test_persistence()
 	_test_owners()
+	_test_shelter_sizes()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -85,8 +86,9 @@ func _test_store_and_fetch() -> void:
 	_ready_build_at(state, "abrigo", 2)
 	var other := state.builds.all().filter(func(b): return b["kind"] == "abrigo")
 	if not other.is_empty():
-		_check(builds.store(int(other[0]["id"]), {"bambu": 1}, "bambu", 1)["reason"] == "nao_aceita", "abrigo não guarda material")
-		_check(Builds.capacity(other[0]) == 64, "abrigo 4x4 guarda 64")
+		builds.claim(int(other[0]["id"]), "Ana")
+		_check(builds.store(int(other[0]["id"]), {"bambu": 1}, "bambu", 1, "Ana")["reason"] == "nao_aceita", "abrigo não guarda material")
+		_check(Builds.capacity(other[0]) == 64, "armário do abrigo guarda 64")
 	# Obra em andamento não guarda.
 	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
 	var site := builds._new_build(77, "armazem", cell, 4, "sul")
@@ -152,4 +154,49 @@ func _test_owners() -> void:
 	_check(state.claim_build(id, 3)["ok"], "vira dono lá dentro")
 	_check(Builds.is_owner(builds.get_build(3), "Eva"), "dono é a chave do nome")
 	_check(state.release_build(id, 3)["ok"], "deixa de ser dono lá dentro")
+
+
+func _shelter(state: WorldState, id: int, size: int) -> Dictionary:
+	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(40 + id * 10, 40)
+	var build := state.builds._fill(state.builds._new_build(id, "abrigo", cell, size, "sul"), {"size": size, "entrance": "sul"}, 0.0)
+	build["done"] = true
+	state.builds._add(build)
+	return build
+
+
+func _test_shelter_sizes() -> void:
+	var state := WorldState.new(173)
+	var builds := state.builds
+	var expected := {3: [1, false], 4: [1, true], 5: [2, false], 6: [2, true]}
+	for size: int in expected:
+		var build := _shelter(state, size, size)
+		_check(Builds.owner_slots(build) == expected[size][0], "abrigo %d: donos" % size)
+		_check(Builds.can_store(build) == expected[size][1], "abrigo %d: armário" % size)
+		builds.claim(size, "Ana%d" % size)
+	_check(builds.store(3, {"bambu": 1}, "bambu", 1, "Ana3")["reason"] == "nao_guarda", "abrigo 3 não guarda")
+	_check(builds.store(5, {"bambu": 1}, "bambu", 1, "Ana5")["reason"] == "nao_guarda", "abrigo 5 não guarda")
+	_check(builds.store(4, {"bambu": 1}, "bambu", 1, "Intruso")["reason"] == "nao_dono", "só dono guarda")
+	_check(builds.fetch(4, {}, "", "bambu", 1, "Intruso")["reason"] == "nao_dono", "só dono pega")
+	# Armário pessoal: cada dono do abrigo 6 tem o seu, com a capacidade inteira.
+	builds.claim(6, "Bia")
+	var six := builds.get_build(6)
+	six["lockers"]["Ana6"] = {"bambu": 3}
+	_check(Builds.stock_load(six, "Ana6") == 3 * Bag.weight_of("bambu") and Builds.stock_load(six, "Bia") == 0, "armários separados")
+	_check(Builds.capacity(six) == 64, "cada dono do 6 tem 64")
+	var bag := {}
+	_check(builds.fetch(6, bag, "", "bambu", 2, "Ana6")["ok"] and int(bag["bambu"]) == 2, "dono pega do armário")
+	_check(builds.fetch(6, {}, "", "bambu", 1, "Bia")["reason"] == "nao_tem", "o armário de Bia está vazio")
+	# Abrigo de 5 com sobra de antes: o dono ainda pega.
+	var five := builds.get_build(5)
+	five["lockers"]["Ana5"] = {"bambu": 1}
+	_check(builds.fetch(5, {}, "", "bambu", 1, "Ana5")["ok"], "sobra do abrigo 5 pode ser pega")
+	# Estoque comum antigo vai para o primeiro dono.
+	var old := _shelter(state, 8, 4)
+	old["stock"] = {"bambu": 2}
+	builds.claim(8, "Caio")
+	_check(Builds.stock_of(old, "Caio").get("bambu", 0) == 2 and old["stock"].is_empty(), "estoque antigo vira armário do dono")
+	# Persistência
+	var copy := Builds.new(state.world)
+	copy.load_save(builds.to_save())
+	_check(copy.get_build(6)["lockers"]["Ana6"]["bambu"] == 1, "armários sobrevivem ao arquivo")
 

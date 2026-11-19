@@ -704,7 +704,7 @@ func request_fetch(build_id: int, item: String, amount: int) -> void:
 
 func _finish_storage(id: int, build_id: int, result: Dictionary, event: String) -> void:
 	if not result["ok"]:
-		if state.players.has(id) and result["reason"] in ["nao_aceita", "nao_tem", "cheio", "carga", "nao_guarda"]:
+		if state.players.has(id) and result["reason"] in ["nao_aceita", "nao_tem", "cheio", "carga", "nao_guarda", "nao_dono"]:
 			action_failed.rpc_id(id, "estoque_" + result["reason"], "%s|%s" % [result.get("item", ""), state.builds.title_of(build_id)])
 		return
 	_dirty = true
@@ -993,7 +993,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 			var what := Crafting.material_text(str(extra["item"]), int(extra["amount"]))
 			Speech.say("%s %s %s. %s." % ["Guardou" if event == "guardou" else "Pegou", what,
 				"no " + Crafting.build_name(build["kind"]) if event == "guardou" else "do " + Crafting.build_name(build["kind"]),
-				Builds.stock_label(build)], false)
+				Builds.stock_label(build, _my_key())], false)
 			_sync_menu.call_deferred()
 		"deposito":
 			var put := "Você colocou %s." % Crafting.materials_text(extra.get("deposited", {}))
@@ -1246,6 +1246,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("%s não guarda %s." % [parts[1], Bag.spoken_name(parts[0])])
 		"estoque_nao_guarda":
 			Speech.say("Aqui não se guarda nada.")
+		"estoque_nao_dono":
+			Speech.say("O armário é só dos donos.")
 		"estoque_nao_tem":
 			Speech.say("Não há isso aí.")
 		"estoque_cheio":
@@ -2449,23 +2451,39 @@ func _start_build(kind: String) -> String:
 
 ## Armazenamento de uma construção pronta: guardar da bolsa e pegar do estoque,
 ## só do que ela aceita (Crafting.STORAGE).
+func _my_key() -> String:
+	return WorldState.owner_key_of_name(Net.player_name)
+
+
 func _storage_root(build_id: int) -> Array:
 	var build := builds.get_build(build_id)
 	if build.is_empty():
 		return []
 	var items := []
 	if Builds.has_owners(build):
-		var mine := Builds.is_owner(build, WorldState.owner_key_of_name(Net.player_name))
+		var mine := Builds.is_owner(build, _my_key())
 		items.append({"label": "Deixar de ser dono" if mine else "Ser dono do %s" % Crafting.build_name(build["kind"]),
 			"run": (_owner_release if mine else _owner_claim).bind(build_id)})
 		items.append({"label": _capital(Builds.owners_text(build)), "info": "%s, %d por %d casas: %s." % [
 			Crafting.build_title(build["kind"]), int(build["size"]), int(build["size"]), Builds.owners_text(build)]})
+	var key := _my_key()
+	var title: String = Crafting.build_title(build["kind"])
+	if not Builds.may_use_stock(build, key):
+		items.append({"label": "Armário só dos donos", "info": "Cada dono tem o seu armário de %s neste lugar; só ele abre." % Crafting.STORAGE[build["kind"]]["label"]})
+		return items
+	if not Builds.can_store(build):
+		if Builds.stock_load(build, key) > 0:
+			items.append({"label": "Pegar do armário", "open": _storage_take_items.bind(build_id)})
+		items.append({"label": "Sem armário", "info": "%s de %d por %d casas não tem armário: só os de %s casas de lado têm. %s" % [
+			title, int(build["size"]), int(build["size"]), " e ".join(Crafting.STORAGE[build["kind"]]["sizes"].map(str)),
+			"Dá para pegar o que sobrou." if Builds.stock_load(build, key) > 0 else ""]})
+		return items
 	return items + [
 		{"label": "Guardar da bolsa", "open": _storage_put_items.bind(build_id)},
 		{"label": "Pegar do estoque", "open": _storage_take_items.bind(build_id)},
-		{"label": Builds.stock_label(build), "info": "%s guarda %s. %s. %s" % [
-			Crafting.build_title(build["kind"]), Crafting.STORAGE[build["kind"]]["label"],
-			Builds.stock_label(build), Bag.load_label(inventory, wielded)]},
+		{"label": Builds.stock_label(build, key), "info": "%s guarda %s%s. %s. %s" % [
+			title, Crafting.STORAGE[build["kind"]]["label"], ", um armário para cada dono" if Builds.personal(build) else "",
+			Builds.stock_label(build, key), Bag.load_label(inventory, wielded)]},
 	]
 
 
@@ -2500,10 +2518,11 @@ func _storage_take_items(build_id: int) -> Array:
 	var items := []
 	if build.is_empty():
 		return items
-	var keys: Array = build["stock"].keys()
+	var stock := Builds.stock_of(build, _my_key())
+	var keys: Array = stock.keys()
 	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
 	for key: String in keys:
-		items.append({"label": "%s, %d" % [Bag.display_name(key), int(build["stock"][key])], "open": _storage_amounts.bind(build_id, key, false)})
+		items.append({"label": "%s, %d" % [Bag.display_name(key), int(stock[key])], "open": _storage_amounts.bind(build_id, key, false)})
 	if items.is_empty():
 		items.append({"label": "Vazio", "info": "Não há nada guardado aqui."})
 	return items
@@ -2511,7 +2530,7 @@ func _storage_take_items(build_id: int) -> Array:
 
 func _storage_amounts(build_id: int, item: String, putting: bool) -> Array:
 	var build := builds.get_build(build_id)
-	var amount := int(inventory.get(item, 0)) if putting else int(build.get("stock", {}).get(item, 0))
+	var amount := int(inventory.get(item, 0)) if putting else int(Builds.stock_of(build, _my_key()).get(item, 0))
 	var actions := []
 	if amount <= 0:
 		return actions

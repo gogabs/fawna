@@ -648,7 +648,7 @@ func store_in_build(id: int, build_id: int, item: String, amount: int) -> Dictio
 	var check := _storage_check(id, build_id)
 	if not check.is_empty():
 		return check
-	return builds.store(build_id, inventory_of(id), item, amount)
+	return builds.store(build_id, inventory_of(id), item, amount, owner_key(id))
 
 
 ## Pega itens do estoque de uma construção para a bolsa, até onde cabe na carga.
@@ -656,7 +656,7 @@ func fetch_from_build(id: int, build_id: int, item: String, amount: int) -> Dict
 	var check := _storage_check(id, build_id)
 	if not check.is_empty():
 		return check
-	return builds.fetch(build_id, inventory_of(id), wielding(id), item, amount)
+	return builds.fetch(build_id, inventory_of(id), wielding(id), item, amount, owner_key(id))
 
 
 ## Vazio se a criatura pode mexer no estoque agora; senão, a recusa.
