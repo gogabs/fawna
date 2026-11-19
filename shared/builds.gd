@@ -738,6 +738,16 @@ func _pick_post(build: Dictionary, id: int, pos: Vector2) -> int:
 
 # --- Armazenamento ------------------------------------------------------------------
 
+## "pos" está dentro das paredes de uma construção grande (nas casas do
+## miolo, sem contar a parede e a porta)?
+static func inside(build: Dictionary, pos: Vector2) -> bool:
+	var size := int(build.get("size", 1))
+	if size < 3:
+		return false
+	var inner: Vector2i = WorldGen.cell_of(pos) - Vector2i(build["cell"])
+	return inner.x >= 1 and inner.y >= 1 and inner.x <= size - 2 and inner.y <= size - 2
+
+
 ## Esta construção guarda itens?
 static func stores(build: Dictionary) -> bool:
 	return bool(build.get("done", false)) and Crafting.STORAGE.has(str(build.get("kind", "")))

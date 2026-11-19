@@ -112,6 +112,17 @@ func _rear_direction(heading: int) -> Vector2:
 	return Compass.forward(heading + 4 + _rng.randi_range(-1, 1))
 
 
+## Barulho feito por este jogador (batidas de pedra): soma "seconds" ao tempo
+## exposto, então o Calado pode chegar mais cedo. Não vale durante o sossego
+## depois de uma visita, nem com um já atrás dele.
+func hear_noise(peer: int, seconds: float) -> void:
+	if not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
+		return
+	if not _need.has(peer):
+		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
+	_exposure[peer] = float(_exposure.get(peer, 0.0)) + seconds
+
+
 ## Faz o Calado aparecer atrás de um jogador (testes e, um dia, eventos).
 ## Devolve o id, ou -1 se o jogador não existe ou já tem um atrás de si.
 func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:

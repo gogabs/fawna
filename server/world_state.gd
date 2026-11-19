@@ -15,6 +15,11 @@ const MAX_STACK := 99  # só para armas fabricadas; a bolsa se limita pela carga
 const DROP_COOLDOWN_MS := 250  # largar e pegar do chão mais rápido que isso não conta
 const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
 const TORCH_SECONDS := 900.0  # quanto uma tocha acesa queima
+const STRIKE_MIN := 5  # batidas para acender sem fogueira: de 5 a 9, sorteado
+const STRIKE_MAX := 9
+const STRIKE_GAP := 1.0  # um segundo sem riscar cancela
+const STRIKE_FIRST_GRACE := 3.0  # tempo para a primeira batida (dá para ouvir a fala)
+const STRIKE_MIN_INTERVAL := 0.12  # batidas coladas demais não contam
 const BUILD_REACH := 1.9  # a obra ocupa a casa toda: dá para trabalhar de um pouco mais longe
 
 var world: WorldGen
@@ -36,6 +41,9 @@ var equipment := {}
 var offhand := {}
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
 var torch_until := {}
+## id -> { method, needed, count, last_ms, first }: quem está riscando a tocha.
+var striking := {}
+var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
@@ -127,8 +135,12 @@ func lit_torches() -> Array:
 	return out
 
 
-## Acende a tocha da mão não dominante numa fogueira acesa ao alcance.
-## Devolve { ok, reason, seconds }. reason: "sem_tocha", "ja_acesa", "sem_fogo".
+## Acender a tocha. Perto de uma fogueira acesa ela acende na hora; senão,
+## com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), o
+## jogador risca faíscas com Espaço (request_spark): de 5 a 9 batidas, uma a
+## cada STRIKE_GAP segundos no máximo.
+## Devolve { ok, reason, seconds } (acendeu), { ok, started, method, needed }
+## (começou a riscar) ou a recusa: "sem_tocha", "ja_acesa", "sem_material".
 func light_torch(id: int) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
@@ -137,15 +149,79 @@ func light_torch(id: int) -> Dictionary:
 	if torch_left(id) > 0.0:
 		return {"ok": false, "reason": "ja_acesa"}
 	var pos: Vector2 = players[id]["pos"]
-	var near := false
 	for build: Dictionary in builds.all():
 		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
-			near = true
-			break
-	if not near:
-		return {"ok": false, "reason": "sem_fogo"}
+			torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + TORCH_SECONDS
+			return {"ok": true, "seconds": TORCH_SECONDS}
+	var method := ignition_method(id)
+	if method.is_empty():
+		return {"ok": false, "reason": "sem_material"}
+	var needed := _strike_rng.randi_range(STRIKE_MIN, STRIKE_MAX)
+	striking[id] = {"method": method, "needed": needed, "count": 0, "last_ms": Time.get_ticks_msec(), "first": true}
+	return {"ok": true, "started": true, "method": method, "needed": needed}
+
+
+## Como esta criatura acenderia a tocha sem fogueira: "faca" (faca + pedra
+## pequena, não gasta nada), "silex" (sílex + pedra pequena, gasta o sílex) ou "".
+func ignition_method(id: int) -> String:
+	var bag := inventory_of(id)
+	if int(bag.get("pedra_pequena", 0)) <= 0:
+		return ""
+	if int(bag.get("faca", 0)) > 0:
+		return "faca"
+	if int(bag.get("silex", 0)) > 0:
+		return "silex"
+	return ""
+
+
+## Quem está riscando a tocha (para o servidor saber se cancela).
+func is_striking(id: int) -> bool:
+	return striking.has(id)
+
+
+## Uma batida (Espaço) de quem está riscando a tocha. Devolve { event } com
+## "nada" (não estava riscando ou foi cedo demais), "faisca", "acendeu"
+## (com "seconds") ou "cancelada" (com "why": "demora" ou "sem_material").
+func strike_spark(id: int, at_ms := -1) -> Dictionary:
+	if not striking.has(id) or not players.has(id):
+		return {"event": "nada"}
+	var now := Time.get_ticks_msec() if at_ms < 0 else at_ms
+	var entry: Dictionary = striking[id]
+	var waited := (now - int(entry["last_ms"])) / 1000.0
+	if waited > (STRIKE_FIRST_GRACE if bool(entry["first"]) else STRIKE_GAP):
+		striking.erase(id)
+		return {"event": "cancelada", "why": "demora"}
+	if not bool(entry["first"]) and waited < STRIKE_MIN_INTERVAL:
+		return {"event": "nada"}
+	var bag := inventory_of(id)
+	if int(bag.get("pedra_pequena", 0)) <= 0 or int(bag.get("faca" if str(entry["method"]) == "faca" else "silex", 0)) <= 0:
+		striking.erase(id)
+		return {"event": "cancelada", "why": "sem_material"}
+	entry["last_ms"] = now
+	entry["first"] = false
+	entry["count"] = int(entry["count"]) + 1
+	if int(entry["count"]) < int(entry["needed"]):
+		return {"event": "faisca"}
+	striking.erase(id)
+	if str(entry["method"]) == "silex":
+		bag["silex"] = int(bag.get("silex", 0)) - 1
+		if int(bag["silex"]) <= 0:
+			bag.erase("silex")
 	torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + TORCH_SECONDS
-	return {"ok": true, "seconds": TORCH_SECONDS}
+	return {"event": "acendeu", "seconds": TORCH_SECONDS}
+
+
+## Cancela quem parou de riscar por tempo demais. Devolve os ids cancelados.
+func expire_strikes(at_ms := -1) -> Array:
+	var now := Time.get_ticks_msec() if at_ms < 0 else at_ms
+	var out := []
+	for id: int in striking.keys():
+		var entry: Dictionary = striking[id]
+		var limit := STRIKE_FIRST_GRACE if bool(entry["first"]) else STRIKE_GAP
+		if not players.has(id) or (now - int(entry["last_ms"])) / 1000.0 > limit:
+			striking.erase(id)
+			out.append(id)
+	return out
 
 
 ## Tochas que queimaram até o fim: somem da mão. Devolve os ids de quem estava
@@ -555,6 +631,9 @@ func _storage_check(id: int, build_id: int) -> Dictionary:
 	if Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH:
 		return {"ok": false, "reason": "longe"}
 	if Builds.has_furniture(build) and Builds.furniture_near(build, players[id]["pos"]) != "prateleiras":
+		return {"ok": false, "reason": "longe"}
+	# Armazém e abrigo: só se mexe no estoque lá dentro.
+	if not Builds.has_furniture(build) and not Builds.inside(build, players[id]["pos"]):
 		return {"ok": false, "reason": "longe"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:

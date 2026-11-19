@@ -133,6 +133,13 @@ func _lit_fires(builds: Builds) -> Array:
 	return fires
 
 
+## Um barulho de quem está aí (as batidas ao acender a tocha): conta como
+## "seconds" de tempo exposto a mais, e o Calado pode aparecer mais cedo.
+func hear_noise(peer: int, seconds: float) -> void:
+	if horrors != null:
+		horrors.hear_noise(peer, seconds)
+
+
 ## Testes: faz o Calado aparecer atrás de um jogador, a "distance" casas.
 func summon(peer: int, distance := Horrors.SPAWN_DISTANCE) -> int:
 	if horrors == null:

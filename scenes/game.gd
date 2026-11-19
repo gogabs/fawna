@@ -65,6 +65,7 @@ const WIND_LAKE_RADIUS := 4
 const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
 const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
 const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1,9)
+const TORCH_NOISE_SECONDS := 8.0  # cada batida de pedra conta como tanto tempo exposto para o Calado
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
 const CRAFT_KNOCKS := 3  # batidas ao fabricar uma arma
 const CRAFT_TOOL_KNOCK := 0.55  # segundos entre as batidas de cada passo de uma ferramenta
@@ -98,6 +99,7 @@ var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
 var offhand := ""  # a segunda peça de equipamento, na mão não dominante (a tocha)
 var torch_bearers: Array = []  # ids de quem leva uma tocha acesa (o servidor manda)
+var _striking := false  # riscando a tocha: Espaço bate a pedra
 var _torch_ends := 0.0  # hora (Unix) em que a tocha acesa se apaga; 0 = apagada
 var _swing_cooldown := 0.0
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
@@ -188,6 +190,9 @@ func _process(delta: float) -> void:
 				where.append(state.players[id]["pos"])
 			if not state.harvest.prune(-1.0, where).is_empty():
 				_dirty = true
+		if not state.striking.is_empty():
+			for striker: int in state.expire_strikes():
+				torch_striking.rpc_id(striker, "cancelou", "demora")
 		_burn_timer += delta
 		if _burn_timer >= BURN_CHECK:
 			_burn_timer = 0.0
@@ -456,10 +461,53 @@ func request_light_torch() -> void:
 		if state.players.has(id):
 			action_failed.rpc_id(id, "tocha_" + result["reason"], "")
 		return
+	if result.get("started", false):
+		# Sem fogueira: o jogador risca faíscas com Espaço (request_spark).
+		torch_striking.rpc_id(id, "comecou", str(result["method"]))
+		return
 	_dirty = true
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), float(result["seconds"]), "acendeu", "tocha")
 	_broadcast_torches()
 	_tell_others_handled(id, "fabricou")
+
+
+## Espaço enquanto se risca a tocha: uma batida de faca ou sílex na pedra.
+@rpc("any_peer", "call_local", "reliable")
+func request_spark() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.strike_spark(id)
+	match result["event"]:
+		"faisca":
+			horrors.hear_noise(id, TORCH_NOISE_SECONDS)
+			_tell_others_handled(id, "faisca")
+		"acendeu":
+			_dirty = true
+			horrors.hear_noise(id, TORCH_NOISE_SECONDS)
+			offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), float(result["seconds"]), "acendeu", "tocha")
+			_broadcast_torches()
+			_tell_others_handled(id, "faisca")
+		"cancelada":
+			torch_striking.rpc_id(id, "cancelou", str(result.get("why", "demora")))
+
+
+## O servidor avisa quem risca a tocha: "comecou" (detail: o método) ou
+## "cancelou" (detail: o motivo).
+@rpc("authority", "call_local", "reliable")
+func torch_striking(what: String, detail: String) -> void:
+	if world == null:
+		return
+	if what == "comecou":
+		_striking = true
+		Speech.say("Risque com Espaço, num ritmo constante, sem parar. %s" % (
+			"Faca na pedra." if detail == "faca" else "Sílex na pedra."))
+		return
+	_striking = false
+	if detail == "sem_material":
+		Speech.say("Faltou material: você não tem mais o que precisa para riscar. Acendimento cancelado.")
+	else:
+		Speech.say("Você parou de riscar. Acendimento cancelado.")
 
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1052,7 +1100,8 @@ func offhand_changed(new_bag: Dictionary, new_offhand: String, lit_left: float, 
 			_play(Sounds.stow())
 			Speech.say("Você guardou %s na bolsa." % Bag.with_article(item))
 		"acendeu":
-			_play(Sounds.fire_spark())
+			_striking = false
+			_play(Sounds.fire_ignite())
 			Speech.say("A tocha acende. Ela queima por uns %d minutos e afasta o Calado." % ceili(lit_left / 60.0))
 		"queimou":
 			_play(Sounds.stow())
@@ -1065,7 +1114,7 @@ func player_handled(id: int, verb: String) -> void:
 	if world == null or not players.has(id) or id == my_id:
 		return
 	var stream: AudioStream = {"empunhou": Sounds.wield(), "guardou": Sounds.stow(), "golpeou": Sounds.axe_swing(),
-		"fabricou": Sounds.build_knock()}.get(verb)
+		"fabricou": Sounds.build_knock(), "faisca": Sounds.fire_spark()}.get(verb)
 	_play_other(players[id]["pos"], stream)
 
 
@@ -1078,8 +1127,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say(detail)
 		"tocha_acesa":
 			Speech.say("Tocha acesa não se guarda nem se troca: ela queima até o fim.")
-		"tocha_sem_fogo":
-			Speech.say("Para acender a tocha, chegue perto de uma fogueira acesa.")
+		"tocha_sem_fogo", "tocha_sem_material":
+			Speech.say("Para acender a tocha, chegue perto de uma fogueira acesa, ou precisa de faca ou sílex, e de uma pedra pequena.")
 		"tocha_ja_acesa":
 			Speech.say("A tocha já está acesa.")
 		"tocha_sem_tocha":
@@ -1527,6 +1576,11 @@ func _announce_arrival(old_cell: Vector2i, cell: Vector2i) -> void:
 ## Espaço: coleta o que estiver ao alcance, dando preferência ao que está à
 ## frente.
 func _interact() -> void:
+	if _striking:
+		# Riscando a tocha: cada Espaço é uma batida (o som sai já, a cadência vale no servidor).
+		_play(Sounds.fire_spark())
+		request_spark.rpc_id(1)
+		return
 	var target := _collect_target()
 	var build := _build_target()
 	var pile := ground.nearest(_pos, COLLECT_REACH)
@@ -1552,8 +1606,8 @@ func _interact() -> void:
 				Speech.say(_menu.open_at("Bancada de trabalho", _bench_root))
 			else:
 				Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
-		elif Builds.stores(build) and not Builds.has_furniture(build) and _pos.distance_to(WorldGen.cell_center(Builds.door_cell(build["cell"], int(build["size"]), str(build["entrance"])))) > Builds.DOOR_REACH:
-			# Longe da porta, o Espaço abre o armazenamento; perto, abre e fecha a porta.
+		elif Builds.stores(build) and not Builds.has_furniture(build) and Builds.inside(build, _pos):
+			# Armazém e abrigo: lá dentro, o Espaço abre o armazenamento. Fora, só a porta responde.
 			Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
 		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
 			Speech.say(builds.status_text(int(build["id"])))
@@ -1704,7 +1758,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, acenda-a perto de uma fogueira acesa e ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
 
 
 ## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o

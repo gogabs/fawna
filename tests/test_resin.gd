@@ -180,7 +180,7 @@ func _test_torch() -> void:
 	var result := state.equip(2, "tocha")
 	_check(result["ok"] and result["slot"] == "offhand" and state.offhand_of(2) == "tocha" and state.wielding(2) == "machado", "a tocha vai para a outra mão sem tirar o machado")
 	_check(int(inv["tocha"]) == 1, "tira uma da bolsa")
-	_check(state.light_torch(2)["reason"] == "sem_fogo", "sem fogueira acesa por perto, não acende")
+	_check(state.light_torch(2)["reason"] == "sem_material", "sem fogueira nem faca/sílex e pedra, não acende")
 	var cell := _find(state.world, WorldGen.Thing.NADA, Vector2i(30, 30))
 	var fire: int = state.builds.start("fogueira", cell)["id"]
 	var build: Dictionary = state.builds.get_build(fire)

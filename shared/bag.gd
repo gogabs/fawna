@@ -72,7 +72,7 @@ const WIELDABLE := {
 	"clava": "J para golpear.",
 	"enxada": "J para capinar a grama de uma obra.",
 	"faca": "J no tronco de uma árvore, poucas vezes, para tirar resina.",
-	"tocha": "Vai na mão não dominante. Para acendê-la, chegue perto de uma fogueira acesa e use Equipamento.",
+	"tocha": "Vai na mão não dominante. Para acendê-la, use Equipamento perto de uma fogueira acesa; longe de uma, risque faca ou sílex numa pedra pequena com Espaço.",
 }
 
 ## Itens que vão na mão não dominante, a segunda peça de equipamento: não
