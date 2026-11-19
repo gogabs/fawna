@@ -604,6 +604,44 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	return builds.work(build_id, inventory_of(id), -1.0, pos)
 
 
+## A chave de dono de uma criatura (Builds.claim). Hoje é o nome; quando houver
+## login, é aqui que passa a ser o id da conta.
+static func owner_key_of_name(player_name: String) -> String:
+	return player_name.strip_edges().left(24)
+
+
+func owner_key(id: int) -> String:
+	return owner_key_of_name(players[id]["name"]) if players.has(id) else ""
+
+
+## Vazio se a criatura pode mexer nos donos agora; senão, a recusa.
+func _owner_check(id: int, build_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if Builds.has_owners(build) and not Builds.inside(build, players[id]["pos"]):
+		return {"ok": false, "reason": "fora"}
+	return {}
+
+
+## Ser dono do abrigo onde se está. Devolve o resultado de Builds.claim, ou
+## { ok: false, reason: "fora" } se a criatura não está lá dentro.
+func claim_build(id: int, build_id: int) -> Dictionary:
+	var check := _owner_check(id, build_id)
+	if not check.is_empty():
+		return check
+	return builds.claim(build_id, owner_key(id))
+
+
+func release_build(id: int, build_id: int) -> Dictionary:
+	var check := _owner_check(id, build_id)
+	if not check.is_empty():
+		return check
+	return builds.release(build_id, owner_key(id))
+
+
 ## Guarda itens da bolsa numa construção que armazena (armazém, abrigo).
 ## Devolve o resultado de Builds.store, ou { ok: false, reason: "longe" | "devagar" }.
 func store_in_build(id: int, build_id: int, item: String, amount: int) -> Dictionary:

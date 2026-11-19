@@ -482,7 +482,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}, "owners": []}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -774,6 +774,70 @@ static func stock_label(build: Dictionary) -> String:
 	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build), capacity(build)]
 
 
+## Donos: quem mora na construção. O dono é uma chave de texto (hoje o nome da
+## criatura; com login, o id da conta), vinda de WorldState.owner_key.
+static func owner_slots(build: Dictionary) -> int:
+	return Crafting.owner_slots(str(build.get("kind", "")), int(build.get("size", 1)))
+
+
+static func has_owners(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and owner_slots(build) > 0
+
+
+static func is_owner(build: Dictionary, key: String) -> bool:
+	return build.get("owners", []).has(key)
+
+
+## "sem dono", "dono: Ana" ou "donos: Ana e Bia (vaga para mais 0)".
+static func owners_text(build: Dictionary) -> String:
+	var owners: Array = build.get("owners", [])
+	var free := owner_slots(build) - owners.size()
+	if owners.is_empty():
+		return "sem dono, %s" % ("uma vaga" if free == 1 else "%d vagas" % free)
+	var text := "dono: %s" % owners[0] if owners.size() == 1 else "donos: %s" % " e ".join(owners)
+	return text + (", mais uma vaga" if free == 1 else "")
+
+
+## A construção pronta do mesmo tipo de que a criatura já é dona ({} se nenhuma).
+func owned_by(key: String, kind: String) -> Dictionary:
+	for build: Dictionary in _builds.values():
+		if build["kind"] == kind and is_owner(build, key):
+			return build
+	return {}
+
+
+## A criatura passa a ser dona da construção. Uma criatura tem um só abrigo.
+## Devolve { ok, reason }. reason: "desconhecida", "sem_dono" (não tem dono),
+## "nao_pronta", "ja_dono", "ja_tem_outro", "lotada".
+func claim(id: int, key: String) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if owner_slots(build) <= 0:
+		return {"ok": false, "reason": "sem_dono"}
+	if not build["done"]:
+		return {"ok": false, "reason": "nao_pronta"}
+	if is_owner(build, key):
+		return {"ok": false, "reason": "ja_dono"}
+	if not owned_by(key, build["kind"]).is_empty():
+		return {"ok": false, "reason": "ja_tem_outro"}
+	if build["owners"].size() >= owner_slots(build):
+		return {"ok": false, "reason": "lotada"}
+	build["owners"].append(key)
+	return {"ok": true, "reason": ""}
+
+
+## A criatura deixa de ser dona. reason: "desconhecida", "nao_dono".
+func release(id: int, key: String) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not is_owner(build, key):
+		return {"ok": false, "reason": "nao_dono"}
+	build["owners"].erase(key)
+	return {"ok": true, "reason": ""}
+
+
 ## Guarda itens da bolsa "bag" (muda a bolsa). Devolve { ok, reason, item,
 ## amount }. reason: "desconhecida", "nao_guarda" (a construção não guarda
 ## nada), "nao_aceita" (categoria errada), "nao_tem", "cheio".
@@ -927,7 +991,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
-		"stock": build["stock"].duplicate(),
+		"stock": build["stock"].duplicate(), "owners": build["owners"].duplicate(),
 	}
 
 
@@ -979,7 +1043,7 @@ func to_save() -> Dictionary:
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
-			"stock": build["stock"],
+			"stock": build["stock"], "owners": build["owners"],
 		})
 	return {"next_id": _next_id, "list": list}
 
@@ -1034,6 +1098,11 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 		if int(data["stock"][item]) > 0:
 			stock[str(item)] = int(data["stock"][item])
 	build["stock"] = stock
+	var owners := []
+	for owner in data.get("owners", []):
+		if not str(owner).is_empty() and not owners.has(str(owner)):
+			owners.append(str(owner))
+	build["owners"] = owners
 	return build
 
 

@@ -651,6 +651,34 @@ func request_name_settlement(build_id: int, noun_index: int, adjective_index: in
 	build_changed.rpc(state.builds.info(build_id), "nomeado", id, {})
 
 
+## No menu do abrigo: virar dono dele (um abrigo comporta 1 dono, 2 se grande).
+@rpc("any_peer", "call_local", "reliable")
+func request_claim(build_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_owner(id, build_id, state.claim_build(id, build_id), "dono")
+
+
+## E deixar de ser dono.
+@rpc("any_peer", "call_local", "reliable")
+func request_release(build_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_owner(id, build_id, state.release_build(id, build_id), "sem_dono")
+
+
+func _finish_owner(id: int, build_id: int, result: Dictionary, event: String) -> void:
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] != "desconhecida":
+			action_failed.rpc_id(id, "dono_" + result["reason"], state.builds.title_of(build_id))
+		return
+	_dirty = true
+	print("[servidor] %s %s do %s" % [state.players[id]["name"], "virou dono" if event == "dono" else "deixou de ser dono", state.builds.title_of(build_id)])
+	build_changed.rpc(state.builds.info(build_id), event, id, {})
+
+
 ## Espaço longe da porta de um armazém ou abrigo pronto: guarda itens da bolsa.
 @rpc("any_peer", "call_local", "reliable")
 func request_store(build_id: int, item: String, amount: int) -> void:
@@ -903,6 +931,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"capinado": Sounds.build_deposit(), "fase": Sounds.build_stage(), "secou": Sounds.build_stage(),
 		"porta": Sounds.door(bool(extra.get("open", true))) if event == "porta" else null,
 		"guardou": Sounds.build_deposit(), "pegou_estoque": Sounds.build_deposit(),
+		"dono": Sounds.build_stage(), "sem_dono": Sounds.build_deposit(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
@@ -949,6 +978,12 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 					"" if Bag.count(inventory, "enxada") + (1 if wielded == "enxada" else 0) > 0 else "Você ainda não tem uma: ela se fabrica em Fabricar, Ferramentas."))
 			else:
 				Speech.say("Terreno pronto. %s" % builds.status_text(build_id).trim_prefix(title + " em obra. "))
+		"dono":
+			Speech.say("Agora %s é seu. %s." % [Crafting.build_name(build["kind"]), _capital(Builds.owners_text(build))], false)
+			_sync_menu.call_deferred()
+		"sem_dono":
+			Speech.say("Você deixou de ser dono d%s %s. %s." % [Crafting.BUILDS[build["kind"]]["article"], Crafting.build_name(build["kind"]), _capital(Builds.owners_text(build))], false)
+			_sync_menu.call_deferred()
 		"guardou", "pegou_estoque":
 			var what := Crafting.material_text(str(extra["item"]), int(extra["amount"]))
 			Speech.say("%s %s %s. %s." % ["Guardou" if event == "guardou" else "Pegou", what,
@@ -1189,6 +1224,18 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Este povoado já tem nome.")
 		"nome_sem_fogueira":
 			Speech.say("Falta uma fogueira pronta nesta região.")
+		"dono_fora":
+			Speech.say("Entre no abrigo para isso.")
+		"dono_lotada":
+			Speech.say("%s já tem todos os donos." % detail)
+		"dono_ja_dono":
+			Speech.say("Você já é dono deste abrigo.")
+		"dono_ja_tem_outro":
+			Speech.say("Você já é dono de outro abrigo. Deixe de ser dono dele antes.")
+		"dono_nao_dono":
+			Speech.say("Você não é dono deste abrigo.")
+		"dono_nao_pronta", "dono_sem_dono":
+			Speech.say("Este lugar não tem dono.")
 		"estoque_nao_aceita":
 			var parts := detail.split("|")
 			Speech.say("%s não guarda %s." % [parts[1], Bag.spoken_name(parts[0])])
@@ -2391,13 +2438,31 @@ func _storage_root(build_id: int) -> Array:
 	var build := builds.get_build(build_id)
 	if build.is_empty():
 		return []
-	return [
+	var items := []
+	if Builds.has_owners(build):
+		var mine := Builds.is_owner(build, WorldState.owner_key_of_name(Net.player_name))
+		items.append({"label": "Deixar de ser dono" if mine else "Ser dono do %s" % Crafting.build_name(build["kind"]),
+			"run": (_owner_release if mine else _owner_claim).bind(build_id)})
+		items.append({"label": _capital(Builds.owners_text(build)), "info": "%s, %d por %d casas: %s." % [
+			Crafting.build_title(build["kind"]), int(build["size"]), int(build["size"]), Builds.owners_text(build)]})
+	return items + [
 		{"label": "Guardar da bolsa", "open": _storage_put_items.bind(build_id)},
 		{"label": "Pegar do estoque", "open": _storage_take_items.bind(build_id)},
 		{"label": Builds.stock_label(build), "info": "%s guarda %s. %s. %s" % [
 			Crafting.build_title(build["kind"]), Crafting.STORAGE[build["kind"]]["label"],
 			Builds.stock_label(build), Bag.load_label(inventory, wielded)]},
 	]
+
+
+## A resposta do servidor (build_changed) é que fala.
+func _owner_claim(build_id: int) -> String:
+	request_claim.rpc_id(1, build_id)
+	return ""
+
+
+func _owner_release(build_id: int) -> String:
+	request_release.rpc_id(1, build_id)
+	return ""
 
 
 func _storage_put_items(build_id: int) -> Array:

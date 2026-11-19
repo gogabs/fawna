@@ -9,6 +9,7 @@ func _init() -> void:
 	_test_categories()
 	_test_store_and_fetch()
 	_test_persistence()
+	_test_owners()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -107,3 +108,48 @@ func _test_persistence() -> void:
 	var net := WorldState.new(173)
 	net.builds.apply_info(state.builds.info(id))
 	_check(int(net.builds.get_build(id)["stock"].get("bambu", 0)) == 3, "o estoque vai pela rede")
+
+
+func _test_owners() -> void:
+	var state := WorldState.new(173)
+	var builds := state.builds
+	var small := _ready_build(state, "abrigo")  # 4x4: um dono
+	_ready_build_at(state, "abrigo", 2)  # 4x4 em outro lugar
+	var big_cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
+	var big_build := builds._fill(builds._new_build(3, "abrigo", big_cell, 6, "sul"), {"size": 6, "entrance": "sul"}, 0.0)
+	big_build["done"] = true
+	builds._add(big_build)
+	_check(Builds.owner_slots(builds.get_build(small)) == 1, "abrigo 4x4 tem um dono")
+	_check(Builds.owner_slots(big_build) == 2, "abrigo grande tem dois donos")
+	_check(builds.claim(small, "Ana")["ok"], "Ana vira dona")
+	_check(builds.claim(small, "Ana")["reason"] == "ja_dono", "Ana não vira dona duas vezes")
+	_check(builds.claim(small, "Bia")["reason"] == "lotada", "abrigo pequeno lotado")
+	_check(builds.claim(2, "Ana")["reason"] == "ja_tem_outro", "uma criatura, um abrigo")
+	_check(builds.claim(3, "Bia")["ok"] and builds.claim(3, "Caio")["ok"], "abrigo grande aceita dois")
+	_check(builds.claim(3, "Dani")["reason"] == "lotada", "abrigo grande lota no terceiro")
+	_check(builds.release(small, "Bia")["reason"] == "nao_dono", "quem não é dono não larga")
+	_check(builds.release(small, "Ana")["ok"] and builds.claim(small, "Fred")["ok"], "vaga liberada vai a outro")
+	_check(builds.claim(99, "X")["reason"] == "desconhecida", "abrigo inexistente")
+	var fire := builds._fill(builds._new_build(4, "fogueira", big_cell + Vector2i(10, 0), 1, ""), {}, 0.0)
+	fire["done"] = true
+	builds._add(fire)
+	_check(builds.claim(4, "Ana")["reason"] == "sem_dono", "fogueira não tem dono")
+	# Persistência e rede
+	var copy := Builds.new(state.world)
+	copy.load_save(builds.to_save())
+	_check(copy.get_build(3)["owners"] == ["Bia", "Caio"], "donos sobrevivem ao arquivo")
+	var client := Builds.new(state.world)
+	client.apply_info(builds.info(3))
+	_check(Builds.is_owner(client.get_build(3), "Caio"), "donos chegam ao cliente")
+	# Pelo estado: só lá dentro
+	var id := 7
+	state.add_player(id, "Eva")
+	var inside_cell := Vector2i(big_cell) + Vector2i(2, 2)
+	state.players[id]["pos"] = WorldGen.cell_center(Vector2i(big_cell) + Vector2i(-5, -5))
+	_check(state.claim_build(id, 3)["reason"] == "fora", "não vira dono de fora")
+	builds.release(3, "Bia")
+	state.players[id]["pos"] = WorldGen.cell_center(inside_cell)
+	_check(state.claim_build(id, 3)["ok"], "vira dono lá dentro")
+	_check(Builds.is_owner(builds.get_build(3), "Eva"), "dono é a chave do nome")
+	_check(state.release_build(id, 3)["ok"], "deixa de ser dono lá dentro")
+
