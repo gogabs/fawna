@@ -76,8 +76,8 @@ func _test_store_and_fetch() -> void:
 	# Pegar: respeita a carga.
 	var empty := {}
 	result = builds.fetch(id, empty, "", "pedra_grande", 100)
-	_check(result["ok"] and result["amount"] == Bag.CAPACITY / Bag.weight_of("pedra_grande"), "pega só o que a carga aguenta")
-	var full := {"pedra_grande": Bag.CAPACITY / 6}
+	_check(result["ok"] and result["amount"] == Bag.MAX_LOAD / Bag.weight_of("pedra_grande"), "pega só o que a carga aguenta")
+	var full := {"pedra_grande": Bag.MAX_LOAD / 6}
 	_check(builds.fetch(id, full, "", "pedra_grande", 1)["reason"] == "carga", "carga cheia recusa")
 	_check(builds.fetch(id, {}, "", "argila", 1)["reason"] == "nao_tem", "pegar o que não há")
 	# O abrigo só guarda roupas (ainda não existem).
