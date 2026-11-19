@@ -42,15 +42,13 @@ const TAGS := {
 		"text": "Som que os amigos ouvem de longe, com direção, e que também atrai o Calado."},
 }
 
-const ORDER: Array[String] = ["urso", "boi", "hipopotamo", "cervo", "cabra", "lebre", "lobo", "raposa", "onca", "javali"]
+const ORDER: Array[String] = ["urso", "boi", "cervo", "cabra", "lebre", "lobo", "raposa", "onca", "javali"]
 
 const DATA := {
 	"urso": {"name": "Urso de musgo", "article": "um", "tags": ["pesado", "guerreiro"],
 		"description": "Híbrido de humano e urso, largo, com musgo crescendo nos ombros."},
 	"boi": {"name": "Boi de chifre-ferro", "article": "um", "tags": ["pesado", "resistente"],
 		"description": "Híbrido de humano e boi, com chifres escuros como ferro velho."},
-	"hipopotamo": {"name": "Hipopótamo de lodo", "article": "um", "tags": ["pesado", "uivo"],
-		"description": "Híbrido de humano e hipopótamo, de pele grossa e sempre coberta de lodo."},
 	"cervo": {"name": "Cervo de galhada-musgo", "article": "um", "tags": ["leve", "veloz"],
 		"description": "Híbrido de humano e cervo, com uma galhada coberta de musgo."},
 	"cabra": {"name": "Cabra-montesa", "article": "uma", "tags": ["leve", "resistente"],
