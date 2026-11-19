@@ -301,7 +301,30 @@ func request_join(player_name: String) -> void:
 	ground_snapshot.rpc_id(id, state.ground.snapshot())
 	for other_id in state.players:
 		if other_id != id:
-			player_joined.rpc_id(other_id, id, accepted_name, pos)
+			player_joined.rpc_id(other_id, id, accepted_name, pos, state.species_of(id))
+
+
+## A pessoa escolheu a espécie do personagem (só vale a primeira vez).
+@rpc("any_peer", "call_local", "reliable")
+func request_species(species_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	if state.choose_species(id, species_id):
+		print("[servidor] %s escolheu a espécie %s" % [state.players[id]["name"], species_id])
+		species_chosen.rpc(id, species_id)
+
+
+@rpc("authority", "call_local", "reliable")
+func species_chosen(id: int, species_id: String) -> void:
+	if world == null or not players.has(id):
+		return
+	players[id]["species"] = species_id
+	if id == my_id:
+		Speech.say("Você agora é %s %s." % [Species.DATA[species_id]["article"], Species.display_name(species_id)])
+	else:
+		Speech.say("%s é %s %s." % [players[id]["name"], Species.DATA[species_id]["article"], Species.display_name(species_id)], false)
+	_menu.sync()
 
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
@@ -753,6 +776,8 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte H para ouvir os comandos." % [
 		me["name"], Narrator.where_am_i(world, _pos, _heading), company])
 	_warn_version_mismatch()
+	if str(me.get("species", "")).is_empty():
+		Speech.say(_menu.open_at("Escolha sua espécie", _species_choices), false)
 	_run_auto_commands()
 
 
@@ -1212,13 +1237,13 @@ func action_failed(reason: String, detail: String) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func player_joined(id: int, player_name: String, pos: Vector2) -> void:
+func player_joined(id: int, player_name: String, pos: Vector2, species_id := "") -> void:
 	if world == null:
 		return
-	players[id] = {"name": player_name, "pos": pos}
+	players[id] = {"name": player_name, "pos": pos, "species": species_id}
 	view.queue_redraw()
 	_play(Sounds.chime())
-	Speech.say("%s chegou ao mundo." % player_name, false)
+	Speech.say("%s chegou ao mundo." % Species.with_name(player_name, species_id), false)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -1758,7 +1783,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga tem limite: pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam a Origem às outras regiões do mundo;")
 
 
 ## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o
@@ -1802,7 +1827,7 @@ func _say_who() -> void:
 	var names: PackedStringArray = []
 	for id in players:
 		var player_name: String = players[id]["name"]
-		names.append(player_name + (" (você)" if id == my_id else ""))
+		names.append(Species.with_name(player_name, str(players[id].get("species", ""))) + (" (você)" if id == my_id else ""))
 	Speech.say("No mundo: %s." % ", ".join(names))
 
 
@@ -1940,12 +1965,50 @@ func _setup_caminheiro() -> void:
 
 func _menu_root() -> Array:
 	return [
+		{"label": "Personagem", "open": _character_items},
 		{"label": "Caminheiro", "open": _caminheiro_items},
 		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, capacidade %d" % Bag.CAPACITY,
 			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
 	]
+
+
+## Menu de personagem: nome, espécie com descrição e traços. Sem espécie
+## ainda, oferece a escolha.
+func _character_items() -> Array:
+	var me: Dictionary = players.get(my_id, {})
+	var species_id := str(me.get("species", ""))
+	var items := [{"label": "Nome: %s" % me.get("name", Net.player_name),
+		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
+	if Species.is_species(species_id):
+		items.append({"label": "Espécie: %s" % Species.display_name(species_id),
+			"info": "%s %s" % [Species.description(species_id), Species.trait_text(species_id)]})
+	else:
+		items.append({"label": "Escolher espécie", "open": _species_choices})
+	return items
+
+
+## As espécies para escolher; cada uma abre a descrição, o traço e a confirmação.
+func _species_choices() -> Array:
+	var items := []
+	for id: String in Species.ORDER:
+		items.append({"label": Species.label(id), "open": _species_confirm.bind(id)})
+	return items
+
+
+func _species_confirm(id: String) -> Array:
+	return [
+		{"label": "Sobre", "info": Species.description(id)},
+		{"label": "Traço", "info": Species.trait_text(id)},
+		{"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
+			"run": _choose_species.bind(id), "close": true},
+	]
+
+
+func _choose_species(id: String) -> String:
+	request_species.rpc_id(1, id)
+	return ""
 
 
 ## Itens da bolsa, agrupados ("Argila, 2"; "Pedra, 3 grandes, 1 pequena"), e no

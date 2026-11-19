@@ -1,0 +1,28 @@
+{
+	"builds": {
+		"list": [],
+		"next_id": 1
+	},
+	"equipment": {
+		"Criatura": ""
+	},
+	"ground": [],
+	"harvest": [],
+	"inventories": {
+		"Criatura": {
+			"machado": 1
+		}
+	},
+	"offhand": {
+
+	},
+	"resin": [],
+	"seed": 4162442817,
+	"species": {
+		"Criatura": "brasido"
+	},
+	"torch_until": {
+
+	},
+	"version": 1
+}

@@ -37,6 +37,8 @@ var players := {}
 var inventories := {}
 ## nome da criatura -> item empunhado ("" = mãos livres). Ver Bag.
 var equipment := {}
+## nome do personagem -> id da espécie (ver Species); vazio até escolher.
+var species := {}
 ## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
 var offhand := {}
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
@@ -65,13 +67,30 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if clean_name.is_empty():
 		clean_name = "Criatura %d" % (players.size() + 1)
 	var pos := _spawn_point()
-	players[id] = {"name": clean_name, "pos": pos, "heading": 0}
+	players[id] = {"name": clean_name, "pos": pos, "heading": 0, "species": species.get(clean_name, "")}
 	if not inventories.has(clean_name):
 		inventories[clean_name] = {}
 	if not equipment.has(clean_name):
 		equipment[clean_name] = ""
 	Bag.give_starter(inventories[clean_name], equipment[clean_name])
 	return pos
+
+
+## Escolhe a espécie do personagem. Só vale uma vez por nome: depois de
+## escolhida, não muda. Devolve true se gravou.
+func choose_species(id: int, species_id: String) -> bool:
+	if not players.has(id) or not Species.is_species(species_id):
+		return false
+	var player_name: String = players[id]["name"]
+	if species.has(player_name):
+		return false
+	species[player_name] = species_id
+	players[id]["species"] = species_id
+	return true
+
+
+func species_of(id: int) -> String:
+	return str(players[id].get("species", "")) if players.has(id) else ""
 
 
 func remove_player(id: int) -> void:
@@ -678,6 +697,7 @@ func to_save() -> Dictionary:
 		"inventories": inventories,
 		"equipment": equipment,
 		"offhand": offhand,
+		"species": species,
 		"torch_until": torch_until,
 		"harvest": harvest.to_save(),
 		"resin": resin.to_save(),
@@ -702,6 +722,9 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.inventories[player_name] = inv
 	for player_name in data.get("equipment", {}):
 		state.equipment[player_name] = str(data["equipment"][player_name])
+	for player_name in data.get("species", {}):
+		if Species.is_species(str(data["species"][player_name])):
+			state.species[player_name] = str(data["species"][player_name])
 	for player_name in data.get("offhand", {}):
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
