@@ -30,6 +30,9 @@ var vertical_nav := false
 ## Gráficos desligados: dentro do jogo, para de desenhar (a janela fica parada;
 ## som e fala continuam) e gasta bem menos processador. Escolhido em Opções.
 var graphics_off := false
+## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
+## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
+var debug := false
 var world_seed := 0
 var seed_from_cmdline := false
 ## Onde o servidor salva o mundo. --novo-mundo ignora o save existente.
@@ -108,6 +111,11 @@ func is_server() -> bool:
 	return mode == Mode.SERVER or mode == Mode.HOST
 
 
+## O servidor aceita pedidos de depuração? (Só o servidor pergunta.)
+func debug_available() -> bool:
+	return is_server() and (debug or mode == Mode.HOST)
+
+
 func has_local_player() -> bool:
 	return mode == Mode.HOST or mode == Mode.CLIENT
 
@@ -163,6 +171,8 @@ func _parse_cmdline() -> void:
 				mode = Mode.CLIENT
 				if not value.is_empty():
 					address = value
+			"--debug":
+				debug = true
 			"--port":
 				port = int(value)
 			"--name":

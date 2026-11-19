@@ -24,6 +24,9 @@ const STARTER := {"machado": 1}
 ## grandes, 2 médias e 1 pequena = 25) não cabe numa viagem só, e uma
 ## fogueira (23) só cabe se o machado (3) ficar no chão.
 const CAPACITY := 24
+## A carga em uso. Só muda no menu de depuração (DebugTools), para testar com
+## a bolsa cheia; no jogo normal é sempre CAPACITY.
+static var capacity := CAPACITY
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
@@ -186,7 +189,7 @@ static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
 ## Quanto peso ainda cabe (0 se a criatura já está no limite ou acima dele,
 ## como quem vem de um mundo salvo antes do limite existir).
 static func free_space(bag: Dictionary, wielded := "", offhand := "") -> int:
-	return maxi(0, CAPACITY - load_of(bag, wielded, offhand))
+	return maxi(0, capacity - load_of(bag, wielded, offhand))
 
 
 ## Quantas unidades de "item" ainda cabem.
@@ -229,4 +232,4 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 
 ## "Carga, 18 de 24".
 static func load_label(bag: Dictionary, wielded := "", offhand := "") -> String:
-	return "Carga, %d de %d" % [load_of(bag, wielded, offhand), CAPACITY]
+	return "Carga, %d de %d" % [load_of(bag, wielded, offhand), capacity]

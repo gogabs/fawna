@@ -44,6 +44,8 @@ const HUSH_RADIUS := 16.0
 const SCARE_RADIUS := 9.0
 
 var world: WorldGen
+## Depuração: com falso, o Calado não aparece sozinho (só chamado por summon).
+var spawning := true
 
 ## id -> { id, target, pos: Vector2, mode, stare, wait, retreat_s, watchers }
 var horrors := {}
@@ -139,6 +141,16 @@ func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:
 	_exposure[peer] = 0.0
 	_need.erase(peer)
 	return horror["id"]
+
+
+## Depuração: manda todos os Calados embora e tira o sossego, para chamar de
+## novo na hora. Devolve as mensagens aos clientes, como update.
+func dismiss_all(now_ms: int) -> Array:
+	var out := []
+	for horror in horrors.values():
+		_remove(horror, now_ms, out)
+	_rest_until.clear()
+	return out
 
 
 ## Quanto o Calado pesa sobre o som a uma distância: 0 (longe) a 1 (ao lado).
@@ -250,6 +262,9 @@ func _remove(horror: Dictionary, now_ms: int, out: Array) -> void:
 ## Conta o tempo que cada jogador passa exposto e faz o Calado aparecer.
 func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary, fires: Array) -> void:
 	if not hunting(peer).is_empty():
+		return
+	if not spawning:
+		_exposure[peer] = 0.0
 		return
 	if not _exposed(peer, players, fires) or now_ms < int(_rest_until.get(peer, 0)):
 		_exposure[peer] = maxf(float(_exposure.get(peer, 0.0)) - delta * 2.0, 0.0)

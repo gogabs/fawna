@@ -147,6 +147,23 @@ func summon(peer: int, distance := Horrors.SPAWN_DISTANCE) -> int:
 	return horrors.summon(peer, get_parent().state.players, distance)
 
 
+## Depuração: manda os Calados embora (e avisa quem os ouvia).
+func debug_dismiss() -> int:
+	if horrors == null:
+		return 0
+	var count := horrors.horrors.size()
+	for message in horrors.dismiss_all(Time.get_ticks_msec()):
+		if message[1] == "gone":
+			horror_gone.rpc_id(message[0], message[2][0])
+	return count
+
+
+## Depuração: liga ou desliga as aparições sozinhas do Calado.
+func debug_set_spawning(on: bool) -> void:
+	if horrors != null:
+		horrors.spawning = on
+
+
 # --- Avisos do servidor (executados nos clientes) ------------------------------
 
 @rpc("authority", "call_local", "unreliable_ordered")
