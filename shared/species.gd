@@ -40,8 +40,6 @@ const TAGS := {
 		"text": "Pulo curto, com espera entre usos, e o pouso faz barulho."},
 	"uivo": {"name": "Uivo", "effects": {},
 		"text": "Som que os amigos ouvem de longe, com direção, e que também atrai o Calado."},
-	"construtor": {"name": "Construtor", "effects": {},
-		"text": "Trabalha mais rápido nas obras, mas coleta mais devagar."},
 }
 
 const ORDER: Array[String] = ["urso", "boi", "hipopotamo", "cervo", "cabra", "lebre", "lobo", "raposa", "onca", "javali"]
@@ -65,7 +63,7 @@ const DATA := {
 		"description": "Híbrida de humana e raposa, de pelo cor de cinza e uma brasa viva no olhar."},
 	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["veloz", "salto"],
 		"description": "Híbrida de humana e onça, de pelagem negra e passos que quase não pesam."},
-	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "construtor"],
+	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "resistente"],
 		"description": "Híbrido de humano e javali, de pele escura como carvão e presas curtas."},
 }
 
