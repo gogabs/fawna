@@ -1,51 +1,78 @@
 class_name Species
 extends RefCounted
-## Espécies dos personagens: dão identidade a cada criatura. Todas são híbridas,
-## belas e um pouco inumanas (dark fantasy, sem fofura). Cada uma tem um traço
-## pequeno, de uns 10 a 15%, para ninguém ficar muito à frente.
+## Espécies dos personagens: dão identidade a cada criatura. São híbridos de
+## humano e animal (voz humana, algumas feições animais, habilidades animais),
+## belos e um pouco inumanos (dark fantasy, sem fofura).
 ##
-## Por enquanto só a identidade vale (escolha, gravação, menu de personagem,
-## avisos). Os traços (campo "traits") ficam como dados, para ligar depois à
-## velocidade, à carga, à tocha e ao Calado, e os sons de passos e voz por
-## espécie também ficam para depois.
+## Cada espécie é uma lista de tags (TAGS), e cada tag é um pequeno pacote de
+## efeitos com um ganho e SEMPRE um custo: nenhuma tag só tem vantagem. O jogo
+## soma as tags da espécie. Para mudar o equilíbrio, mude só TAGS e DATA.
+##
+## Efeitos numéricos (multiplicadores, 1.0 = igual), em "effects":
+##   speed: velocidade de andar         capacity: carga plena da bolsa
+##   overload: lentidão da sobrecarga   axe: força do machado
+##   torch: duração da tocha            calado_hearing: alcance com que se
+##   calado_noise: o Calado percebe de mais longe (ou mais perto)       ouve o Calado
+##   calado_delay: tempo que o Calado leva até chegar
+## Por enquanto os efeitos ainda NÃO valem no jogo (EFFECTS_ACTIVE): as tags
+## aparecem no menu de personagem, e cada efeito entra em PR separado
+## (velocidade e carga mexem na Bag e no servidor, o Calado em horrors, etc.).
+const EFFECTS_ACTIVE := false
 ##
 ## A escolha é feita uma vez por nome de personagem e fica gravada no servidor.
 
-const ORDER: Array[String] = ["ramado", "brasido", "enraizado", "noturno"]
+const TAGS := {
+	"pesado": {"name": "Pesado", "effects": {"capacity": 1.2, "speed": 0.9},
+		"text": "Carga plena 20% maior, mas anda 10% mais devagar."},
+	"leve": {"name": "Leve", "effects": {"speed": 1.1, "capacity": 0.85},
+		"text": "Anda 10% mais rápido, mas a carga plena é 15% menor."},
+	"veloz": {"name": "Veloz", "effects": {"speed": 1.1, "calado_noise": 1.25},
+		"text": "Anda 10% mais rápido, mas faz barulho e o Calado o percebe de mais longe."},
+	"resistente": {"name": "Resistente", "effects": {"overload": 0.5, "speed": 0.95},
+		"text": "A sobrecarga custa metade da lentidão, mas anda 5% mais devagar."},
+	"audicao": {"name": "Audição apurada", "effects": {"calado_hearing": 1.3},
+		"text": "Ouve o Calado e os pássaros de mais longe, mas depois de um golpe de machado o mundo fica abafado por um instante."},
+	"furtivo": {"name": "Furtivo", "effects": {"calado_delay": 1.3, "capacity": 0.9},
+		"text": "O Calado demora mais a chegar a ele, mas a carga plena é 10% menor."},
+	"fogo": {"name": "Fogo", "effects": {"torch": 1.3},
+		"text": "A tocha dura mais e acende sem sílex, mas água funda o deixa lento e apaga a tocha."},
+	"guerreiro": {"name": "Guerreiro", "effects": {"axe": 1.15, "calado_delay": 1.2, "capacity": 0.9},
+		"text": "Machado 15% mais forte, e o Calado demora mais a chegar a ele e aos amigos perto, mas arma e armadura pesam: carga plena 10% menor."},
+	"nadador": {"name": "Nadador", "effects": {"speed": 0.95},
+		"text": "Atravessa água funda, mas em terra seca anda 5% mais devagar."},
+	"escalador": {"name": "Escalador", "effects": {"capacity": 0.9},
+		"text": "Sobe pedras e encostas, mas a carga plena é 10% menor."},
+	"salto": {"name": "Salto", "effects": {},
+		"text": "Pulo curto sobre obstáculos, mas com espera entre usos, e o pouso faz barulho."},
+	"uivo": {"name": "Uivo", "effects": {},
+		"text": "Um som que os amigos ouvem de longe, com direção, mas que também atrai o Calado."},
+	"construtor": {"name": "Construtor", "effects": {},
+		"text": "Trabalha mais rápido nas obras, mas coleta mais devagar."},
+}
 
-## "traits": multiplicadores/bônus em relação ao padrão (1.0 = igual).
-##   speed: velocidade de andar; capacity: carga da bolsa; torch: duração da
-##   tocha; axe: eficiência do machado; calado_hearing: alcance com que se
-##   percebe o Calado.
+const ORDER: Array[String] = ["urso", "boi", "hipopotamo", "cervo", "cabra", "lebre", "lobo", "raposa", "onca", "javali"]
+
 const DATA := {
-	"ramado": {
-		"name": "Ramado", "article": "um",
-		"short": "cervo e árvore",
-		"description": "Híbrido de cervo e árvore, com uma galhada coberta de musgo. Os passos são macios, quase não se ouvem.",
-		"trait_text": "Anda um pouco mais rápido e carrega um pouco menos.",
-		"traits": {"speed": 1.10, "capacity": 0.90},
-	},
-	"brasido": {
-		"name": "Brasido", "article": "um",
-		"short": "lobo de brasa",
-		"description": "Lobo de pelagem que guarda calor e olhos de brasa. Pisa com pata pesada e tem voz de uivo baixo.",
-		"trait_text": "A tocha dura mais e a fogueira acende com menos esforço.",
-		"traits": {"torch": 1.25},
-	},
-	"enraizado": {
-		"name": "Enraizado", "article": "um",
-		"short": "urso de musgo e pedra",
-		"description": "Urso lento e largo, com cascas de pedra e raiz nas costas. Os passos são fundos.",
-		"trait_text": "Carrega mais e golpeia melhor com o machado, mas anda mais devagar.",
-		"traits": {"speed": 0.90, "capacity": 1.15, "axe": 1.15},
-	},
-	"noturno": {
-		"name": "Noturno", "article": "um",
-		"short": "coruja e morcego",
-		"description": "Híbrido de coruja e morcego, com as asas dobradas como uma capa. Os passos são de garra seca e a voz é um pio fino.",
-		"trait_text": "Percebe o Calado de mais longe, mas carrega um pouco menos.",
-		"traits": {"calado_hearing": 1.3, "capacity": 0.90},
-	},
+	"urso": {"name": "Urso de musgo", "article": "um", "tags": ["pesado", "guerreiro"],
+		"description": "Híbrido de humano e urso, largo, com musgo crescendo nos ombros."},
+	"boi": {"name": "Boi de chifre-ferro", "article": "um", "tags": ["pesado", "resistente"],
+		"description": "Híbrido de humano e boi, com chifres escuros como ferro velho."},
+	"hipopotamo": {"name": "Hipopótamo de lodo", "article": "um", "tags": ["pesado", "nadador"],
+		"description": "Híbrido de humano e hipopótamo, de pele grossa e sempre coberta de lodo."},
+	"cervo": {"name": "Cervo de galhada-musgo", "article": "um", "tags": ["leve", "veloz"],
+		"description": "Híbrido de humano e cervo, com uma galhada coberta de musgo."},
+	"cabra": {"name": "Cabra-montesa", "article": "uma", "tags": ["leve", "escalador"],
+		"description": "Híbrida de humana e cabra-montesa, de chifres curvos e pés firmes na pedra."},
+	"lebre": {"name": "Lebre-de-sombra", "article": "uma", "tags": ["leve", "audicao", "salto"],
+		"description": "Híbrida de humana e lebre, de orelhas longas e pelagem escura como sombra."},
+	"lobo": {"name": "Lobo cinzento", "article": "um", "tags": ["guerreiro", "uivo"],
+		"description": "Híbrido de humano e lobo, de pelagem cinzenta e olhar fixo."},
+	"raposa": {"name": "Raposa de cinza", "article": "uma", "tags": ["furtivo", "fogo"],
+		"description": "Híbrida de humana e raposa, de pelo cor de cinza e uma brasa viva no olhar."},
+	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["veloz", "nadador", "escalador"],
+		"description": "Híbrida de humana e onça, de pelagem negra e passos que quase não pesam."},
+	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "construtor"],
+		"description": "Híbrido de humano e javali, de pele escura como carvão e presas curtas."},
 }
 
 
@@ -53,35 +80,53 @@ static func is_species(id: String) -> bool:
 	return DATA.has(id)
 
 
-## "Ramado"; vazio para uma espécie desconhecida ou ainda não escolhida.
+## "Urso de musgo"; vazio para uma espécie desconhecida ou ainda não escolhida.
 static func display_name(id: String) -> String:
 	return str(DATA[id]["name"]) if DATA.has(id) else ""
 
 
-## "um Ramado, cervo e árvore" (para a escolha) ou "sem espécie".
+static func article(id: String) -> String:
+	return str(DATA[id]["article"]) if DATA.has(id) else "um"
+
+
+## "um Urso de musgo", ou "sem espécie".
 static func label(id: String) -> String:
 	if not DATA.has(id):
 		return "sem espécie"
-	return "%s, %s" % [display_name(id), DATA[id]["short"]]
+	return "%s %s" % [DATA[id]["article"], display_name(id)]
 
 
 static func description(id: String) -> String:
 	return str(DATA[id]["description"]) if DATA.has(id) else ""
 
 
-static func trait_text(id: String) -> String:
-	return str(DATA[id]["trait_text"]) if DATA.has(id) else ""
+static func tags_of(id: String) -> Array:
+	return DATA[id]["tags"] if DATA.has(id) else []
 
 
-## Multiplicador de um traço (1.0 se a espécie não mexe nele).
-static func trait_value(id: String, key: String) -> float:
-	if not DATA.has(id):
-		return 1.0
-	return float(DATA[id]["traits"].get(key, 1.0))
+## "Pesado, Guerreiro" (para o menu).
+static func tag_names(id: String) -> String:
+	var names: PackedStringArray = []
+	for tag: String in tags_of(id):
+		names.append(str(TAGS[tag]["name"]))
+	return ", ".join(names)
 
 
-## "Lia, um Ramado" ou só o nome, se ainda não escolheu.
+## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".
+static func tag_text(tag: String) -> String:
+	return "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+
+
+## Multiplicador de um efeito, somando as tags da espécie (1.0 se nenhuma mexe).
+static func effect(id: String, key: String) -> float:
+	var value := 1.0
+	for tag: String in tags_of(id):
+		value *= float(TAGS[tag]["effects"].get(key, 1.0))
+	return value
+
+
+## "Lia, um Urso de musgo" ou só o nome, se ainda não escolheu.
 static func with_name(player_name: String, id: String) -> String:
 	if not DATA.has(id):
 		return player_name
-	return "%s, %s %s" % [player_name, DATA[id]["article"], display_name(id)]
+	return "%s, %s" % [player_name, label(id)]

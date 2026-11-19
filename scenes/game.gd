@@ -326,9 +326,9 @@ func species_chosen(id: int, species_id: String) -> void:
 		return
 	players[id]["species"] = species_id
 	if id == my_id:
-		Speech.say("Você agora é %s %s." % [Species.DATA[species_id]["article"], Species.display_name(species_id)])
+		Speech.say("Você agora é %s." % Species.label(species_id))
 	else:
-		Speech.say("%s é %s %s." % [players[id]["name"], Species.DATA[species_id]["article"], Species.display_name(species_id)], false)
+		Speech.say("%s é %s." % [players[id]["name"], Species.label(species_id)], false)
 	_menu.sync()
 
 
@@ -2047,7 +2047,8 @@ func _character_items() -> Array:
 		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
 	if Species.is_species(species_id):
 		items.append({"label": "Espécie: %s" % Species.display_name(species_id),
-			"info": "%s %s" % [Species.description(species_id), Species.trait_text(species_id)]})
+			"info": "%s Tags: %s." % [Species.description(species_id), Species.tag_names(species_id)]})
+		items.append({"label": "Tags", "open": _tag_items.bind(species_id)})
 	else:
 		items.append({"label": "Escolher espécie", "open": _species_choices})
 	return items
@@ -2057,17 +2058,28 @@ func _character_items() -> Array:
 func _species_choices() -> Array:
 	var items := []
 	for id: String in Species.ORDER:
-		items.append({"label": Species.label(id), "open": _species_confirm.bind(id)})
+		items.append({"label": "%s, %s" % [Species.display_name(id), Species.tag_names(id)],
+			"open": _species_confirm.bind(id)})
 	return items
 
 
 func _species_confirm(id: String) -> Array:
-	return [
-		{"label": "Sobre", "info": Species.description(id)},
-		{"label": "Traço", "info": Species.trait_text(id)},
-		{"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
-			"run": _choose_species.bind(id), "close": true},
-	]
+	var items := [{"label": "Sobre", "info": Species.description(id)}]
+	items.append_array(_tag_items(id))
+	items.append({"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
+		"run": _choose_species.bind(id), "close": true})
+	return items
+
+
+## Uma opção por tag da espécie, com o que ela dá e o que custa.
+func _tag_items(id: String) -> Array:
+	var items := []
+	for tag: String in Species.tags_of(id):
+		var text := Species.tag_text(tag)
+		if not Species.EFFECTS_ACTIVE:
+			text += " Ainda sem efeito no jogo."
+		items.append({"label": Species.TAGS[tag]["name"], "info": text})
+	return items
 
 
 func _choose_species(id: String) -> String:
