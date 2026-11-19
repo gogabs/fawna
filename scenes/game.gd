@@ -2827,11 +2827,45 @@ func _run_auto_commands() -> void:
 				Speech.say(_menu.open_at("Obras do povoado", _site_kinds))
 			"ABRIGO":  # testes: escolhe a primeira âncora com espaço e começa um abrigo 4x4 com a porta ao sul
 				_test_site()
+			"ABRIGOS":  # testes, só quem hospeda: povoado e quatro abrigos prontos (3, 4, 5 e 6 casas) aqui perto
+				_test_shelters()
 			"PREPARO":  # testes: limpa e capina o terreno da obra, casa a casa, pelo servidor
 				await _test_prepare()
 			"SAIR":
 				Net.stop()
 				get_tree().quit()
+
+
+## Teste: um povoado e quatro abrigos prontos, de 3, 4, 5 e 6 casas, em volta de
+## quem hospeda. Os donos e o armário se validam entrando em cada um.
+func _test_shelters() -> void:
+	if state == null:
+		return
+	if not state.builds.has_settlement(world.region_of(WorldGen.cell_of(_pos))):
+		_test_settlement()
+	var here := WorldGen.cell_of(_pos)
+	var region := world.region_of(here)
+	for size in [3, 4, 5, 6]:
+		var placed := false
+		for r in range(5, 60, 2):
+			for dx in range(-r, r + 1, 2):
+				for dy in [-r, r]:
+					for spot: Vector2i in [here + Vector2i(dx, dy), here + Vector2i(dy, dx)]:
+						if placed or not state.builds.site_refusal("abrigo", spot, size, "sul").is_empty():
+							continue
+						var made: Dictionary = state.builds.start_site("abrigo", spot, size, "sul")
+						var build: Dictionary = state.builds.get_build(int(made["id"]))
+						build["done"] = true
+						build["phase"] = "obra"
+						build["stage"] = Crafting.stage_count("abrigo")
+						build["prep"] = {}
+						build["removed"] = Builds.footprint_cells(spot, size)
+						state.builds._register_walls(build)
+						print("[teste] abrigo %dx%d em %s" % [size, size, spot])
+						placed = true
+			if placed:
+				break
+	build_snapshot.rpc(state.builds.snapshot())
 
 
 ## Teste: um marco com nome e uma fogueira prontos perto de quem hospeda.
