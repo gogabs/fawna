@@ -41,6 +41,12 @@ var world: WorldGen
 var _builds := {}
 var _by_cell := {}  # Vector2i -> id
 var _next_id := 1
+## Casas que uma obra desmontada deixou limpas: continuam sem árvore, arbusto
+## ou bambu (world.removed), mesmo sem a obra.
+var _cleared := {}
+## Só no servidor: id -> { "hits": int, "at": hora do último golpe }. Golpes de
+## machado numa obra para desmontá-la; esfriam sozinhos (WRECK_COOLDOWN).
+var _wreck := {}
 
 ## O que uma casa é para quem quer construir nela (cell_status).
 const FREE := 0  # chão livre
@@ -57,6 +63,13 @@ const POST_REACH := 2.2
 const FURNITURE_REACH := 1.6
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
 const DOOR_REACH := 1.6  # só na frente da porta, dentro ou fora
+## Desmontar: fração dos materiais das etapas prontas que volta (o resto se
+## perde), golpes mínimo e máximo de machado, e segundos sem golpe para os
+## golpes dados se perderem.
+const SALVAGE := 0.5
+const WRECK_MIN_HITS := 4
+const WRECK_MAX_HITS := 40
+const WRECK_COOLDOWN := 15.0
 
 
 func _init(new_world: WorldGen) -> void:
@@ -1079,6 +1092,8 @@ func snapshot(at_time := -1.0) -> Array:
 	var out := []
 	for id: int in _builds:
 		out.append(info(id, at_time))
+	if not _cleared.is_empty():
+		out.append({"cleared": _cells_to_list(_cleared.keys())})
 	return out
 
 
@@ -1087,8 +1102,15 @@ func apply_snapshot(data: Array, at_time := -1.0) -> void:
 		_unregister(build)
 	_builds.clear()
 	_by_cell.clear()
+	for cell: Vector2i in _cleared:
+		world.removed.erase(cell)
+	_cleared.clear()
 	for entry in data:
-		if typeof(entry) == TYPE_DICTIONARY:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if entry.has("cleared"):
+			_load_cleared(entry["cleared"])
+		else:
 			apply_info(entry, at_time)
 
 
@@ -1107,11 +1129,12 @@ func to_save() -> Dictionary:
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
 			"stock": build["stock"], "owners": build["owners"], "lockers": build["lockers"],
 		})
-	return {"next_id": _next_id, "list": list}
+	return {"next_id": _next_id, "list": list, "cleared": _cells_to_list(_cleared.keys())}
 
 
 func load_save(data: Dictionary) -> void:
 	_next_id = maxi(1, int(data.get("next_id", 1)))
+	_load_cleared(data.get("cleared", []))
 	for entry in data.get("list", []):
 		if typeof(entry) != TYPE_DICTIONARY or not Crafting.BUILDS.has(str(entry.get("kind", ""))):
 			continue
@@ -1129,6 +1152,13 @@ func load_save(data: Dictionary) -> void:
 			entry, float(entry.get("dry_until", 0.0))))
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
 	burn_out()
+
+
+func _load_cleared(list: Array) -> void:
+	for entry in list:
+		var cell := Vector2i(int(entry[0]), int(entry[1]))
+		_cleared[cell] = true
+		world.removed[cell] = true
 
 
 ## Completa uma construção com os campos das grandes (tamanho, preparo,
@@ -1218,6 +1248,193 @@ func _unregister(build: Dictionary) -> void:
 		world.built.erase(cell)
 	for cell: Vector2i in build["removed"]:
 		world.removed.erase(cell)
+
+
+# --- Desmontar ---------------------------------------------------------------------
+
+## As casas que se golpeiam para desmontar uma obra: a casa única das pequenas;
+## nas grandes, a borda do quadrado (parede e porta) e os móveis, depois que as
+## paredes subiram; antes, só os quatro cantos do canteiro.
+static func wreck_cells(build: Dictionary) -> Array:
+	var size := int(build.get("size", 1))
+	if size <= 1:
+		return [build["cell"]]
+	var cells := []
+	if walls_up(build):
+		for cell: Vector2i in footprint_cells(build["cell"], size):
+			var inner: Vector2i = cell - build["cell"]
+			if inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1:
+				cells.append(cell)
+		if bool(build.get("done", false)):
+			for cell: Vector2i in furniture_cells(build).values():
+				cells.append(cell)
+	else:
+		for i in POSTS:
+			cells.append(post_cell(build, i))
+	return cells
+
+
+## A casa de obra mais perto de "pos" (de preferência à frente) que se pode
+## golpear para desmontar, até "reach" casas. Devolve { id, cell } ou {}.
+func wreck_target(pos: Vector2, ahead: Vector2, reach: float) -> Dictionary:
+	var best := {}
+	var best_score := INF
+	for build: Dictionary in _builds.values():
+		for cell: Vector2i in wreck_cells(build):
+			var offset := WorldGen.cell_center(cell) - pos
+			var distance := offset.length()
+			if distance > reach:
+				continue
+			var score := distance - (0.6 if distance > 0.01 and ahead.dot(offset / distance) > 0.5 else 0.0)
+			if score < best_score:
+				best_score = score
+				best = {"id": build["id"], "cell": cell}
+	return best
+
+
+## Batidas de trabalho já gastas na obra (as das etapas prontas e a da atual).
+func invested_work(build: Dictionary) -> int:
+	var total := 0
+	for i in mini(int(build["stage"]), Crafting.stage_count(build["kind"])):
+		total += int(Crafting.stage_of(build["kind"], i, int(build["size"]))["work"])
+	if not bool(build["done"]) and str(build["phase"]) == "obra":
+		total += int(build["work"])
+	return total
+
+
+## Golpes de machado para desmontar: mais batidas já gastas, mais golpes.
+func wreck_hits(id: int) -> int:
+	var build := get_build(id)
+	if build.is_empty():
+		return 0
+	return clampi(ceili(invested_work(build) * 0.6), WRECK_MIN_HITS, WRECK_MAX_HITS)
+
+
+## Por que não dá para desmontar agora ("" = dá): "povoado" (um marco com
+## outras construções na região: desmonte-as antes) ou "acesa" (fogueira acesa).
+func demolish_refusal(id: int, at_time := -1.0) -> String:
+	var build := get_build(id)
+	if build.is_empty():
+		return "desconhecida"
+	if build["kind"] == "marco":
+		for other: Dictionary in in_region(build["region"]):
+			if other["id"] != id:
+				return "povoado"
+	if Crafting.BUILDS[build["kind"]].get("fire", false) and is_lit(id, at_time):
+		return "acesa"
+	return ""
+
+
+## O que volta ao desmontar: metade (arredondada para baixo) dos materiais das
+## etapas prontas e, da etapa em andamento, tudo o que foi depositado se ainda
+## ninguém trabalhou nela, senão metade. Não inclui o estoque (volta inteiro).
+func salvage(build: Dictionary) -> Dictionary:
+	var back := {}
+	var kind: String = build["kind"]
+	for i in mini(int(build["stage"]), Crafting.stage_count(kind)):
+		var materials: Dictionary = Crafting.stage_of(kind, i, int(build["size"]))["materials"]
+		for item: String in materials:
+			var part := floori(int(materials[item]) * SALVAGE)
+			if part > 0:
+				back[item] = int(back.get(item, 0)) + part
+	if not bool(build["done"]) and str(build["phase"]) == "obra":
+		var fraction := 1.0 if int(build["work"]) == 0 else SALVAGE
+		for item: String in build["deposited"]:
+			var part := floori(int(build["deposited"][item]) * fraction)
+			if part > 0:
+				back[item] = int(back.get(item, 0)) + part
+	return back
+
+
+## Onde cai o que sobra de uma obra desmontada: a casa dela, ou, nas grandes,
+## as casas de dentro (sem os móveis).
+static func spill_cells(build: Dictionary) -> Array:
+	var size := int(build.get("size", 1))
+	if size <= 1:
+		return [build["cell"]]
+	var taken := furniture_cells(build).values() if bool(build.get("done", false)) else []
+	var cells := []
+	for dy in range(1, size - 1):
+		for dx in range(1, size - 1):
+			var cell: Vector2i = build["cell"] + Vector2i(dx, dy)
+			if not taken.has(cell):
+				cells.append(cell)
+	return cells
+
+
+## Divide "items" (item -> quantidade) entre "cells", o mais igual possível.
+## Devolve { casa: { item: quantidade } }.
+static func spread(items: Dictionary, cells: Array) -> Dictionary:
+	var piles := {}
+	if cells.is_empty():
+		return piles
+	var shift := 0
+	for item: String in items:
+		var amount := int(items[item])
+		for i in cells.size():
+			var part := amount / cells.size() + (1 if (i + shift) % cells.size() < amount % cells.size() else 0)
+			if part > 0:
+				var pile: Dictionary = piles.get(cells[i], {})
+				pile[item] = int(pile.get(item, 0)) + part
+				piles[cells[i]] = pile
+		shift += 1
+	return piles
+
+
+## Um golpe de machado para desmontar a obra "id". Devolve { ok, reason } nas
+## recusas (demolish_refusal) ou { ok, event, hits_left, total, first }; o
+## evento "derrubada" diz que este golpe completou a conta (quem chama então
+## usa demolish).
+func strike_wreck(id: int, at_time := -1.0) -> Dictionary:
+	var reason := demolish_refusal(id, at_time)
+	if not reason.is_empty():
+		return {"ok": false, "reason": reason}
+	if at_time < 0.0:
+		at_time = now()
+	var entry: Dictionary = _wreck.get(id, {"hits": 0, "at": at_time})
+	if at_time - float(entry["at"]) > WRECK_COOLDOWN:
+		entry["hits"] = 0
+	entry["hits"] = int(entry["hits"]) + 1
+	entry["at"] = at_time
+	var total := wreck_hits(id)
+	if int(entry["hits"]) >= total:
+		return {"ok": true, "event": "derrubada", "hits_left": 0, "total": total, "first": false}
+	_wreck[id] = entry
+	return {"ok": true, "event": "golpe", "hits_left": total - int(entry["hits"]), "total": total, "first": int(entry["hits"]) == 1}
+
+
+## Desmonta a obra: tira-a do mundo (as casas que ela limpou continuam limpas)
+## e devolve { ok, kind, title, piles: { casa: { item: qtd } }, back: { item:
+## qtd } }, com o que sobrou do material e o estoque espalhados dentro do
+## terreno. Quem chama põe as pilhas no chão.
+func demolish(id: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	var title := title_of(id)
+	var back := salvage(build)
+	for item: String in build["stock"]:
+		back[item] = int(back.get(item, 0)) + int(build["stock"][item])
+	var piles := spread(back, spill_cells(build))
+	var kind: String = build["kind"]
+	remove_build(id)
+	return {"ok": true, "kind": kind, "title": title, "piles": piles, "back": back}
+
+
+## Tira a obra do mundo, sem devolver nada (o servidor usa em demolish; o
+## cliente, quando o servidor avisa). Árvores e arbustos que ela arrancou não
+## voltam.
+func remove_build(id: int) -> void:
+	var build := get_build(id)
+	if build.is_empty():
+		return
+	for cell: Vector2i in build["removed"]:
+		_cleared[cell] = true
+	_unregister(build)
+	_builds.erase(id)
+	_wreck.erase(id)
+	for cell: Vector2i in _cleared:
+		world.removed[cell] = true
 
 
 # --- Fala -------------------------------------------------------------------------

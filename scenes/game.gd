@@ -639,6 +639,28 @@ func request_prep(build_id: int, cell: Vector2i) -> void:
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
 
 
+## J com o machado numa obra (parede, canto, casa do marco ou da fogueira): vários
+## golpes desmontam. O que volta cai no chão dentro do terreno.
+@rpc("any_peer", "call_local", "reliable")
+func request_wreck(build_id: int, cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_tell_others_handled(id, "golpeou")
+	var result := state.wreck_build(id, build_id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] in ["ferramenta", "povoado", "acesa"]:
+			action_failed.rpc_id(id, "desmontar_" + result["reason"], str(result.get("tool", "")))
+		return
+	_dirty = true
+	if result["event"] == "golpe":
+		build_struck.rpc(build_id, cell, int(result["hits_left"]), int(result["total"]), bool(result["first"]), id)
+		return
+	for pile_cell: Vector2i in result["piles"]:
+		ground_changed.rpc(pile_cell, result["piles"][pile_cell], "sobrou", id, {})
+	build_demolished.rpc(build_id, cell, str(result["title"]), str(result["kind"]), result["back"], id)
+
+
 ## Espaço num marco pronto, com uma fogueira na mesma região: o nome do
 ## povoado, escolhido nas duas listas (índices em SettlementNames).
 @rpc("any_peer", "call_local", "reliable")
@@ -1044,6 +1066,38 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 				Crafting.material_text(extra.get("item", ""), 1).trim_prefix("1 "), minutes, "" if minutes == 1 else "s"])
 
 
+## Um golpe de machado numa obra que está sendo desmontada. Soa onde bateu;
+## quem bateu ouve, no primeiro golpe, quantos faltam.
+@rpc("authority", "call_local", "reliable")
+func build_struck(build_id: int, cell: Vector2i, hits_left: int, total: int, first: bool, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.build_knock(), 0.0, true, true)
+	if by_id == my_id and first:
+		Speech.say("Você começa a desmontar %s. Uns %d golpes de machado." % [builds.spoken_name(build_id), total])
+
+
+## A obra veio abaixo: sai do mundo e o que sobrou está no chão, dentro do terreno.
+@rpc("authority", "call_local", "reliable")
+func build_demolished(build_id: int, cell: Vector2i, title: String, kind: String, back: Dictionary, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	builds.remove_build(build_id)
+	_unstick()
+	_refresh_fires()
+	_sync_menu.call_deferred()
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.build_stage(), 0.0, true, true)
+	if by_id != my_id:
+		return
+	var left := "" if back.is_empty() else " Sobrou no chão, dentro do terreno: %s." % Economy.items_text(back)
+	var article: String = Crafting.BUILDS[kind]["article"] if Crafting.BUILDS.has(kind) else "o"
+	Speech.say("Você desmontou %s %s.%s" % [article, Crafting.build_name(kind), left])
+
+
 ## Uma arma ficou pronta e foi para a bolsa.
 @rpc("authority", "call_local", "reliable")
 func crafted(new_bag: Dictionary, weapon: String) -> void:
@@ -1209,6 +1263,12 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Esse tamanho ou essa porta não serve.")
 		"obra_regiao_longe":
 			Speech.say("Só dá para marcar o terreno de uma obra na região em que você está.")
+		"desmontar_povoado":
+			Speech.say("O marco só se desmonta quando não resta outra construção no povoado. Desmonte as outras antes.")
+		"desmontar_acesa":
+			Speech.say("A fogueira está acesa. Espere apagar para desmontá-la.")
+		"desmontar_ferramenta":
+			Speech.say("Para desmontar uma obra, empunhe o machado.")
 		"preparo_ferramenta":
 			Speech.say("Para esta fase, empunhe %s pela Bolsa." % Bag.with_article(detail) if not detail.is_empty() else "Empunhe a ferramenta certa.")
 		"preparo_fase":
@@ -1794,6 +1854,14 @@ func _swing() -> void:
 		if not prep.is_empty():
 			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
+			return
+	if wielded == "machado":
+		# Sem bambu à frente, o machado desmonta a obra ao alcance (paredes,
+		# cantos, marco, fogueira): muitos golpes, ver Builds.wreck_hits.
+		var wreck := builds.wreck_target(_pos, Compass.forward(_heading), STRIKE_REACH)
+		if not wreck.is_empty() and _strike_target() == WorldGen.NO_CELL:
+			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
+			request_wreck.rpc_id(1, int(wreck["id"]), wreck["cell"])
 			return
 	if wielded == "faca":
 		# A faca só serve para sangrar o tronco de uma árvore.

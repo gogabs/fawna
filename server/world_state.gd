@@ -511,6 +511,46 @@ func prep_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
 	return result
 
 
+## Um golpe de machado numa obra ao alcance, para desmontá-la (Builds.strike_wreck).
+## Quem chama é o J com o machado; aqui se confere o machado nas mãos, a casa
+## (Builds.wreck_cells) e o alcance. Quando o golpe completa a conta, a obra
+## some: o material que volta e o estoque caem no chão, dentro do terreno.
+## Devolve { ok, reason } nas recusas ("ferramenta", "longe", "devagar", "casa",
+## "povoado", "acesa") ou { ok, event, hits_left, total, first, cell } e, se
+## foi a última, também { kind, title, piles, back }.
+func wreck_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if wielding(id) != "machado":
+		return {"ok": false, "reason": "ferramenta"}
+	if not Builds.wreck_cells(build).has(cell):
+		return {"ok": false, "reason": "casa"}
+	if players[id]["pos"].distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	var result := builds.strike_wreck(build_id)
+	if not result["ok"]:
+		return result
+	result["cell"] = cell
+	if result["event"] == "derrubada":
+		var gone := builds.demolish(build_id)
+		var piles := {}
+		for pile_cell: Vector2i in gone["piles"]:
+			ground.add_items(pile_cell, gone["piles"][pile_cell])
+			piles[pile_cell] = ground.items_at(pile_cell)
+		result["kind"] = gone["kind"]
+		result["title"] = gone["title"]
+		result["back"] = gone["back"]
+		result["piles"] = piles
+	return result
+
+
 ## O que uma árvore, bambu ou arbusto arrancado deixa no chão: o mesmo que
 ## daria ao ser colhido (Harvest.SOURCES), já com os tamanhos sorteados.
 ## Precisa ser chamado antes de a casa ser limpa.
