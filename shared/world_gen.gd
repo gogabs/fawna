@@ -210,6 +210,8 @@ const BEACH_WIDTH := 5.0
 ## Charcos do brejo: poças onde o ruído das margens passa deste nível.
 const POOL_LEVEL := 0.3
 const POOL_BANK := 0.12  # no mesmo ruído: a beira lamacenta da poça
+const POOL_WET_BONUS := 0.12  # perto de rio ou lago, o nível baixa: mais poças
+const POOL_WET_REACH := 8.0  # casas da margem
 const STONE_WASTE_CHANCE := 0.012  # o deserto gelado é pedregoso
 const STONE_MOUNTAIN_CHANCE := 0.02  # e a montanha mais ainda
 ## Árvores: o bosque é uma mata fechada. Em cada casa fora das trilhas há essa
@@ -349,7 +351,7 @@ func _pick_biome(region: Vector2i) -> Biome:
 		return Biome.MONTANHA
 	if heat < COLD_LEVEL:
 		return Biome.FLORESTA_GELADA if humidity > 0.0 else Biome.DESERTO_GELADO
-	if humidity > MARSH_HUMIDITY or (land < SEA_LEVEL + MARSH_SHORE and humidity > 0.0):
+	if humidity > MARSH_HUMIDITY or (land < SEA_LEVEL + MARSH_SHORE and humidity > 0.0) or _hydro.is_wetland(region):
 		return Biome.BREJO
 	if _hydro.is_lake(region):
 		return Biome.LAGOA
@@ -675,7 +677,7 @@ func _bamboo_chance(cell: Vector2i, region: Vector2i, biome: Biome, around: Pack
 	var shore := water_shore(cell)
 	if shore >= BAMBOO_LAKE_FROM and shore < BAMBOO_LAKE_TO:
 		return BAMBOO_WATER_CHANCE
-	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
+	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > _pool_level(cell) - POOL_BANK:
 		return BAMBOO_WATER_CHANCE
 	return 0.0
 
@@ -686,7 +688,7 @@ func is_waterside(cell: Vector2i) -> bool:
 	var biome := region_biome(region_of(cell))
 	if biome == Biome.MAR:
 		return true  # praia
-	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
+	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > _pool_level(cell) - POOL_BANK:
 		return true
 	return water_shore(cell) < WATERSIDE_BANK
 
@@ -701,13 +703,19 @@ func _is_clay(cell: Vector2i, _region: Vector2i, biome: Biome) -> bool:
 	var shore := water_shore(cell)
 	if shore >= 0.0 and shore < CLAY_BANK:
 		return true
-	return biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK
+	return biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > _pool_level(cell) - POOL_BANK
+
+
+## Nível do ruído acima do qual há charco: mais baixo (mais poças) perto da água
+## corrente, onde o brejo alaga.
+func _pool_level(cell: Vector2i) -> float:
+	return POOL_LEVEL - POOL_WET_BONUS if water_shore(cell) < POOL_WET_REACH else POOL_LEVEL
 
 
 func _is_water(cell: Vector2i, _region: Vector2i, biome: Biome) -> Thing:
 	if biome == Biome.MAR:
 		return Thing.NADA if is_beach(cell) else Thing.MAR
-	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL:
+	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > _pool_level(cell):
 		return Thing.CHARCO
 	# Rios e lagos, das bacias. A Origem fica sempre seca.
 	if cell_center(cell).distance_to(origin_point()) < ORIGIN_DRY_RADIUS:

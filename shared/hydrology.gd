@@ -40,6 +40,12 @@ const RUNOFF_BASE := 0.9
 const RUNOFF_HUMIDITY := 0.5
 const RUNOFF_MAX := 1.5
 const MOUNTAIN_SPRING_CHANCE := 0.85  # montanha com nascente própria
+## Brejo (pântano): onde a água se acumula devagar.
+const DELTA_Q := 5.0  # vazão da região para um rio grande abrir foz em brejo
+const BASIN_HUMIDITY := -0.2  # bacia plana sem lago vira brejo se for minimamente úmida
+const RIM_Q := 6.0  # vazão do lago para ele ter orla de brejo nas regiões vizinhas
+const RIM_HUMIDITY := 0.1
+const RIM_CHANCE := 0.6
 const NO_DRAIN := Vector2i(1 << 30, 1 << 30)  # sem saída: bacia fechada
 const NEIGHBORS: Array[Vector2i] = [
 	Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(-1, 0),
@@ -221,3 +227,27 @@ func _build_river(region: Vector2i) -> Array:
 			width *= smoothstep(0.0, 0.5, t)
 		widths.append(width)
 	return [points, widths]
+
+
+# --- Brejo ---------------------------------------------------------------------
+
+## A região é um pântano pela água? Três casos: a foz de um rio grande no mar
+## (delta), uma bacia fechada plana, que não acumula água para virar lago, e a
+## orla baixa de um lago grande. A Origem, o mar, as montanhas e os lagos em si
+## ficam de fora; o resto do brejo vem do clima (WorldGen._pick_biome).
+func is_wetland(region: Vector2i) -> bool:
+	if region == Vector2i.ZERO or is_sea(region) or _climate_of(region).x > WorldGen.MOUNTAIN_LEVEL or is_lake(region):
+		return false
+	var humidity := _climate_of(region).z
+	if drain(region) == NO_DRAIN:
+		return humidity > BASIN_HUMIDITY
+	if has_river(region) and discharge(region) >= DELTA_Q:
+		for offset in NEIGHBORS:
+			if is_sea(region + offset):
+				return true
+	if humidity > RIM_HUMIDITY and _world.region_random(region, "orla_brejo") < RIM_CHANCE:
+		for offset: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+			var other: Vector2i = region + offset
+			if is_lake(other) and discharge(other) >= RIM_Q and height(region) <= height(other) + 0.3:
+				return true
+	return false
