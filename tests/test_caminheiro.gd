@@ -200,8 +200,8 @@ func _test_resources() -> void:
 	var start := _free_point(world, WorldGen.center_point() + Vector2(0, 1.5))
 	for entry: Array in GameScript.CAMINHEIRO_RESOURCES:
 		var cell: Vector2i = GameScript.nearest_collectable(world, harvest, start, entry[1], GameScript.RESOURCE_SEARCH_RADIUS)
-		if entry[0] in ["Frutas", "Madeira", "Cipó", "Fibra vegetal"] and cell == WorldGen.NO_CELL:
-			continue  # frutas são raras; árvores, cipó e fibra só nascem no bosque: pode não haver nenhuma no raio
+		if entry[0] in ["Frutas", "Madeira", "Cipó", "Fibra vegetal", "Argila"] and cell == WorldGen.NO_CELL:
+			continue  # frutas são raras; árvores, cipó e fibra só nascem no bosque; argila só na beira de rios e lagos: pode não haver nenhuma no raio
 		_check(cell != WorldGen.NO_CELL, "%s: deveria haver um por perto" % entry[0])
 		if cell == WorldGen.NO_CELL:
 			continue

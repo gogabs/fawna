@@ -7,7 +7,7 @@ extends SceneTree
 const LETTERS := {
 	WorldGen.Biome.BOSQUE: "B", WorldGen.Biome.PRADARIA: ".", WorldGen.Biome.LAGOA: "o",
 	WorldGen.Biome.MAR: "~", WorldGen.Biome.FLORESTA_GELADA: "F", WorldGen.Biome.DESERTO_GELADO: "_",
-	WorldGen.Biome.BAMBUZAL: "|", WorldGen.Biome.BREJO: "%",
+	WorldGen.Biome.BAMBUZAL: "|", WorldGen.Biome.BREJO: "%", WorldGen.Biome.MONTANHA: "^",
 }
 
 

@@ -18,7 +18,7 @@ extends RefCounted
 ## regiões vizinhas. Quem entra pela primeira vez nasce no ponto de encontro
 ## da região (0, 0).
 
-enum Biome { BOSQUE, PRADARIA, LAGOA, MAR, FLORESTA_GELADA, DESERTO_GELADO, BAMBUZAL, BREJO }
+enum Biome { BOSQUE, PRADARIA, LAGOA, MAR, FLORESTA_GELADA, DESERTO_GELADO, BAMBUZAL, BREJO, MONTANHA }
 ## Feição de uma região: algo que muda o lugar sem mudar o bioma. Uma clareira
 ## continua sendo bosque (ou floresta gelada), só que aberta.
 enum Feature { NENHUMA, CLAREIRA }
@@ -26,14 +26,13 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX }
+enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
 const WORLD_LIMIT := 4096  # casas a partir do centro; além disso, fim do caminho
 const TRAIL_HALF_WIDTH := 1.6  # casas: trilhas com uns 4,8 m de largura
 const TRAIL_VERGE := 1.2  # casas além da trilha em que nada nasce (acostamento)
-const LAKE_RADIUS := 9.0  # casas, antes da ondulação da margem
 const TRAIL_STEP := 0.5  # casas entre os pontos da linha de uma trilha
 const TRAIL_SWAY := 4.0  # casas que a trilha se afasta da reta, no máximo
 const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
@@ -54,6 +53,7 @@ const BIOME_NAMES := {
 	Biome.DESERTO_GELADO: "deserto gelado",
 	Biome.BAMBUZAL: "bambuzal",
 	Biome.BREJO: "brejo",
+	Biome.MONTANHA: "montanha",
 }
 
 ## Com preposição, para frases como "Você está no bosque".
@@ -66,6 +66,7 @@ const BIOME_IN := {
 	Biome.DESERTO_GELADO: "no deserto gelado",
 	Biome.BAMBUZAL: "no bambuzal",
 	Biome.BREJO: "no brejo",
+	Biome.MONTANHA: "na montanha",
 }
 
 ## "clareira do bosque": a floresta em volta de uma clareira.
@@ -82,6 +83,8 @@ const COLD_BIOMES := [Biome.FLORESTA_GELADA, Biome.DESERTO_GELADO]
 
 const THING_NAMES := {
 	Thing.RIACHO: "riacho",
+	Thing.VAU: "vau",
+	Thing.RIO: "rio",
 	Thing.ARBUSTO: "arbusto com gravetos",
 	Thing.TRILHA: "trilha",
 	Thing.PONTE: "ponte",
@@ -99,9 +102,9 @@ const THING_NAMES := {
 }
 
 ## Coisas que não deixam passar.
-const BLOCKING := [Thing.RIACHO, Thing.LAGO, Thing.BAMBU, Thing.MAR, Thing.CHARCO, Thing.ARVORE]
+const BLOCKING := [Thing.RIACHO, Thing.RIO, Thing.LAGO, Thing.BAMBU, Thing.MAR, Thing.CHARCO, Thing.ARVORE]
 ## Água, de qualquer tipo.
-const WATER := [Thing.RIACHO, Thing.LAGO, Thing.MAR, Thing.CHARCO]
+const WATER := [Thing.RIACHO, Thing.VAU, Thing.RIO, Thing.LAGO, Thing.MAR, Thing.CHARCO]
 ## Chão por onde se anda: não são "coisas" para a fala listar.
 const GROUND := [Thing.NADA, Thing.TRILHA, Thing.PONTE]
 
@@ -138,7 +141,7 @@ const BUSH_OPEN_EDGE_CHANCE := 0.12
 ## Arbustos perdidos, longe de qualquer orla.
 const BUSH_STRAY_CHANCE := {
 	Biome.BOSQUE: 0.002, Biome.PRADARIA: 0.004, Biome.LAGOA: 0.004, Biome.FLORESTA_GELADA: 0.004,
-	Biome.DESERTO_GELADO: 0.002, Biome.BAMBUZAL: 0.002, Biome.BREJO: 0.008,
+	Biome.DESERTO_GELADO: 0.002, Biome.BAMBUZAL: 0.002, Biome.BREJO: 0.008, Biome.MONTANHA: 0.003,
 }
 ## Bambuzal: orla de BAMBOO_BAND casas, de BAMBOO_EDGE_CHANCE na divisa até
 ## BAMBOO_EDGE_FADE; no miolo, BAMBOO_INSIDE_CHANCE. Todas em 1,0: o bambuzal é
@@ -148,14 +151,12 @@ const BAMBOO_EDGE_CHANCE := 1.0
 const BAMBOO_EDGE_FADE := 1.0
 const BAMBOO_INSIDE_CHANCE := 1.0
 ## Bambu na beira da água: só onde o ruído das moitas deixa (mais ou menos
-## metade das margens), para formar moitas com espaços entre elas. Na lagoa, de
-## BAMBOO_LAKE_FROM a BAMBOO_LAKE_TO casas além da margem (a argila fica mais
-## perto da água); no riacho, até BAMBOO_STREAM_BANK no ruído dos riachos; no
-## brejo, na beira lamacenta dos charcos.
+## metade das margens), para formar moitas com espaços entre elas. Nos lagos e
+## rios, de BAMBOO_LAKE_FROM a BAMBOO_LAKE_TO casas além da margem (a argila fica
+## mais perto da água); no brejo, na beira lamacenta dos charcos.
 const BAMBOO_WATER_CHANCE := 0.11
 const BAMBOO_LAKE_FROM := 1.0
 const BAMBOO_LAKE_TO := 4.5
-const BAMBOO_STREAM_BANK := 0.05
 const BAMBOO_GROVE_FREQUENCY := 0.06
 ## Classe de cada casa para achar orlas (_biomes_around): mata, campo, água
 ## e bambuzal (que também é mata).
@@ -174,6 +175,7 @@ const EDGE_GROVE := 3
 ## umas 5 a 6 regiões de largura.
 const CLIMATE_FREQUENCY := 0.09
 const SEA_LEVEL := -0.8
+const MOUNTAIN_LEVEL := 0.95  # terra acima disso é montanha (uns 7% das regiões)
 const MARSH_SHORE := 0.1  # faixa de terra baixa, acima do mar, que vira brejo
 const MARSH_HUMIDITY := 0.9  # ou qualquer lugar úmido assim
 const COLD_LEVEL := -0.55
@@ -186,9 +188,16 @@ const HOME_CALM := 1.5
 const HOME_REACH := 4.5
 const HOME_HUMID_REACH := 2.0
 const HOME_CLIMATE := Vector3(0.45, 0.35, -0.12)  # terra, temperatura, umidade
-## Lagoas: sorteadas entre as regiões amenas, mais comuns onde é úmido.
-const LAKE_CHANCE := 0.08
-const LAKE_CHANCE_HUMID := 0.14
+## Rios e lagos vêm das bacias hidrográficas (Hydrology). A margem do lago
+## ondula com o ruído por LAKE_WOBBLE. Um rio de até VAU_WIDTH casas de largura
+## é um vau, que se atravessa a pé; até STREAM_WIDTH é riacho e, acima disso,
+## rio: esses bloqueiam, e as trilhas passam por ponte.
+const LAKE_WOBBLE := 0.3
+const VAU_WIDTH := 2.0
+const STREAM_WIDTH := 6.0
+const RIVER_MIN_WIDTH := 1.2  # casas: o mais fino que um rio se desenha
+const WATER_REACH := 2  # regiões em volta do pedaço em que se procura água
+const NO_WATER := 99.0  # "distância da margem" de quem está longe de qualquer água
 ## Clareiras: só no meio da floresta (pelo menos CLEARING_FOREST_AROUND das 4
 ## vizinhas também são mata do mesmo tipo de clima).
 const CLEARING_CHANCE := 0.3
@@ -200,6 +209,7 @@ const BEACH_WIDTH := 5.0
 const POOL_LEVEL := 0.3
 const POOL_BANK := 0.12  # no mesmo ruído: a beira lamacenta da poça
 const STONE_WASTE_CHANCE := 0.012  # o deserto gelado é pedregoso
+const STONE_MOUNTAIN_CHANCE := 0.02  # e a montanha mais ainda
 ## Árvores: o bosque é uma mata fechada. Em cada casa fora das trilhas há essa
 ## chance de ter uma árvore; derrubar a árvore deixa a casa livre para sempre.
 const TREE_CHANCE := 0.72
@@ -209,8 +219,7 @@ const FRUIT_BUSH_CHANCE := 0.07
 ## Argila: só na beira da água. Chance por casa na margem das lagoas (até
 ## CLAY_BANK casas além da água) e na beira dos riachos.
 const CLAY_BANK := 2.5
-const CLAY_LAKE_CHANCE := 0.07
-const CLAY_STREAM_CHANCE := 0.05
+const CLAY_WATER_CHANCE := 0.07
 ## Pedras soltas: espalhadas pelo mundo todo, bem mais comuns na beira da
 ## água (riachos e lagoas), onde dão mais pedras pequenas (Harvest). Só nascem
 ## em casas que ficariam vazias, então o resto do mundo de cada semente não muda.
@@ -223,17 +232,15 @@ const VINE_CHANCE := 0.03
 const FIBER_CHANCE := 0.04
 const FROZEN_FOREST_SCALE := 0.2
 ## Sílex: nódulos soltos nos campos (por bioma) e, mais comuns, na beira da água.
-const FLINT_CHANCE := {Biome.PRADARIA: 0.003, Biome.DESERTO_GELADO: 0.006}
+const FLINT_CHANCE := {Biome.PRADARIA: 0.003, Biome.DESERTO_GELADO: 0.006, Biome.MONTANHA: 0.006}
 const FLINT_WATER_CHANCE := 0.008
-const WATERSIDE_LAKE_BANK := 3.0  # casas além da margem da lagoa
-const WATERSIDE_STREAM_BANK := 0.07  # no ruído dos riachos
-const STREAM_WIDTH := 0.02  # no ruído dos riachos
-const STREAM_BANK := 0.05
+const WATERSIDE_BANK := 3.0  # casas além da margem da água
 
 var world_seed: int
 var _warp_noise := FastNoiseLite.new()  # entorta bordas de regiões
 var _trail_noise := FastNoiseLite.new()  # curva as trilhas, devagar
-var _stream_noise := FastNoiseLite.new()  # riachos finos entre regiões
+var _hydro: Hydrology  # bacias: rios e lagos
+var _water_chunks := {}  # Vector2i (pedaço) -> [margem de cada casa, tipo de água de cada casa]
 var _lake_noise := FastNoiseLite.new()  # margem ondulada das lagoas
 var _grove_noise := FastNoiseLite.new()  # moitas de bambu na beira da água
 var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada casa]
@@ -260,9 +267,7 @@ func _init(new_seed: int) -> void:
 	_trail_noise.seed = new_seed + 3571
 	_trail_noise.frequency = TRAIL_BEND_FREQUENCY
 	_trail_noise.fractal_type = FastNoiseLite.FRACTAL_NONE  # sem zigue-zague miúdo
-	_stream_noise.seed = new_seed + 7919
-	_stream_noise.frequency = 0.007
-	_stream_noise.fractal_type = FastNoiseLite.FRACTAL_NONE  # riachos longos e suaves
+	_hydro = Hydrology.new(self, new_seed + 7919)
 	_lake_noise.seed = new_seed + 104729
 	_lake_noise.frequency = 0.15
 	_grove_noise.seed = new_seed + 15485863
@@ -339,11 +344,13 @@ func _pick_biome(region: Vector2i) -> Biome:
 	var humidity := climate.z
 	if land < SEA_LEVEL:
 		return Biome.MAR
+	if land > MOUNTAIN_LEVEL:
+		return Biome.MONTANHA
 	if heat < COLD_LEVEL:
 		return Biome.FLORESTA_GELADA if humidity > 0.0 else Biome.DESERTO_GELADO
 	if humidity > MARSH_HUMIDITY or (land < SEA_LEVEL + MARSH_SHORE and humidity > 0.0):
 		return Biome.BREJO
-	if _random([region.x, region.y, "lagoa"]) < (LAKE_CHANCE_HUMID if humidity > 0.0 else LAKE_CHANCE):
+	if _hydro.is_lake(region):
 		return Biome.LAGOA
 	if humidity > 0.0:
 		var bamboo := _climate_noise.get_noise_2d(region.x * 2.0 + 5000.0, region.y * 2.0 + 5000.0) * 2.0
@@ -562,6 +569,8 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 	var stone_chance := STONE_WATER_CHANCE if is_waterside(cell) else STONE_CHANCE
 	if biome == Biome.DESERTO_GELADO:
 		stone_chance = maxf(stone_chance, STONE_WASTE_CHANCE)
+	elif biome == Biome.MONTANHA:
+		stone_chance = maxf(stone_chance, STONE_MOUNTAIN_CHANCE)
 	if cell_random(cell, "pedra") < stone_chance:
 		return Thing.PEDRAS
 	# Cipó e fibra só crescem nas matas fechadas; o sílex, nos campos e na beira
@@ -657,78 +666,130 @@ func _bamboo_chance(cell: Vector2i, region: Vector2i, biome: Biome, around: Pack
 		return BAMBOO_INSIDE_CHANCE
 	if biome == Biome.MAR or _grove_noise.get_noise_2d(cell.x, cell.y) < 0.0:
 		return 0.0
-	if biome == Biome.LAGOA:
-		var shore := _lake_shore(cell, region)
-		if shore >= BAMBOO_LAKE_FROM and shore < BAMBOO_LAKE_TO:
-			return BAMBOO_WATER_CHANCE
+	var shore := water_shore(cell)
+	if shore >= BAMBOO_LAKE_FROM and shore < BAMBOO_LAKE_TO:
+		return BAMBOO_WATER_CHANCE
 	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
 		return BAMBOO_WATER_CHANCE
-	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < BAMBOO_STREAM_BANK:
-		return BAMBOO_WATER_CHANCE
 	return 0.0
-
-
-## Quantas casas a casa está além da margem da lagoa da região (negativo:
-## dentro da água).
-func _lake_shore(cell: Vector2i, region: Vector2i) -> float:
-	var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
-	var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
-	return cell_center(cell).distance_to(lake_center) - radius
 
 
 ## A casa fica perto de um riacho ou da margem de uma lagoa? (As pedras daqui
 ## são mais miúdas, roladas pela água.)
 func is_waterside(cell: Vector2i) -> bool:
-	var region := region_of(cell)
-	var biome := region_biome(region)
+	var biome := region_biome(region_of(cell))
 	if biome == Biome.MAR:
 		return true  # praia
 	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
 		return true
-	if biome == Biome.LAGOA:
-		var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
-		var distance := cell_center(cell).distance_to(lake_center)
-		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
-		if distance < radius + WATERSIDE_LAKE_BANK:
-			return true
-	return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < WATERSIDE_STREAM_BANK
+	return water_shore(cell) < WATERSIDE_BANK
 
 
-## Barro na beira da água: margem das lagoas e beira dos riachos.
-func _is_clay(cell: Vector2i, region: Vector2i, biome: Biome) -> bool:
+## Barro na beira da água: margem dos lagos e dos rios, e beira dos charcos.
+func _is_clay(cell: Vector2i, _region: Vector2i, biome: Biome) -> bool:
 	if biome == Biome.MAR:
 		return false  # na praia, só areia
 	var roll := cell_random(cell, "argila")
-	if biome == Biome.LAGOA and roll < CLAY_LAKE_CHANCE:
-		var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
-		var distance := cell_center(cell).distance_to(lake_center)
-		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
-		if distance < radius + CLAY_BANK:
-			return true
-	if biome == Biome.BREJO and roll < CLAY_LAKE_CHANCE and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK:
+	if roll >= CLAY_WATER_CHANCE:
+		return false
+	var shore := water_shore(cell)
+	if shore >= 0.0 and shore < CLAY_BANK:
 		return true
-	if roll < CLAY_STREAM_CHANCE:
-		return absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_BANK
-	return false
+	return biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL - POOL_BANK
 
 
-func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
+func _is_water(cell: Vector2i, _region: Vector2i, biome: Biome) -> Thing:
 	if biome == Biome.MAR:
 		return Thing.NADA if is_beach(cell) else Thing.MAR
 	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > POOL_LEVEL:
 		return Thing.CHARCO
-	if biome == Biome.LAGOA:
-		# Uma lagoa redonda, de margem ondulada, um pouco ao lado do ponto
-		# de encontro (as trilhas chegam até ela e a atravessam por pontes).
-		var lake_center := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
-		var distance := cell_center(cell).distance_to(lake_center)
-		var radius := LAKE_RADIUS * (1.0 + 0.3 * _lake_noise.get_noise_2d(cell.x, cell.y))
-		if distance < radius:
-			return Thing.LAGO
-	# Riachos finos e raros, que cortam as regiões .
-	if absf(_stream_noise.get_noise_2d(cell.x, cell.y)) < STREAM_WIDTH:
-		return Thing.RIACHO
-	return Thing.NADA
+	# Rios e lagos, das bacias. O centro do mundo não recebe água (ver Hydrology.height).
+	return _hydro_water(cell)
+
+
+## Distância (em casas) da casa até a margem da água dos rios e lagos: negativa
+## dentro da água, NO_WATER longe de qualquer uma. Não conta mar nem charcos.
+func water_shore(cell: Vector2i) -> float:
+	return _water_chunk(cell)[0][_chunk_index(cell)]
+
+
+## Que água (rio, lago) há na casa, vinda das bacias.
+func _hydro_water(cell: Vector2i) -> Thing:
+	var data := _water_chunk(cell)
+	var index := _chunk_index(cell)
+	if data[0][index] >= 0.0:
+		return Thing.NADA
+	if data[1][index] == 0:
+		return Thing.LAGO
+	var width: float = data[1][index]
+	if width <= VAU_WIDTH:
+		return Thing.VAU
+	return Thing.RIACHO if width <= STREAM_WIDTH else Thing.RIO
+
+
+## [margem, largura] de cada casa do pedaço da casa: a margem é a distância até
+## a água mais próxima (negativa dentro dela); a largura, do rio mais perto (0
+## se o mais perto é um lago). Guardado em cache.
+func _water_chunk(cell: Vector2i) -> Array:
+	var chunk := Vector2i(floori(float(cell.x) / CHUNK), floori(float(cell.y) / CHUNK))
+	if not _water_chunks.has(chunk):
+		_water_chunks[chunk] = _compute_water_chunk(chunk)
+	return _water_chunks[chunk]
+
+
+func _compute_water_chunk(chunk: Vector2i) -> Array:
+	var shore := PackedFloat32Array()
+	var width := PackedFloat32Array()
+	shore.resize(CHUNK * CHUNK)
+	shore.fill(NO_WATER)
+	width.resize(CHUNK * CHUNK)
+	var origin := chunk * CHUNK
+	var box := Rect2(Vector2(origin), Vector2(CHUNK, CHUNK))
+	var middle := Vector2(origin) + Vector2(CHUNK, CHUNK) * 0.5
+	var here := Vector2i(roundi(middle.x / REGION_SIZE), roundi(middle.y / REGION_SIZE))
+	for ry in range(here.y - WATER_REACH, here.y + WATER_REACH + 1):
+		for rx in range(here.x - WATER_REACH, here.x + WATER_REACH + 1):
+			var region := Vector2i(rx, ry)
+			if _hydro.is_lake(region):
+				_stamp_lake(region, box, origin, shore, width)
+			var line := _hydro.river_line(region)
+			if not line.is_empty():
+				_stamp_river(line[0], line[1], box, origin, shore, width)
+	return [shore, width]
+
+
+func _stamp_lake(region: Vector2i, box: Rect2, origin: Vector2i, shore: PackedFloat32Array, width: PackedFloat32Array) -> void:
+	var center := _hydro.lake_center(region)
+	var radius := _hydro.lake_radius(region)
+	var reach := radius * (1.0 + LAKE_WOBBLE) + WATERSIDE_BANK + 1.0
+	if box.grow(reach).has_point(center) == false:
+		return
+	for y in CHUNK:
+		for x in CHUNK:
+			var cell := origin + Vector2i(x, y)
+			var edge := cell_center(cell).distance_to(center) - radius * (1.0 + LAKE_WOBBLE * _lake_noise.get_noise_2d(cell.x, cell.y))
+			if edge < shore[y * CHUNK + x]:
+				shore[y * CHUNK + x] = edge
+				width[y * CHUNK + x] = 0.0
+
+
+func _stamp_river(points: PackedVector2Array, widths: PackedFloat32Array, box: Rect2, origin: Vector2i, shore: PackedFloat32Array, width: PackedFloat32Array) -> void:
+	for i in points.size():
+		var p := points[i]
+		var half := maxf(widths[i], RIVER_MIN_WIDTH) * 0.5  # nem a nascente some entre as casas
+		var reach := half + WATERSIDE_BANK + 1.0
+		if not box.grow(reach).has_point(p):
+			continue
+		var x0 := maxi(floori(p.x - reach) - origin.x, 0)
+		var x1 := mini(ceili(p.x + reach) - origin.x, CHUNK - 1)
+		var y0 := maxi(floori(p.y - reach) - origin.y, 0)
+		var y1 := mini(ceili(p.y + reach) - origin.y, CHUNK - 1)
+		for y in range(y0, y1 + 1):
+			for x in range(x0, x1 + 1):
+				var edge := cell_center(origin + Vector2i(x, y)).distance_to(p) - half
+				if edge < shore[y * CHUNK + x]:
+					shore[y * CHUNK + x] = edge
+					width[y * CHUNK + x] = maxf(widths[i], 0.001)
 
 
 ## Praia: a faixa de areia de uma região de mar que encosta em terra firme.
@@ -940,6 +1001,11 @@ func cell_random(cell: Vector2i, tag: String) -> float:
 
 
 ## Número entre 0 e 1, fixo para cada chave e semente.
+## Sorteio fixo de uma região, por assunto (ver Hydrology).
+func region_random(region: Vector2i, tag: String) -> float:
+	return _random([region.x, region.y, tag])
+
+
 func _random(key: Array) -> float:
 	var h := hash([world_seed] + key)
 	return float(h & 0xFFFF) / 65535.0

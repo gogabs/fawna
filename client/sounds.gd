@@ -488,7 +488,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 			key = "fundo_mar"
 		WorldGen.Biome.FLORESTA_GELADA:
 			key = "fundo_floresta_gelada"
-		WorldGen.Biome.DESERTO_GELADO:
+		WorldGen.Biome.DESERTO_GELADO, WorldGen.Biome.MONTANHA:
 			key = "fundo_deserto_gelado"
 	var stream := _pick(key, func(): return SoundBank.biome_bed(biome), false)
 	if stream != null:
@@ -500,7 +500,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 static func ambient(thing: WorldGen.Thing) -> AudioStream:
 	var key := ""
 	match thing:
-		WorldGen.Thing.RIACHO:
+		WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU:
 			key = "amb_agua"
 		WorldGen.Thing.CHARCO:
 			key = "amb_agua"
@@ -532,7 +532,7 @@ static func music(level: int) -> AudioStream:
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS]
 
 
 static func _has_file(key: String) -> bool:

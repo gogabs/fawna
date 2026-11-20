@@ -114,7 +114,7 @@ func _test_collect_overflow() -> void:
 	var result := state.collect(2, cell)
 	_check(result["ok"], "coleta aceita com espaço")
 	var after := Bag.load_of(inv, state.wielding(2))
-	_check(after <= Bag.CAPACITY, "a carga nunca passa do limite (%d)" % after)
+	_check(after <= Bag.MAX_LOAD, "a carga nunca passa do limite (%d)" % after)
 	var kept_weight := Bag.weight_of_items(result["kept"])
 	var over_weight := Bag.weight_of_items(result["left_over"])
 	_check(after - before == kept_weight, "só o que coube entra na bolsa")
