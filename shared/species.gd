@@ -5,7 +5,10 @@ extends RefCounted
 ## belos e um pouco inumanos (dark fantasy, sem fofura).
 ##
 ## Cada espécie é uma lista de tags (TAGS), e cada tag é um pequeno pacote de
-## efeitos com um ganho e SEMPRE um custo: nenhuma tag só tem vantagem. O jogo
+## efeitos com um ganho e SEMPRE um custo: nenhuma tag só tem vantagem.
+## Toda espécie tem exatamente UMA tag ativa (habilidade usada numa tecla, com
+## espera entre usos, "active": true; pode repetir em outras espécies) e uma
+## tag ÚNICA, que só ela tem (a ativa pode ser a própria única). O jogo
 ## soma as tags da espécie. Para mudar o equilíbrio, mude só TAGS e DATA.
 ##
 ## Efeitos numéricos (multiplicadores, 1.0 = igual), em "effects":
@@ -36,32 +39,45 @@ const TAGS := {
 		"text": "A tocha dura mais e acende sem sílex, mas não consegue cruzar água."},
 	"guerreiro": {"name": "Guerreiro", "effects": {"axe": 1.15, "capacity": 0.9},
 		"text": "Machado 15% mais forte, mas arma e armadura pesam: carga plena 10% menor."},
-	"salto": {"name": "Salto", "effects": {},
+	"sete_vidas": {"name": "Sete vidas", "effects": {"lives": 7, "speed_after_loss": 0.9},
+		"text": "Tem sete vidas, bem mais que as outras espécies, mas cada vida perdida a deixa 10% mais lenta por uns minutos."},
+	# Ativas (ainda sem lógica no jogo; cada uma entra em PR próprio).
+	"salto": {"name": "Salto", "active": true, "effects": {},
 		"text": "Pulo curto, com espera entre usos, e o pouso faz barulho."},
-	"uivo": {"name": "Uivo", "effects": {},
+	"uivo": {"name": "Uivo", "active": true, "effects": {},
 		"text": "Som que os amigos ouvem de longe, com direção, e que também atrai o Calado."},
+	"disparada": {"name": "Disparada", "active": true, "effects": {},
+		"text": "Corre o dobro por uns 3 s, mas faz muito barulho e fica cansado depois."},
+	"fucar": {"name": "Fuçar", "active": true, "effects": {},
+		"text": "Escava a terra à frente e acha argila ou sílex escondidos por perto, mas demora uns 5 s parado e faz barulho."},
+	"pesca": {"name": "Pesca com as patas", "active": true, "effects": {},
+		"text": "Pesca sem precisar de ferramenta, só com as patas, mas demora e faz barulho na água. Vale quando houver pesca no jogo."},
+	"arar": {"name": "Arar", "active": true, "effects": {},
+		"text": "Limpa a grama, os arbustos e os bambus da casa à frente sem enxada nem machado, e depois o preparo de terra agrícola, mas demora uns 5 s por casa e faz barulho."},
 }
 
-const ORDER: Array[String] = ["urso", "boi", "cervo", "cabra", "lebre", "lobo", "raposa", "onca", "javali"]
+## Vidas de quem não tem a tag "sete vidas". Provisório: ainda não há vida no
+## jogo, só o número de referência.
+const DEFAULT_LIVES := 3
+
+const ORDER: Array[String] = ["urso", "boi", "cervo", "lebre", "lobo", "raposa", "onca", "javali"]
 
 const DATA := {
-	"urso": {"name": "Urso de musgo", "article": "um", "tags": ["pesado", "guerreiro"],
+	"urso": {"name": "Urso de musgo", "article": "um", "tags": ["pesado", "guerreiro", "pesca"],
 		"description": "Híbrido de humano e urso, largo, com musgo crescendo nos ombros."},
-	"boi": {"name": "Boi de chifre-ferro", "article": "um", "tags": ["pesado", "resistente"],
+	"boi": {"name": "Boi de chifre-ferro", "article": "um", "tags": ["pesado", "resistente", "arar"],
 		"description": "Híbrido de humano e boi, com chifres escuros como ferro velho."},
-	"cervo": {"name": "Cervo de galhada-musgo", "article": "um", "tags": ["leve", "veloz"],
+	"cervo": {"name": "Cervo de galhada-musgo", "article": "um", "tags": ["leve", "veloz", "disparada"],
 		"description": "Híbrido de humano e cervo, com uma galhada coberta de musgo."},
-	"cabra": {"name": "Cabra-montesa", "article": "uma", "tags": ["leve", "resistente"],
-		"description": "Híbrida de humana e cabra-montesa, de chifres curvos e pés firmes na pedra."},
 	"lebre": {"name": "Lebre-de-sombra", "article": "uma", "tags": ["leve", "audicao", "salto"],
 		"description": "Híbrida de humana e lebre, de orelhas longas e pelagem escura como sombra."},
 	"lobo": {"name": "Lobo cinzento", "article": "um", "tags": ["guerreiro", "uivo"],
 		"description": "Híbrido de humano e lobo, de pelagem cinzenta e olhar fixo."},
-	"raposa": {"name": "Raposa de cinza", "article": "uma", "tags": ["leve", "fogo"],
+	"raposa": {"name": "Raposa de cinza", "article": "uma", "tags": ["leve", "fogo", "salto"],
 		"description": "Híbrida de humana e raposa, de pelo cor de cinza e uma brasa viva no olhar."},
-	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["veloz", "salto"],
+	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["veloz", "sete_vidas", "salto"],
 		"description": "Híbrida de humana e onça, de pelagem negra e passos que quase não pesam."},
-	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "resistente"],
+	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "resistente", "fucar"],
 		"description": "Híbrido de humano e javali, de pele escura como carvão e presas curtas."},
 }
 
@@ -98,8 +114,46 @@ static func tags_of(id: String) -> Array:
 static func tag_names(id: String) -> String:
 	var names: PackedStringArray = []
 	for tag: String in tags_of(id):
-		names.append(str(TAGS[tag]["name"]))
+		names.append(tag_label(tag))
 	return ", ".join(names)
+
+
+## "Salto (ativa)" para as ativas; o nome puro para as outras.
+static func tag_label(tag: String) -> String:
+	return "%s (ativa)" % TAGS[tag]["name"] if is_active(tag) else str(TAGS[tag]["name"])
+
+
+static func is_active(tag: String) -> bool:
+	return bool(TAGS[tag].get("active", false))
+
+
+## A tag ativa da espécie ("" se não houver).
+static func active_of(id: String) -> String:
+	for tag: String in tags_of(id):
+		if is_active(tag):
+			return tag
+	return ""
+
+
+## As tags que só esta espécie tem.
+static func unique_tags(id: String) -> Array:
+	var result := []
+	for tag: String in tags_of(id):
+		var others := 0
+		for other: String in ORDER:
+			if other != id and tags_of(other).has(tag):
+				others += 1
+		if others == 0:
+			result.append(tag)
+	return result
+
+
+## Vidas da espécie (ainda sem vida no jogo; DEFAULT_LIVES é provisório).
+static func lives(id: String) -> int:
+	for tag: String in tags_of(id):
+		if TAGS[tag]["effects"].has("lives"):
+			return int(TAGS[tag]["effects"]["lives"])
+	return DEFAULT_LIVES
 
 
 ## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".

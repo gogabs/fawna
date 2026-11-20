@@ -22,27 +22,34 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _test_data() -> void:
-	_check(Species.ORDER.size() == 9, "nove espécies")
-	_check(Species.TAGS.size() == 9, "nove tags")
+	_check(Species.ORDER.size() == 8, "oito espécies")
+	_check(Species.TAGS.size() == 14, "catorze tags")
 	for id in Species.ORDER:
 		_check(Species.DATA.has(id), "dados de " + id)
 		_check(not Species.description(id).is_empty(), "descrição de " + id)
 		var tags := Species.tags_of(id)
 		_check(tags.size() >= 2 and tags.size() <= 3, "2 a 3 tags em " + id)
+		var actives := tags.filter(func(t): return Species.is_active(t))
+		_check(actives.size() == 1, "exatamente uma ativa em " + id)
+		_check(Species.active_of(id) == actives[0], "active_of de " + id)
+		_check(not Species.unique_tags(id).is_empty(), "uma única em " + id)
 		for tag: String in tags:
 			_check(Species.TAGS.has(tag), "tag %s de %s existe" % [tag, id])
 	for tag: String in Species.TAGS:
 		var data: Dictionary = Species.TAGS[tag]
 		_check(not str(data["text"]).is_empty(), "tag %s tem texto" % tag)
 		for key: String in data["effects"]:
-			if key != "overload":  # a sobrecarga resistente é pela metade, de propósito
+			if key not in ["overload", "lives", "speed_after_loss"]:  # a sobrecarga resistente é pela metade, de propósito
 				_check(absf(float(data["effects"][key]) - 1.0) <= 0.31, "efeito pequeno em " + tag)
 	_check(is_equal_approx(Species.effect("urso", "capacity"), 1.2 * 0.9), "efeitos se multiplicam")
 	_check(Species.effect("urso", "torch") == 1.0, "efeito que ninguém mexe vale 1")
 	_check(Species.effect("", "speed") == 1.0, "sem espécie vale 1")
-	_check(Species.with_name("Lia", "cabra") == "Lia, uma Cabra-montesa", "nome com espécie e artigo")
+	_check(Species.with_name("Lia", "onca") == "Lia, uma Onça-negra", "nome com espécie e artigo")
+	_check(Species.unique_tags("onca") == ["sete_vidas"], "única da onça")
+	_check(Species.unique_tags("cervo") == ["disparada"], "única do cervo")
+	_check(Species.lives("onca") == 7 and Species.lives("urso") == Species.DEFAULT_LIVES, "vidas")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
-	_check(Species.tag_names("lebre") == "Leve, Audição apurada, Salto", "nomes das tags")
+	_check(Species.tag_names("lebre") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
 
 
 func _test_choose_once() -> void:

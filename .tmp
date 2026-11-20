@@ -17,9 +17,9 @@
 
 	},
 	"resin": [],
-	"seed": 73643960,
+	"seed": 3669540458,
 	"species": {
-
+		"Criatura": "urso"
 	},
 	"torch_until": {
 

@@ -2078,7 +2078,7 @@ func _tag_items(id: String) -> Array:
 		var text := Species.tag_text(tag)
 		if not Species.EFFECTS_ACTIVE:
 			text += " Ainda sem efeito no jogo."
-		items.append({"label": Species.TAGS[tag]["name"], "info": text})
+		items.append({"label": Species.tag_label(tag), "info": text})
 	return items
 
 
