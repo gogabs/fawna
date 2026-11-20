@@ -34,7 +34,7 @@ func _check(condition: bool, message: String) -> void:
 		printerr("FALHOU: " + message)
 
 
-## Um ponto de bosque fora da trilha, longe da Origem, com bosque em volta
+## Um ponto de bosque fora da trilha, longe do centro, com bosque em volta
 ## (para o Calado ter por onde vir sem o alvo estar numa trilha).
 func _forest_spot(world: WorldGen) -> Vector2:
 	for r in range(1, 40):
@@ -46,8 +46,7 @@ func _forest_spot(world: WorldGen) -> Vector2:
 				for dx in range(-12, 13):
 					var cell := middle + Vector2i(dx, dy)
 					var point := WorldGen.cell_center(cell)
-					if world.biome_at(cell) == WorldGen.Biome.BOSQUE and not _trail_within(world, cell, 3) \
-							and point.distance_to(WorldGen.origin_point()) > Horrors.ORIGIN_SAFE + 10.0:
+					if world.biome_at(cell) == WorldGen.Biome.BOSQUE and not _trail_within(world, cell, 3):
 						return point
 	return Vector2.ZERO
 
@@ -107,10 +106,6 @@ func _test_safe_places() -> void:
 	var by_fire := Horrors.new(world)
 	_run(by_fire, {1: _player(spot)}, [spot + Vector2(3, 0)], 0, long)
 	_check(by_fire.horrors.is_empty(), "perto de uma fogueira acesa o Calado não deveria aparecer")
-	# Na Origem.
-	var home := Horrors.new(world)
-	_run(home, {1: _player(WorldGen.origin_point() + Vector2(0, 1.5))}, [], 0, long)
-	_check(home.horrors.is_empty(), "na Origem o Calado não deveria aparecer")
 	# Em qualquer bioma, menos no mar: na pradaria ele aparece.
 	for r in range(1, 40):
 		var region := Vector2i(r, 0)
@@ -182,11 +177,12 @@ func _test_stalks_from_behind() -> void:
 
 func _test_caught_consequences() -> void:
 	var world := WorldGen.new(42)
-	var origin := WorldGen.origin_point()
-	_check(Horrors.nearest_shelter(Vector2(500, 500), []) == origin, "sem abrigo nenhum, o ponto seguro é a Origem")
+	var origin := WorldGen.center_point()
+	var crossing := world.region_landmark(world.region_of(WorldGen.cell_of(Vector2(500, 500))))
+	_check(Horrors.nearest_shelter(world, Vector2(500, 500), []) == crossing, "sem abrigo nenhum, o ponto seguro é o cruzamento de trilhas da região")
 	var fire := Vector2(520.5, 505.5)
-	_check(Horrors.nearest_shelter(Vector2(500, 500), [fire]) == fire, "uma fogueira mais perto que a Origem deveria ser o ponto seguro")
-	_check(Horrors.nearest_shelter(origin + Vector2(3, 3), [fire]) == origin, "a Origem mais perto deveria vencer")
+	_check(Horrors.nearest_shelter(world, Vector2(500, 500), [fire]) == fire, "uma fogueira mais perto que o cruzamento deveria ser o ponto seguro")
+	_check(Horrors.nearest_shelter(world, origin + Vector2(3, 3), [fire]) == origin, "o cruzamento mais perto deveria vencer")
 	var landed := Horrors.landing_spot(world, origin, [])
 	_check(world.is_free(landed) and landed.distance_to(origin) < 4.0, "deveria reaparecer num ponto livre ao lado do abrigo")
 	var blocked := Horrors.landing_spot(world, origin, [WorldGen.cell_of(origin + Vector2(0, 1.6))])
