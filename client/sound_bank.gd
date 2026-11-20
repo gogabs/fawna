@@ -253,29 +253,6 @@ static func heartbeat() -> AudioStreamWAV:
 	return _cache["coracao"]
 
 
-## Woosh do Caminheiro: um sopro que cresce e some, abrindo e fechando o
-## brilho no meio. Quem toca move a fonte rumo ao próximo beacon.
-static func woosh() -> AudioStreamWAV:
-	if not _cache.has("woosh"):
-		var count := int(0.75 * RATE)
-		var samples := PackedFloat32Array()
-		samples.resize(count)
-		var rng := RandomNumberGenerator.new()
-		rng.seed = 31415
-		var low := 0.0
-		var band := 0.0
-		for i in count:
-			var k := float(i) / count
-			var envelope := pow(sin(PI * pow(k, 0.7)), 2.0)
-			# Mais aberto (menos suavizado) no meio do sopro.
-			var smooth := lerpf(0.97, 0.8, envelope)
-			low = lerpf(rng.randf_range(-1.0, 1.0), low, smooth)
-			band = lerpf(low, band, 0.6)
-			samples[i] = (low - band * 0.5) * envelope * 1.4
-		_cache["woosh"] = _to_wav(samples)
-	return _cache["woosh"]
-
-
 ## Machado cortando o ar: um sopro curto.
 static func axe_swing() -> AudioStreamWAV:
 	if not _cache.has("machado_golpe"):

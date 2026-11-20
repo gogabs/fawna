@@ -141,8 +141,6 @@ var _tracked_destination := Vector2.ZERO  # para onde o cristal leva (vale com e
 ## O último recurso pedido ao Caminheiro (coisas do mundo e nome com artigo),
 ## que o Tab usa para achar o mais próximo. Continua valendo com o cristal
 ## apagado.
-var _radar_things: Array = []
-var _radar_place := ""
 var _menu: FloatingMenu
 ## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
 ## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
@@ -2013,35 +2011,34 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena é 24; acima disso você anda mais devagar, até o limite de 36. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as da região em que você está e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e o recurso mais próximo do tipo que você rastreou por último; sem nada rastreado, diz o recurso coletável mais próximo, de qualquer tipo. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena é 24; acima disso você anda mais devagar, até o limite de 36. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
-## Tab: radar contextual. Diz o alvo do Caminheiro e a distância até ele (se o
-## cristal estiver aceso) e, depois, o recurso mais próximo do tipo que o
-## Caminheiro rastreou por último; sem tipo rastreado, o mais próximo de qualquer tipo.
+## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
+## estiver aceso) e, depois, o recurso coletável mais perto de cada tipo e as
+## construções que há no raio do radar, do mais perto ao mais longe.
 func _say_radar() -> void:
 	var parts := PackedStringArray()
 	if _caminheiro.active:
 		parts.append("Caminheiro, rumo %s: %s." % [Narrator.contract("a", _caminheiro.place_name), Compass.describe(_tracked_destination - _pos, _heading)])
-	if not _radar_things.is_empty():
-		var cell := nearest_collectable(world, harvest, _pos, _radar_things, RESOURCE_SEARCH_RADIUS)
-		if cell == WorldGen.NO_CELL:
-			parts.append("Não há %s por perto." % _radar_place.substr(_radar_place.find(" ") + 1))
-		elif not (_caminheiro.active and cell == _tracked_resource):
-			parts.append("Mais perto, %s: %s." % [_radar_place, Compass.describe(WorldGen.cell_center(cell) - _pos, _heading)])
-	else:
-		# Nenhum tipo rastreado: o coletável mais próximo, de qualquer tipo.
-		var best := WorldGen.NO_CELL
-		var best_place := ""
-		for entry: Array in CAMINHEIRO_RESOURCES:
-			var found := nearest_collectable(world, harvest, _pos, entry[1], RESOURCE_SEARCH_RADIUS)
-			if found != WorldGen.NO_CELL and (best == WorldGen.NO_CELL or WorldGen.cell_center(found).distance_squared_to(_pos) < WorldGen.cell_center(best).distance_squared_to(_pos)):
-				best = found
-				best_place = entry[2]
-		if best == WorldGen.NO_CELL:
-			parts.append("Não há recursos por perto.")
-		else:
-			parts.append("Mais perto, %s: %s." % [best_place, Compass.describe(WorldGen.cell_center(best) - _pos, _heading)])
+	var found := []  # [distância, rótulo, deslocamento]
+	for entry: Array in CAMINHEIRO_RESOURCES:
+		var cell := nearest_collectable(world, harvest, _pos, entry[1], RADAR_RADIUS)
+		if cell == WorldGen.NO_CELL or (_caminheiro.active and cell == _tracked_resource):
+			continue
+		var offset := WorldGen.cell_center(cell) - _pos
+		found.append([offset.length(), entry[0], offset])
+	for build: Dictionary in builds.all():
+		var distance := Builds.reach_distance(build, _pos)
+		if distance > RADAR_RADIUS:
+			continue
+		var spoken := builds.spoken_name(int(build["id"]))
+		found.append([distance, spoken.left(1).to_upper() + spoken.substr(1), WorldGen.cell_center(build["cell"]) - _pos])
+	found.sort_custom(func(a, b): return a[0] < b[0])
+	for item: Array in found:
+		parts.append("%s: %s." % [item[1], Compass.describe(item[2], _heading)])
+	if found.is_empty():
+		parts.append("Não há recursos nem construções por perto.")
 	Speech.say(" ".join(parts))
 
 
@@ -2322,9 +2319,12 @@ const CAMINHEIRO_RESOURCES := [
 	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
-## Até onde (em casas, em linha reta) o Caminheiro procura um recurso: uma
-## região e meia para cada lado.
-const RESOURCE_SEARCH_RADIUS := 72
+## Até onde (em casas, em linha reta) o Caminheiro enxerga:
+## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
+## na região de agora ou na vizinha, sem depender de limites de região.
+const RESOURCE_SEARCH_RADIUS := WorldGen.REGION_SIZE / 2
+## O radar (Tab) enxerga menos: 16 casas (24 m).
+const RADAR_RADIUS := 16
 
 
 ## Menu do Caminheiro: Locais (lugares do mapa) e Recursos (leva ao coletável
@@ -2334,8 +2334,8 @@ func _caminheiro_items() -> Array:
 	var items := [
 		{"label": "Locais", "open": _caminheiro_places},
 		{"label": "Recursos", "open": _caminheiro_resources},
-		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma nesta região"},
-		{"label": "Itens no chão", "open": _caminheiro_piles, "empty": "nenhum nesta região"},
+		{"label": "Construções", "open": _caminheiro_builds, "empty": "nenhuma por perto"},
+		{"label": "Itens no chão", "open": _caminheiro_piles, "empty": "nenhum por perto"},
 	]
 	if _caminheiro.active:
 		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
@@ -2378,8 +2378,7 @@ func _neighbor_region_items() -> Array:
 ## qual rastrear: "Pilha com pedras e lenhas, 12 metros".
 func _caminheiro_piles() -> Array:
 	var items := []
-	var region := world.region_of(WorldGen.cell_of(_pos))
-	var cells: Array = ground.cells().filter(func(c: Vector2i): return world.region_of(c) == region)
+	var cells: Array = ground.cells().filter(func(c: Vector2i): return WorldGen.cell_center(c).distance_to(_pos) <= RESOURCE_SEARCH_RADIUS)
 	cells.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a)) < _pos.distance_squared_to(WorldGen.cell_center(b)))
 	for cell: Vector2i in cells:
 		var what := _pile_name(cell)
@@ -2444,9 +2443,7 @@ func _caminheiro_resources() -> Array:
 
 ## Acende o cristal rumo ao recurso coletável mais próximo destes tipos.
 func _track_resource(things: Array, place: String) -> String:
-	_radar_things = things
-	_radar_place = place
-	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS, true)
+	var cell := nearest_collectable(world, harvest, _pos, things, RESOURCE_SEARCH_RADIUS)
 	if cell == WorldGen.NO_CELL:
 		return "Não há %s por perto." % place.substr(place.find(" ") + 1)
 	return _track(resource_destination(world, cell, _pos), place, cell)
@@ -2455,9 +2452,8 @@ func _track_resource(things: Array, place: String) -> String:
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas
 ## pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
 ## nenhum no raio.
-static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int, same_region := false) -> Vector2i:
+static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int) -> Vector2i:
 	var here := WorldGen.cell_of(pos)
-	var region := the_world.region_of(here)
 	var best := WorldGen.NO_CELL
 	var best_distance := INF
 	for dy in range(-radius, radius + 1):
@@ -2466,8 +2462,6 @@ static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: 
 				continue
 			var cell := here + Vector2i(dx, dy)
 			if not things.has(the_world.thing_at(cell)):
-				continue
-			if same_region and the_world.region_of(cell) != region:
 				continue
 			if the_harvest != null and not the_harvest.is_available(cell):
 				continue
@@ -2535,7 +2529,7 @@ func _on_caminheiro_arrived(place: String) -> void:
 ## 20 metros". Só as da região em que a criatura está (marcos, fogueiras e
 ## obras em andamento). O cristal leva até uma casa livre colada na obra.
 func _caminheiro_builds() -> Array:
-	var list := builds.in_region(world.region_of(WorldGen.cell_of(_pos)))
+	var list: Array = builds.all().filter(func(b: Dictionary): return Builds.reach_distance(b, _pos) <= RESOURCE_SEARCH_RADIUS)
 	list.sort_custom(func(a, b): return Builds.reach_distance(a, _pos) < Builds.reach_distance(b, _pos))
 	var items := []
 	for build: Dictionary in list:

@@ -52,7 +52,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Radar: alvo do Caminheiro com a distância e o recurso mais próximo do último tipo rastreado (sem nada rastreado, o recurso mais próximo de qualquer tipo) | Tab |
+| Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
 | Onde estou | C |
 | Quem está no mundo | P |
@@ -139,9 +139,10 @@ O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
 manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
 trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
 o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
-curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
-vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
-beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
+curva da rota é um beacon. O coração (um tambor bem abafado) bate a 70 batidas
+por minuto vindo da direção a seguir, que aponta um pouco à frente na rota e
+só gira aos poucos, como um carro fazendo a curva: nunca pula, nem ao trocar
+de beacon. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso
 apaga o cristal.
