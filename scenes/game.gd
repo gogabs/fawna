@@ -214,6 +214,12 @@ func _process(delta: float) -> void:
 				offhand_changed.rpc_id(torch_id, state.inventory_of(torch_id), "", 0.0, "queimou", "tocha")
 			if not burned.is_empty():
 				_broadcast_torches()
+			for id in state.players:
+				state.builds.touch(state.owner_key(id))
+			for closed: Dictionary in state.builds.close_votes():
+				_dirty = true
+				build_changed.rpc(state.builds.info(int(closed["marco"])), closed["event"], 0,
+					{"target": int(closed["target"]), "target_name": state.builds.spoken_name(int(closed["target"]))})
 			for build_id: int in state.builds.dried():
 				_dirty = true
 				build_changed.rpc(state.builds.info(build_id), "secou", 0, {})
@@ -671,6 +677,58 @@ func request_prep(build_id: int, cell: Vector2i) -> void:
 	build_changed.rpc(state.builds.info(build_id), result["event"], id, extra)
 
 
+## J com o machado numa obra (parede, canto, casa do marco ou da fogueira): vários
+## golpes desmontam. O que volta cai no chão dentro do terreno.
+@rpc("any_peer", "call_local", "reliable")
+func request_wreck(build_id: int, cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_tell_others_handled(id, "golpeou")
+	var result := state.wreck_build(id, build_id, cell)
+	if not result["ok"]:
+		if state.players.has(id) and result["reason"] in ["ferramenta", "povoado", "acesa", "nao_dono", "votacao"]:
+			action_failed.rpc_id(id, "desmontar_" + result["reason"], str(result.get("tool", "")))
+		return
+	_dirty = true
+	if result["event"] == "golpe":
+		build_struck.rpc(build_id, cell, int(result["hits_left"]), int(result["total"]), bool(result["first"]), id)
+		return
+	for pile_cell: Vector2i in result["piles"]:
+		ground_changed.rpc(pile_cell, result["piles"][pile_cell], "sobrou", id, {})
+	build_demolished.rpc(build_id, cell, str(result["title"]), str(result["kind"]), result["back"], id)
+
+
+## No marco do povoado: propor derrubar uma construção, ou votar numa proposta.
+@rpc("any_peer", "call_local", "reliable")
+func request_wreck_propose(marco_id: int, target_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_vote(id, marco_id, state.propose_wreck(id, marco_id, target_id))
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_wreck_vote(marco_id: int, target_id: int, yes: bool) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	_finish_vote(id, marco_id, state.vote_wreck(id, marco_id, target_id, yes))
+
+
+func _finish_vote(id: int, marco_id: int, result: Dictionary) -> void:
+	if not result["ok"]:
+		if state.players.has(id):
+			var detail := ""
+			if result["reason"] == "espera":
+				detail = Builds._days_text(float(result["wait"]))
+			action_failed.rpc_id(id, "votar_" + result["reason"], detail)
+		return
+	_dirty = true
+	var extra := {"target": int(result["target"]), "target_name": state.builds.spoken_name(int(result["target"]))}
+	build_changed.rpc(state.builds.info(marco_id), result["event"], id, extra)
+
+
 ## Espaço num marco pronto, com uma fogueira na mesma região: o nome do
 ## povoado, escolhido nas duas listas (índices em SettlementNames).
 @rpc("any_peer", "call_local", "reliable")
@@ -977,6 +1035,13 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 			Speech.say("A argila secou: a obra volta a render por inteiro.", false)
 		return
 	_refresh_fires()
+	if event in ["votacao_aberta", "votacao_aprovada", "votacao_rejeitada"]:
+		_say_vote_event(build, event, by_id, str(extra.get("target_name", "")))
+		return
+	if event == "voto":
+		if mine:
+			Speech.say("Voto registrado. %s" % builds.vote_text(build_id, int(extra["target"])), false)
+		return
 	if event == "apagou":
 		if where.distance_to(_pos) <= HEARING_RADIUS * 1.5:
 			Speech.say("A fogueira apagou: acabou a lenha.", false)
@@ -1074,6 +1139,52 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 			Speech.say("Você pôs uma %s. Lenha para uns %d minuto%s." % [
 				Crafting.material_text(extra.get("item", ""), 1).trim_prefix("1 "), minutes, "" if minutes == 1 else "s"])
+
+
+## Um golpe de machado numa obra que está sendo desmontada. Soa onde bateu;
+## quem bateu ouve, no primeiro golpe, quantos faltam.
+@rpc("authority", "call_local", "reliable")
+func build_struck(build_id: int, cell: Vector2i, hits_left: int, total: int, first: bool, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.build_knock(), 0.0, true, true)
+	if by_id == my_id and first:
+		Speech.say("Você começa a desmontar %s. Uns %d golpes de machado." % [builds.spoken_name(build_id), total])
+
+
+## A obra veio abaixo: sai do mundo e o que sobrou está no chão, dentro do terreno.
+@rpc("authority", "call_local", "reliable")
+func build_demolished(build_id: int, cell: Vector2i, title: String, kind: String, back: Dictionary, by_id: int) -> void:
+	if world == null:
+		return
+	var where := WorldGen.cell_center(cell)
+	builds.remove_build(build_id)
+	_unstick()
+	_refresh_fires()
+	_sync_menu.call_deferred()
+	if where.distance_to(_pos) <= HEARING_RADIUS:
+		audio.play_at_point(where, Sounds.build_stage(), 0.0, true, true)
+	if by_id != my_id:
+		return
+	var left := "" if back.is_empty() else " Sobrou no chão, dentro do terreno: %s." % Economy.items_text(back)
+	var article: String = Crafting.BUILDS[kind]["article"] if Crafting.BUILDS.has(kind) else "o"
+	Speech.say("Você desmontou %s %s.%s" % [article, Crafting.build_name(kind), left])
+
+
+## Aviso de votação no marco, só para os membros do povoado (ou quem agiu).
+func _say_vote_event(marco: Dictionary, event: String, by_id: int, target: String) -> void:
+	if by_id != my_id and not marco.get("voters", []).has(_my_key()):
+		return
+	var where: String = marco["name"] if not str(marco["name"]).is_empty() else "do povoado"
+	match event:
+		"votacao_aberta":
+			Speech.say("Votação aberta no marco %s: derrubar %s. Espaço no marco para votar." % [where, target])
+		"votacao_aprovada":
+			Speech.say("Votação aprovada: %s pode ser derrubado com o machado." % target)
+		"votacao_rejeitada":
+			Speech.say("Votação encerrada sem maioria: %s fica de pé." % target)
 
 
 ## Uma arma ficou pronta e foi para a bolsa.
@@ -1241,6 +1352,34 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Esse tamanho ou essa porta não serve.")
 		"obra_regiao_longe":
 			Speech.say("Só dá para marcar o terreno de uma obra na região em que você está.")
+		"desmontar_povoado":
+			Speech.say("O marco só se desmonta quando não resta outra construção no povoado. Desmonte as outras antes.")
+		"desmontar_votacao":
+			Speech.say("Esta construção é do povoado: só se derruba depois que os membros aprovam em votação no marco.")
+		"votar_nao_membro":
+			Speech.say("Só membros votam: dono de abrigo neste povoado há 7 dias, e ativo.")
+		"votar_alvo":
+			Speech.say("Esta construção não vai a votação.")
+		"votar_ja_votando":
+			Speech.say("Já há votação sobre esta construção.")
+		"votar_ja_aprovada":
+			Speech.say("Esta construção já foi aprovada para derrubar.")
+		"votar_ja_propos":
+			Speech.say("Você já tem uma proposta em votação.")
+		"votar_espera":
+			Speech.say("Você poderá propor outra votação daqui a %s." % detail)
+		"votar_ja_votou":
+			Speech.say("Você já votou nesta proposta.")
+		"votar_sem_votacao", "votar_nao_marco", "votar_desconhecida":
+			Speech.say("Essa votação não existe mais.")
+		"votar_longe":
+			Speech.say("Chegue perto do marco para votar.")
+		"desmontar_nao_dono":
+			Speech.say("Só o dono derruba esta construção.")
+		"desmontar_acesa":
+			Speech.say("A fogueira está acesa. Espere apagar para desmontá-la.")
+		"desmontar_ferramenta":
+			Speech.say("Para desmontar uma obra, empunhe o machado.")
 		"preparo_ferramenta":
 			Speech.say("Para esta fase, empunhe %s pela Bolsa." % Bag.with_article(detail) if not detail.is_empty() else "Empunhe a ferramenta certa.")
 		"preparo_fase":
@@ -1697,7 +1836,7 @@ func _interact() -> void:
 			Speech.say(_menu.open_at("Nome do povoado, primeira palavra", _name_nouns.bind(int(build["id"]))))
 		elif build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty():
 			# O marco do povoado: de onde partem as obras grandes.
-			Speech.say(_menu.open_at("Obras do povoado %s" % build["name"], _site_kinds))
+			Speech.say(_menu.open_at("Povoado %s" % build["name"], _marco_root.bind(int(build["id"]))))
 		elif Builds.has_furniture(build) and not Builds.furniture_near(build, _pos).is_empty():
 			# Oficina: junto da bancada abre as receitas; junto das prateleiras, o armazenamento.
 			if Builds.furniture_near(build, _pos) == "bancada":
@@ -1828,6 +1967,14 @@ func _swing() -> void:
 		if not prep.is_empty():
 			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
+			return
+	if wielded == "machado":
+		# Sem bambu à frente, o machado desmonta a obra ao alcance (paredes,
+		# cantos, marco, fogueira): muitos golpes, ver Builds.wreck_hits.
+		var wreck := builds.wreck_target(_pos, Compass.forward(_heading), STRIKE_REACH)
+		if not wreck.is_empty() and _strike_target() == WorldGen.NO_CELL:
+			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
+			request_wreck.rpc_id(1, int(wreck["id"]), wreck["cell"])
 			return
 	if wielded == "faca":
 		# A faca só serve para sangrar o tronco de uma árvore.
@@ -2583,6 +2730,65 @@ func _storage_move(build_id: int, item: String, amount: int, putting: bool) -> S
 		request_store.rpc_id(1, build_id, item, amount)
 	else:
 		request_fetch.rpc_id(1, build_id, item, amount)
+	return ""
+
+
+## Espaço no marco do povoado: obras grandes e votações para derrubar.
+func _marco_root(marco_id: int) -> Array:
+	var marco := builds.get_build(marco_id)
+	var voters: Array = marco.get("voters", [])
+	var count: int = marco.get("votes", []).size()
+	return [
+		{"label": "Obras", "open": _site_kinds},
+		{"label": "Votações para derrubar%s" % (", %d aberta%s" % [count, "" if count == 1 else "s"] if count > 0 else ""), "open": _vote_root.bind(marco_id)},
+		{"label": "Membros", "info": "%d membro%s ativo%s neste povoado: dono de abrigo há 7 dias e ativo nos últimos 30. %s" % [
+			voters.size(), "" if voters.size() == 1 else "s", "" if voters.size() == 1 else "s",
+			"Você é membro." if voters.has(_my_key()) else "Você não é membro."]},
+	]
+
+
+func _vote_root(marco_id: int) -> Array:
+	var marco := builds.get_build(marco_id)
+	var items := []
+	for vote: Dictionary in marco.get("votes", []):
+		items.append({"label": builds.vote_text(marco_id, int(vote["target"])).trim_suffix("."), "open": _vote_actions.bind(marco_id, int(vote["target"]))})
+	items.append({"label": "Propor derrubar uma construção", "open": _vote_targets.bind(marco_id)})
+	return items
+
+
+func _vote_actions(marco_id: int, target_id: int) -> Array:
+	return [
+		{"label": "Votar a favor", "run": _cast_vote.bind(marco_id, target_id, true), "close": true},
+		{"label": "Votar contra", "run": _cast_vote.bind(marco_id, target_id, false), "close": true},
+		{"label": "Situação", "info": builds.vote_text(marco_id, target_id)},
+	]
+
+
+func _vote_targets(marco_id: int) -> Array:
+	var marco := builds.get_build(marco_id)
+	var items := []
+	if marco.is_empty():
+		return items
+	for build: Dictionary in builds.in_region(marco["region"]):
+		if not Builds.votable(build):
+			continue
+		var title := builds.title_of(int(build["id"]))
+		if bool(build["approved"]):
+			items.append({"label": "%s, já aprovada para derrubar" % title, "info": "%s já foi aprovada: qualquer um pode derrubar com o machado." % title})
+		else:
+			items.append({"label": title, "run": _propose_wreck.bind(marco_id, int(build["id"])), "close": true})
+	if items.is_empty():
+		items.append({"label": "Nada a propor", "info": "Não há construções comuns neste povoado. Abrigo com dono é derrubado pelo dono."})
+	return items
+
+
+func _propose_wreck(marco_id: int, target_id: int) -> String:
+	request_wreck_propose.rpc_id(1, marco_id, target_id)
+	return ""
+
+
+func _cast_vote(marco_id: int, target_id: int, yes: bool) -> String:
+	request_wreck_vote.rpc_id(1, marco_id, target_id, yes)
 	return ""
 
 
