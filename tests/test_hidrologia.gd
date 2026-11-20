@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_mountains()
 	_test_water_in_cells()
 	_test_origin_dry()
+	_test_wetlands()
 	if _failures == 0:
 		print("OK: hidrologia")
 	quit(1 if _failures > 0 else 0)
@@ -112,3 +113,30 @@ func _test_origin_dry() -> void:
 	for y in range(-8, 9):
 		for x in range(-8, 9):
 			_check(not WorldGen.WATER.has(world.thing_at(Vector2i(x, y))), "o ponto de partida fica seco")
+
+
+## Brejo pela água: foz de rio grande, bacia plana sem lago e orla de lago grande.
+func _test_wetlands() -> void:
+	var world := WorldGen.new(42)
+	var hydro: Hydrology = world._hydro
+	var wet := 0
+	var deltas := 0
+	var brejos := 0
+	for y in range(-40, 41):
+		for x in range(-40, 41):
+			var region := Vector2i(x, y)
+			if world.region_biome(region) == WorldGen.Biome.BREJO:
+				brejos += 1
+			if not hydro.is_wetland(region):
+				continue
+			wet += 1
+			_check(not hydro.is_sea(region) and not hydro.is_lake(region), "brejo da água não é mar nem lago")
+			if hydro.has_river(region) and hydro.discharge(region) >= Hydrology.DELTA_Q:
+				for offset in Hydrology.NEIGHBORS:
+					if hydro.is_sea(region + offset):
+						deltas += 1
+						break
+	print("[brejo] %d regiões de brejo, %d pela água (%d fozes)" % [brejos, wet, deltas])
+	_check(wet > 5, "há brejo pela água (%d)" % wet)
+	_check(deltas > 0, "há foz em brejo")
+	_check(not hydro.is_wetland(Vector2i.ZERO), "o centro do mundo não é brejo")
