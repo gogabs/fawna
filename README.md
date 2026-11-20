@@ -52,7 +52,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Radar: alvo do Caminheiro com a distância e o recurso mais próximo de cada tipo, num raio de 36 m | Tab |
+| Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
 | Onde estou | C |
 | Quem está no mundo | P |
