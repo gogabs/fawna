@@ -10,6 +10,7 @@ func _init() -> void:
 	_test_choose_once()
 	_test_save_round_trip()
 	_test_snapshot_has_species()
+	_test_loudness()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -23,12 +24,12 @@ func _check(condition: bool, message: String) -> void:
 
 func _test_data() -> void:
 	_check(Species.ORDER.size() == 8, "oito espécies")
-	_check(Species.TAGS.size() == 14, "catorze tags")
+	_check(Species.TAGS.size() == 17, "dezessete tags")
 	for id in Species.ORDER:
 		_check(Species.DATA.has(id), "dados de " + id)
 		_check(not Species.description(id).is_empty(), "descrição de " + id)
 		var tags := Species.tags_of(id)
-		_check(tags.size() >= 2 and tags.size() <= 3, "2 a 3 tags em " + id)
+		_check(tags.size() >= 2 and tags.size() <= 4, "2 a 4 tags em " + id)
 		var actives := tags.filter(func(t): return Species.is_active(t))
 		_check(actives.size() == 1, "exatamente uma ativa em " + id)
 		_check(Species.active_of(id) == actives[0], "active_of de " + id)
@@ -39,14 +40,16 @@ func _test_data() -> void:
 		var data: Dictionary = Species.TAGS[tag]
 		_check(not str(data["text"]).is_empty(), "tag %s tem texto" % tag)
 		for key: String in data["effects"]:
-			if key not in ["overload", "lives", "speed_after_loss"]:  # a sobrecarga resistente é pela metade, de propósito
+			if key not in ["overload", "lives", "speed_after_loss", "caminheiro_regions", "noise"]:  # a sobrecarga resistente é pela metade, de propósito
 				_check(absf(float(data["effects"][key]) - 1.0) <= 0.31, "efeito pequeno em " + tag)
 	_check(is_equal_approx(Species.effect("urso", "capacity"), 1.2 * 0.9), "efeitos se multiplicam")
 	_check(Species.effect("urso", "torch") == 1.0, "efeito que ninguém mexe vale 1")
 	_check(Species.effect("", "speed") == 1.0, "sem espécie vale 1")
 	_check(Species.with_name("Lia", "onca") == "Lia, uma Onça-negra", "nome com espécie e artigo")
-	_check(Species.unique_tags("onca") == ["sete_vidas"], "única da onça")
-	_check(Species.unique_tags("cervo") == ["disparada"], "única do cervo")
+	_check(Species.unique_tags("onca") == ["sete_vidas", "garras"], "únicas da onça")
+	_check(Species.unique_tags("raposa") == ["furtividade", "fogo"], "únicas da raposa")
+	_check(Species.unique_tags("javali") == ["forrageador", "fucar"], "únicas do javali")
+	_check(Species.unique_tags("cervo") == ["veloz", "disparada"], "únicas do cervo")
 	_check(Species.lives("onca") == 7 and Species.lives("urso") == Species.DEFAULT_LIVES, "vidas")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
 	_check(Species.tag_names("lebre") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
@@ -84,3 +87,10 @@ func _test_snapshot_has_species() -> void:
 	state.add_player(2, "Lua")
 	state.choose_species(2, "onca")
 	_check(state.snapshot()[2]["species"] == "onca", "snapshot leva a espécie")
+
+
+func _test_loudness() -> void:
+	_check(Loudness.muffle_seconds("passos") == 0.0 and Loudness.muffle_seconds("passaros") == 0.0, "passos e pássaros não abafam")
+	_check(Loudness.muffle_seconds("obra") < Loudness.muffle_seconds("machadada"), "obra abafa menos que machadada")
+	_check(Loudness.muffle_seconds("machadada") < Loudness.muffle_seconds("arvore_caindo"), "machadada abafa menos que árvore caindo")
+	_check(Loudness.muffle_seconds("som_desconhecido") == 0.0, "som desconhecido não abafa")
