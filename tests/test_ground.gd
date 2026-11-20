@@ -33,23 +33,28 @@ func _state_with_player() -> WorldState:
 func _test_weights() -> void:
 	_check(Bag.load_of({"pedra_grande": 2, "frutas": 3}) == 15, "carga soma pesos (2 pedras grandes + 3 frutas = 15)")
 	_check(Bag.load_of({"frutas": 1}, "machado") == 4, "o que está nas mãos conta na carga")
-	_check(Bag.free_space({"pedra_grande": 5}) == Bag.CAPACITY - 30 or Bag.free_space({"pedra_grande": 5}) == 0, "espaço nunca é negativo")
+	_check(Bag.free_space({"pedra_grande": 5}) == Bag.MAX_LOAD - 30, "espaço nunca é negativo")
 	_check(Bag.free_space({"pedra_grande": 99}) == 0, "acima do limite não sobra espaço")
-	_check(Bag.room_for({}, "", "pedra_grande") == Bag.CAPACITY / Bag.weight_of("pedra_grande"), "quantas pedras grandes cabem numa bolsa vazia")
+	_check(Bag.room_for({}, "", "pedra_grande") == Bag.MAX_LOAD / Bag.weight_of("pedra_grande"), "quantas pedras grandes cabem numa bolsa vazia")
 	var marco := Crafting.total_materials("marco")
 	_check(Bag.weight_of_items(marco) > Bag.CAPACITY, "um marco inteiro não cabe numa viagem só")
 	_check(Bag.weight_of_items(Crafting.total_materials("fogueira")) <= Bag.CAPACITY, "mas uma fogueira cabe na bolsa")
 	_check(Bag.load_label({"frutas": 2}) == "Carga, 2 de %d" % Bag.CAPACITY, "rótulo da carga")
+	_check(Bag.speed_factor({"frutas": Bag.CAPACITY}) == 1.0, "na carga plena a velocidade é total")
+	_check(is_equal_approx(Bag.speed_factor({"frutas": Bag.MAX_LOAD}), Bag.MIN_SPEED_FACTOR), "no limite absoluto anda a metade")
+	var mid := Bag.speed_factor({"frutas": (Bag.CAPACITY + Bag.MAX_LOAD) / 2})
+	_check(mid > Bag.MIN_SPEED_FACTOR and mid < 1.0, "no meio da sobrecarga, velocidade intermediária")
+	_check(Bag.is_overloaded({"frutas": Bag.CAPACITY + 1}) and not Bag.is_overloaded({"frutas": Bag.CAPACITY}), "sobrecarga começa acima da carga plena")
 
 
 func _test_split_to_fit() -> void:
 	var split := Bag.split_to_fit({}, "", {"pedra_grande": 10})
 	var fit: int = int(split[0].get("pedra_grande", 0))
-	_check(fit == Bag.CAPACITY / Bag.weight_of("pedra_grande") and int(split[1]["pedra_grande"]) == 10 - fit, "split separa o que cabe do que sobra")
+	_check(fit == Bag.MAX_LOAD / Bag.weight_of("pedra_grande") and int(split[1]["pedra_grande"]) == 10 - fit, "split separa o que cabe do que sobra")
 	split = Bag.split_to_fit({"pedra_grande": 2}, "", {"pedra_grande": 1, "frutas": 4})
 	_check(split[0].get("pedra_grande", 0) == 1 and split[0].get("frutas", 0) == 4 and split[1].is_empty(), "cabe tudo quando há espaço")
-	split = Bag.split_to_fit({"pedra_grande": 3}, "", {"pedra_grande": 5, "frutas": 6})
-	_check(int(split[0].get("pedra_grande", 0)) == 1 and Bag.load_of(split[0]) + 18 <= Bag.CAPACITY, "põe primeiro o mais pesado e nunca passa do limite")
+	split = Bag.split_to_fit({"pedra_grande": 5}, "", {"pedra_grande": 5, "frutas": 6})
+	_check(int(split[0].get("pedra_grande", 0)) == 1 and Bag.load_of(split[0]) + 30 <= Bag.MAX_LOAD, "põe primeiro o mais pesado e nunca passa do limite")
 
 
 func _test_drop_and_pick_up() -> void:
@@ -120,7 +125,7 @@ func _test_full_refuses() -> void:
 	var state := _state_with_player()
 	var cell := _first_cell_of(state, WorldGen.Thing.PEDRAS)
 	var inv := state.inventory_of(2)
-	inv["pedra_grande"] = 4  # 24: lotado, e ainda o machado
+	inv["pedra_grande"] = 6  # 36: no limite absoluto, e ainda o machado
 	state.players[2]["pos"] = WorldGen.cell_center(cell) + Vector2(0.0, 1.0)
 	var result := state.collect(2, cell)
 	_check(not result["ok"] and result["reason"] == "cheio", "lotado, coletar é recusado")

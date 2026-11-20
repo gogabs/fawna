@@ -216,12 +216,17 @@ Os primeiros seres vivos além das criaturas. Cada pássaro é uma entidade com 
 
 Os cantos são gerados por código (`client/bird_songs.gd`), discretos e meio inumanos. Gravações em `assets/sounds/passaros/` entram no lugar deles: `<espécie>_<voz>_<frase>` para os cantos (cada pássaro nasce com uma das vozes da espécie), `<espécie>_alarme` para o susto e `asas_<n>` para o voo. Uma voz sem arquivos usa os cantos gerados. `tools/comparar_passaros/` tem a página usada para escolher os sons. `tests/test_birds.gd -- --exportar=PASTA` salva os cantos gerados em .wav para ouvir.
 
+## Senha do personagem
+
+Cada nome tem uma senha, definida em **Opções** (mínimo de 4 caracteres) e guardada em `user://config.cfg` no PC de cada jogador. Na primeira vez que um nome entra no servidor, a senha enviada fica registrada (o save do mundo guarda só um hash com sal, em `credentials`); depois só entra quem souber a senha, e o mesmo personagem não entra duas vezes. Os personagens que já existiam no mundo não têm senha: o primeiro a entrar com o nome define a senha. Para resetar uma senha, apague a entrada do nome em `credentials` no `mundo.json` com o servidor parado. A senha viaja sem criptografia (como o resto do tráfego do jogo); serve para ninguém usar o personagem do colega, não para proteger algo sensível. Linha de comando: `--senha=...` (o padrão em testes é `teste`).
+
 ## Testes
 
 ```sh
 godot --headless --path . --script res://tests/test_world.gd
 godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
+godot --headless --path . --script res://tests/test_credentials.gd
 godot --headless --path . --script res://tests/test_harvest.gd
 ```
 

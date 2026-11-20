@@ -61,6 +61,7 @@ const BUILDS := {
 		"name": ["abrigo", "abrigos"],
 		"article": "o",
 		"settlement": true,
+		"owners": {"base": 1, "large": 2, "large_from": 5},
 		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
@@ -110,7 +111,9 @@ const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
 ## uma oficina guardar ferramentas, basta acrescentá-la aqui.
 const STORAGE := {
 	"armazem": {"accepts": ["material"], "per_cell": 8, "label": "materiais"},
-	"abrigo": {"accepts": ["roupa"], "per_cell": 4, "label": "roupas"},
+	# O abrigo guarda só nos tamanhos de "sizes" (4 e 6) e o guardado é pessoal:
+	# cada dono tem o seu armário, de "per_owner" de peso, que só ele abre.
+	"abrigo": {"accepts": ["roupa"], "per_owner": 64, "sizes": [4, 6], "label": "roupas"},
 	"oficina": {"accepts": ["ferramenta", "arma"], "per_cell": 2, "label": "ferramentas e armas"},
 }
 
@@ -280,6 +283,15 @@ static func recipe(kind: String) -> Dictionary:
 ## A receita só se faz na bancada de uma oficina?
 static func needs_bench(kind: String) -> bool:
 	return WORKSHOP.has(kind)
+
+
+## Quantos donos a construção aceita ("owners" em BUILDS): o abrigo tem um e,
+## a partir de "large_from" casas de lado, dois. Zero se não tem dono.
+static func owner_slots(kind: String, size: int) -> int:
+	var owners: Dictionary = BUILDS.get(kind, {}).get("owners", {})
+	if owners.is_empty():
+		return 0
+	return int(owners["large"]) if size >= int(owners["large_from"]) else int(owners["base"])
 
 
 static func has_furniture(kind: String) -> bool:
