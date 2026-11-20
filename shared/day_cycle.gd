@@ -1,25 +1,64 @@
 class_name DayCycle
 extends RefCounted
-## O ciclo de dia e noite do mundo. A hora é uma fração do dia, "t", de 0 a 1:
-## 0 é a meia-noite, 0,5 é o meio-dia. O servidor guarda e conta o tempo; os
-## clientes só andam junto, com ajustes de tempos em tempos.
+## O ciclo de dia e noite do mundo, as estações e o anel. A hora é uma fração
+## do dia, "t", de 0 a 1: 0 é a meia-noite, 0,5 é o meio-dia. Os dias inteiros
+## são contados à parte ("days"), e juntos formam o "dia do mundo" d = days + t,
+## de onde saem as estações e a posição do anel. O servidor guarda e conta o
+## tempo; os clientes só andam junto, com ajustes de tempos em tempos.
 ##
 ## Um dia inteiro dura DEFAULT_SECONDS segundos de verdade (30 minutos): cada
-## hora do jogo dura 75 s. A noite fica com quase 12 minutos, tempo de sobra
-## para o Calado aparecer e para dar uma sensação de noite longa, e o dia com
-## uns 14. Para mexer na duração, o servidor aceita --dia=SEGUNDOS.
+## hora do jogo dura 75 s. Para mexer na duração, o servidor aceita --dia=SEGUNDOS.
+##
+## O anel: um anel no céu que desenha faixas (listras de leste a oeste) de
+## sombra de dia e de luz refletida de noite. É só uma função do lugar
+## (a coordenada norte-sul) e do dia do mundo, sem nada guardado no mapa, então
+## vale num mundo infinito: as faixas se repetem a cada RING_SPACING metros e
+## todas vão e vêm juntas, norte e sul, ao longo do ano (YEAR_DAYS dias do
+## jogo, ou 3 dias reais). O ano tem quatro estações; a noite fica mais curta
+## no Anel Alto e mais longa no Anel Baixo.
 
 const DEFAULT_SECONDS := 1800.0
-## Hora em que um mundo novo começa (de manhã, sem pressa).
+## Hora em que um mundo novo começa (de manhã, sem pressa), e o dia do mundo
+## (já com a faixa do anel longe de onde se nasce).
 const START_HOUR := 8.0
+const START_DAY := 6
 
-## Horas do jogo em que cada período começa.
-const DAWN_HOUR := 5.0  # amanhecer: 5h às 7h
-const DAY_HOUR := 7.0
-const DUSK_HOUR := 18.0  # entardecer: 18h às 20h
-const NIGHT_HOUR := 20.0  # noite: 20h às 5h
+## Quanto o ano e a faixa do anel valem, em dias do jogo e em metros.
+const YEAR_DAYS := 144.0
+const SEASON_DAYS := 36.0
+const RING_SPACING := 2880.0  # de uma faixa à seguinte
+const RING_TRAVEL := 1440.0  # o quanto cada faixa anda para cada lado
+const RING_WIDTH := 500.0  # largura da parte clara ou sombria
+## A noite encolhe ou estica até essa metade de hora de cada lado, com a estação.
+const SHIFT_MAX := 0.5
+## O Calado leva até 20% mais ou menos tempo para aparecer, com a estação.
+const CALADO_SEASON_SWING := 0.2
+## Quanto o anel escurece o dia sob a sombra dele (0 a 1).
+const SHADOW_DARKNESS := 0.45
 
 enum Phase { NIGHT, DAWN, DAY, DUSK }
+
+## Quanto a estação alonga (+) ou encolhe (-) a noite, em horas. Quem anda com o
+## relógio (o nó Daytime) atualiza a cada quadro; os testes deixam em 0.
+static var shift_hours := 0.0
+
+
+## Horas do jogo em que cada período começa: o amanhecer, o dia, o entardecer
+## e a noite. Com shift_hours em 0: 5h, 7h, 18h e 20h.
+static func dawn_hour() -> float:
+	return 5.0 - shift_hours
+
+
+static func day_hour() -> float:
+	return 7.0 - shift_hours
+
+
+static func dusk_hour() -> float:
+	return 18.0 + shift_hours
+
+
+static func night_hour() -> float:
+	return 20.0 + shift_hours
 
 
 static func hour_to_t(hour: float) -> float:
@@ -33,16 +72,16 @@ static func hour_of(t: float) -> float:
 ## O período do dia.
 static func phase_of(t: float) -> int:
 	var hour := hour_of(t)
-	if hour >= NIGHT_HOUR or hour < DAWN_HOUR:
+	if hour >= night_hour() or hour < dawn_hour():
 		return Phase.NIGHT
-	if hour < DAY_HOUR:
+	if hour < day_hour():
 		return Phase.DAWN
-	if hour < DUSK_HOUR:
+	if hour < dusk_hour():
 		return Phase.DAY
 	return Phase.DUSK
 
 
-## O Calado só ronda de noite (das 20h às 5h).
+## O Calado só ronda de noite (das 20h às 5h, mais ou menos, com a estação).
 static func is_night(t: float) -> bool:
 	return phase_of(t) == Phase.NIGHT
 
@@ -52,13 +91,20 @@ static func is_night(t: float) -> bool:
 static func darkness(t: float) -> float:
 	var hour := hour_of(t)
 	var x := 0.0
-	if hour >= NIGHT_HOUR or hour < DAWN_HOUR:
+	if hour >= night_hour() or hour < dawn_hour():
 		x = 1.0
-	elif hour < DAY_HOUR:
-		x = 1.0 - (hour - DAWN_HOUR) / (DAY_HOUR - DAWN_HOUR)
-	elif hour >= DUSK_HOUR:
-		x = (hour - DUSK_HOUR) / (NIGHT_HOUR - DUSK_HOUR)
+	elif hour < day_hour():
+		x = 1.0 - (hour - dawn_hour()) / (day_hour() - dawn_hour())
+	elif hour >= dusk_hour():
+		x = (hour - dusk_hour()) / (night_hour() - dusk_hour())
 	return x * x * (3.0 - 2.0 * x)
+
+
+## O escuro onde a criatura está: sob a sombra do anel (strength de 0 a 1),
+## o dia escurece um pouco, sem passar do escuro da noite.
+static func darkness_with_ring(t: float, ring: float) -> float:
+	var base := darkness(t)
+	return maxf(base, SHADOW_DARKNESS * ring * (1.0 - base))
 
 
 ## Quanto tempo falta (em segundos de verdade) para o período mudar.
@@ -67,30 +113,106 @@ static func seconds_to_next_phase(t: float, day_seconds: float) -> float:
 	var next := 0.0
 	match phase_of(t):
 		Phase.NIGHT:
-			next = DAWN_HOUR if hour < DAWN_HOUR else DAWN_HOUR + 24.0
+			next = dawn_hour() if hour < dawn_hour() else dawn_hour() + 24.0
 		Phase.DAWN:
-			next = DAY_HOUR
+			next = day_hour()
 		Phase.DAY:
-			next = DUSK_HOUR
+			next = dusk_hour()
 		Phase.DUSK:
-			next = NIGHT_HOUR
+			next = night_hour()
 	return (next - hour) / 24.0 * day_seconds
 
 
-## Os períodos que o jogador ouve, só pelo nome e por um texto: [nome, hora em
-## que começa, texto]. Não mexem em nada da simulação (isso é das Phase, acima),
-## só dão cor ao aviso de cada virada e à resposta de "que horas são". Em ordem
-## de hora, começando à meia-noite.
-const PERIODS := [
-	["Noite profunda", 0.0, "O silêncio pesa, e só o que não dorme se mexe."],
-	["Amanhecer", 5.0, "A névoa sobe do chão, e uma luz fria toca o horizonte."],
-	["Manhã", 7.0, "O ar esquenta e o mundo respira sem pressa."],
-	["Meio-dia", 12.0, "O sol a pino encolhe as sombras. Tudo parece quieto demais."],
-	["Tarde", 14.0, "A luz desce amarelada e o vento troca de lado."],
-	["Fim de tarde", 18.0, "As sombras se alongam e a luz esfria, dourada."],
-	["Anoitecer", 19.0, "O sol some no horizonte, e a escuridão toma o chão."],
-	["Noite", 20.0, "O mundo fecha os olhos, e o que ronda no escuro desperta."],
+# --- O anel e as estações --------------------------------------------------------
+
+## O dia do mundo: dias inteiros mais a fração do dia.
+static func world_day(days: int, t: float) -> float:
+	return float(days) + fposmod(t, 1.0)
+
+
+## Onde está o centro de uma faixa, em metros ao longo do eixo norte-sul (o norte é
+## o y negativo). No começo do ano o centro está em 0, sobe até o extremo norte,
+## volta, desce até o extremo sul e volta, como o sol entre os solstícios.
+static func ring_center(d: float) -> float:
+	return -RING_TRAVEL * sin(TAU * d / YEAR_DAYS)
+
+
+## De "y" (metros) até o centro da faixa mais próxima, com sinal: negativo quer
+## dizer que ela está ao norte.
+static func ring_offset(y: float, d: float) -> float:
+	var rel := y - ring_center(d)
+	return -(fposmod(rel + RING_SPACING * 0.5, RING_SPACING) - RING_SPACING * 0.5)
+
+
+## Quanto a faixa do anel pega este y: 1 no miolo, 0 fora, suave nas bordas.
+static func ring_strength(y: float, d: float) -> float:
+	var half := RING_WIDTH * 0.5
+	var x := clampf((absf(ring_offset(y, d)) - half * 0.5) / (half * 0.5), 0.0, 1.0)
+	return 1.0 - x * x * (3.0 - 2.0 * x)
+
+
+## Estações: 0 Anel Alto (faixa no extremo norte), 1 Luz Descendo, 2 Anel Baixo
+## (extremo sul), 3 Luz Subindo. Cada uma centrada no seu ponto do ano.
+const SEASONS := [
+	["Anel Alto", "do Anel Alto", "Estação do Anel Alto. O anel brilha no auge, e as noites encurtam."],
+	["Luz Descendo", "da Luz Descendo", "Estação da Luz Descendo. A sombra e a luz do anel deslizam para o sul."],
+	["Anel Baixo", "do Anel Baixo", "Estação do Anel Baixo. O anel afunda no céu, e as noites se alongam."],
+	["Luz Subindo", "da Luz Subindo", "Estação da Luz Subindo. A sombra e a luz do anel voltam para o norte."],
 ]
+
+
+static func season_of(d: float) -> int:
+	return int(floor(fposmod(d - SEASON_DAYS * 0.5, YEAR_DAYS) / SEASON_DAYS)) % 4
+
+
+## Quanto a noite encolhe (+, Anel Alto) ou estica (-, Anel Baixo): muda aos
+## poucos, sem saltos.
+static func season_shift(d: float) -> float:
+	return SHIFT_MAX * cos(TAU * (d - SEASON_DAYS) / YEAR_DAYS)
+
+
+## O ritmo com que o Calado se aproxima de aparecer: 0,8 no Anel Alto (noite
+## curta, ele demora mais), 1,2 no Anel Baixo.
+static func calado_rate(d: float) -> float:
+	return 1.0 + CALADO_SEASON_SWING * cos(TAU * (d - 3.0 * SEASON_DAYS) / YEAR_DAYS)
+
+
+# --- Períodos e textos -------------------------------------------------------------
+
+## Os períodos que o jogador ouve: [nome, "é ..." (o que o C diz), texto normal,
+## texto dentro da faixa do anel]. Os de 1 a 6 são de dia (a faixa é de sombra);
+## o 0 e o 7, de noite (a faixa é de luz). Não mexem na simulação, só dão cor ao
+## aviso de cada virada e ao T.
+const PERIODS := [
+	["Noite profunda", "a noite profunda", "O silêncio pesa, e só o que não dorme se mexe. O anel é a única luz.", "O silêncio pesa, mas a luz do anel ainda alcança o chão. Algo anda lá fora."],
+	["Amanhecer", "o amanhecer", "A névoa sobe do chão, e uma luz fria toca o horizonte, sob o arco pálido do anel.", "A névoa sobe do chão, e a sombra do anel retarda a luz."],
+	["Manhã", "a manhã", "O ar esquenta e o mundo respira sem pressa. O anel é uma faixa clara no céu.", "O ar fica frio demais para a hora. A sombra do anel cobre estas terras."],
+	["Meio-dia", "o meio-dia", "O sol a pino encolhe as sombras, e o anel quase some no brilho.", "É meio-dia, mas a sombra do anel faz o dia parecer crepúsculo."],
+	["Tarde", "a tarde", "A luz desce amarelada e o vento troca de lado. O anel tinge-se de cobre.", "A tarde escurece sob a sombra do anel, e o vento corta."],
+	["Fim de tarde", "o fim de tarde", "As sombras se alongam e a luz esfria, dourada. O anel pega fogo com a última luz.", "O fim de tarde chega antes da hora, e a sombra do anel engole o resto de luz."],
+	["Anoitecer", "o anoitecer", "O sol some no horizonte, e a escuridão toma o chão. O anel acende, pálido.", "O anoitecer cai de uma vez sob a sombra do anel."],
+	["Noite", "a noite", "O mundo fecha os olhos, e o que ronda no escuro desperta. O anel risca o céu, frio.", "O anel derrama uma luz fria sobre o chão. A noite aqui respira um pouco mais."],
+]
+
+
+## Hora do jogo em que o período começa (acompanha a estação).
+static func period_start(period: int) -> float:
+	match period:
+		0:
+			return 0.0
+		1:
+			return dawn_hour()
+		2:
+			return day_hour()
+		3:
+			return 12.0
+		4:
+			return 14.0
+		5:
+			return dusk_hour()
+		6:
+			return dusk_hour() + 1.0
+	return night_hour()
 
 
 ## Índice do período em PERIODS.
@@ -98,56 +220,103 @@ static func period_of(t: float) -> int:
 	var hour := hour_of(t)
 	var found := 0
 	for i in PERIODS.size():
-		if hour >= float(PERIODS[i][1]):
+		if hour >= period_start(i):
 			found = i
 	return found
 
 
-## O aviso falado quando o período muda.
-static func announcement(period: int) -> String:
-	return "%s. %s" % [PERIODS[period][0], PERIODS[period][2]]
+## O período é de noite (a faixa do anel é de luz)?
+static func is_night_period(period: int) -> bool:
+	return period == 0 or period == 7
+
+
+## O aviso falado quando o período muda; "in_ring" quando se está na faixa.
+static func announcement(period: int, in_ring := false) -> String:
+	return "%s. %s" % [PERIODS[period][0], PERIODS[period][3] if in_ring else PERIODS[period][2]]
 
 
 ## Segundos de verdade até o próximo período.
 static func seconds_to_next_period(t: float, day_seconds: float) -> float:
 	var hour := hour_of(t)
 	var next_index := (period_of(t) + 1) % PERIODS.size()
-	var next: float = PERIODS[next_index][1]
+	var next := period_start(next_index)
 	if next <= hour:
 		next += 24.0
 	return (next - hour) / 24.0 * day_seconds
 
 
-## A resposta de "que horas são": o período e o texto dele, sem hora numérica
-## nem tempo restante.
-static func describe(t: float) -> String:
-	return announcement(period_of(t))
+## O T: o período, a estação e o texto do período (sem hora numérica).
+static func describe(t: float, d: float, in_ring := false) -> String:
+	var period := period_of(t)
+	return "%s, na estação %s. %s" % [PERIODS[period][0], SEASONS[season_of(d)][1], PERIODS[period][3] if in_ring else PERIODS[period][2]]
 
 
-## Momentos relevantes para a depuração: [chave, rótulo, hora do jogo, chegar
-## antes (true) ou exatamente nela (false)]. Os que chegam antes caem
-## JUMP_LEAD segundos de verdade antes do momento, para dar para ouvir a
-## virada. "grilos" é a hora em que eles passam a ser audíveis; o Calado só
-## aparece de 1 a 2,5 minutos depois do começo da noite (se a criatura estiver
-## exposta), então "noite" já serve para esperar por ele.
+## A segunda fala do C: o momento do dia e o anel onde se está. "strength" é
+## ring_strength e "offset" é ring_offset, no y da criatura.
+static func sky_text(t: float, strength: float, offset: float) -> String:
+	var period := period_of(t)
+	var noun: String = PERIODS[period][1]
+	var night := is_night_period(period)
+	var lead := "É %s" % noun
+	if strength >= 0.5:
+		return lead + (", sob a luz do anel." if night else ", sob a sombra do anel.")
+	if absf(offset) <= RING_WIDTH * 1.5:
+		var side := "ao norte" if offset < 0.0 else "ao sul"
+		return lead + (", e a luz do anel passa logo %s." if night else ", e a sombra do anel passa logo %s.") % side
+	return lead + (", e o anel brilha, frio, ao longe." if night else ", e o anel corta o céu, pálido.")
+
+
+## O aviso de entrar ou sair da faixa do anel.
+static func ring_edge_text(night: bool, entering: bool) -> String:
+	if night:
+		return "A luz do anel alcança você." if entering else "A luz do anel fica para trás."
+	return "Uma sombra fria do anel cai sobre você." if entering else "Você sai da sombra do anel."
+
+
+# --- Momentos para a depuração -----------------------------------------------------
+
+## Momentos relevantes: [chave, rótulo, chegar antes (true) ou exatamente nele (false)].
+## Os que chegam antes caem JUMP_LEAD segundos de verdade antes do momento, para
+## dar para ouvir a virada. "grilos" é a hora em que eles passam a ser audíveis; o
+## Calado só aparece de 1 a 2,5 minutos depois do começo da noite (se a criatura
+## estiver exposta), então "noite" já serve para esperar por ele.
 const JUMP_LEAD := 8.0
 const MOMENTS := [
-	["meio_dia", "Meio-dia", 12.0, false],
-	["entardecer", "Entardecer (18h)", DUSK_HOUR, true],
-	["grilos", "Grilos audíveis", 18.5, true],
-	["noite", "Começo da noite, Calado possível", NIGHT_HOUR, true],
-	["meia_noite", "Meia-noite", 0.0, false],
-	["coro", "Coro do amanhecer (5h)", DAWN_HOUR, true],
-	["dia", "Dia claro (7h)", DAY_HOUR, true],
+	["meio_dia", "Meio-dia", false],
+	["entardecer", "Começo do fim de tarde", true],
+	["grilos", "Grilos audíveis", true],
+	["noite", "Começo da noite, Calado possível", true],
+	["meia_noite", "Meia-noite", false],
+	["coro", "Coro do amanhecer", true],
+	["dia", "Dia claro", true],
 ]
+
+
+static func _moment_base(key: String) -> float:
+	match key:
+		"meio_dia":
+			return 12.0
+		"entardecer":
+			return dusk_hour()
+		"grilos":
+			return dusk_hour() + 0.5
+		"noite":
+			return night_hour()
+		"meia_noite":
+			return 0.0
+		"coro":
+			return dawn_hour()
+		"dia":
+			return day_hour()
+	return -1.0
 
 
 ## A hora (0 a 24) de um dos MOMENTS, ou -1 se a chave não existe.
 static func moment_hour(key: String, day_seconds: float) -> float:
 	for moment in MOMENTS:
 		if moment[0] == key:
-			var hour: float = moment[2]
-			if moment[3]:
+			var hour := _moment_base(key)
+			if moment[2]:
 				hour -= JUMP_LEAD / day_seconds * 24.0
 			return fposmod(hour, 24.0)
 	return -1.0
@@ -158,3 +327,8 @@ static func moment_label(key: String) -> String:
 		if moment[0] == key:
 			return moment[1]
 	return ""
+
+
+## O dia do mundo em que a estação "season" (0 a 3) começa, no primeiro ano.
+static func season_start_day(season: int) -> float:
+	return SEASON_DAYS * (season + 0.5)

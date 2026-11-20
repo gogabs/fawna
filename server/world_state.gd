@@ -47,6 +47,8 @@ var striking := {}
 ## A hora do mundo (fração do dia, 0 = meia-noite; ver DayCycle). Quem anda com o
 ## relógio é o nó Daytime, no servidor; aqui ela só fica guardada e salva.
 var day_t := DayCycle.hour_to_t(DayCycle.START_HOUR)
+## Quantos dias inteiros já passaram (conta as estações e a posição do anel).
+var day_n := DayCycle.START_DAY
 var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
@@ -827,6 +829,7 @@ func to_save() -> Dictionary:
 		"offhand": offhand,
 		"torch_until": torch_until,
 		"day_t": day_t,
+		"day_n": day_n,
 		"last_pos": positions,
 		"credentials": credentials.to_save(),
 		"harvest": harvest.to_save(),
@@ -857,6 +860,7 @@ static func from_save(data: Dictionary) -> WorldState:
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
 	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
+	state.day_n = maxi(int(data.get("day_n", state.day_n)), 0)
 	var positions = data.get("last_pos", {})
 	if typeof(positions) == TYPE_DICTIONARY:
 		for player_name in positions:

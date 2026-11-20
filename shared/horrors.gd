@@ -41,6 +41,11 @@ const COOLDOWN := [240.0, 480.0]
 const PRESENCE_FAR := 18.0
 const PRESENCE_NEAR := 4.0
 ## Pássaros: a essa distância dele não cantam; mais perto, fogem.
+## Luz do anel (só de noite, dentro da faixa): ele demora mais para aparecer,
+## vem mais devagar e precisa chegar mais perto para alcançar. Nunca o impede.
+const RING_APPEAR_SLOW := 0.5
+const RING_SPEED_SLOW := 0.3
+const RING_CATCH_SHRINK := 0.4
 const HUSH_RADIUS := 16.0
 const SCARE_RADIUS := 9.0
 
@@ -56,6 +61,8 @@ var _need := {}  # peer -> segundos de exposição até ele aparecer
 var _rest_until := {}  # peer -> ms: antes disso ele não volta
 var _rng := RandomNumberGenerator.new()
 var _night := true  # do último passo
+var _lights := {}  # peer -> 0 a 1: quanto a luz do anel pega o jogador
+var _rate := 1.0  # ritmo da aparição, com a estação (ver DayCycle.calado_rate)
 
 
 func _init(the_world: WorldGen) -> void:
@@ -68,9 +75,11 @@ func _init(the_world: WorldGen) -> void:
 ## Devolve mensagens para os clientes: [peer, tipo, argumentos], com tipo
 ## "at" ([id, posição, modo]), "gone" ([id]) ou "caught" ([id]): este último
 ## só vai ao alvo, que foi alcançado (o Calado some e descansa).
-func update(now_ms: int, players: Dictionary, fires: Array, night := true) -> Array:
+func update(now_ms: int, players: Dictionary, fires: Array, night := true, lights := {}, rate := 1.0) -> Array:
 	var out := []
 	_night = night
+	_lights = lights
+	_rate = rate
 	if not night:
 		# Clareou: o que ainda caçava recua, como se a luz o espantasse.
 		for horror in horrors.values():
@@ -240,9 +249,10 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		horror["mode"] = Mode.HELD
 		return
 	horror["mode"] = Mode.STALK
-	var step := minf(STALK_SPEED * delta, distance)
+	var light := float(_lights.get(peer, 0.0))
+	var step := minf(STALK_SPEED * (1.0 - RING_SPEED_SLOW * light) * delta, distance)
 	horror["pos"] = pos + (target - pos).normalized() * step
-	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE:
+	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE * (1.0 - RING_CATCH_SHRINK * light):
 		out.append([peer, "caught", [horror["id"]]])
 		_remove(horror, now_ms, out)
 
@@ -265,7 +275,7 @@ func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary,
 		return
 	if not _need.has(peer):
 		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
-	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta
+	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta * _rate * (1.0 - RING_APPEAR_SLOW * float(_lights.get(peer, 0.0)))
 	if float(_exposure[peer]) >= float(_need[peer]):
 		summon(peer, players)
 

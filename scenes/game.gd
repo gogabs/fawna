@@ -57,6 +57,7 @@ const TREE_FALL_REACH := 3.0  # a queda de uma árvore se ouve a 3x HEARING_RADI
 const HARVEST_CHECK := 2.0  # segundos entre conferências do que rebrotou
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
+const WHERE_STEPS := 2  # falas do C: posição, céu
 const BED_VOLUME_DB := -22.0  # fundo do bioma
 ## Vento: forte nas trilhas e na beira da lagoa (lugares abertos), fraco no
 ## mato da pradaria e quase nada dentro do bosque.
@@ -115,6 +116,7 @@ var _dry_notice_ms := 0
 var ground: Ground  # espelho dos itens soltos no chão (o servidor manda)
 var _burn_timer := 0.0  # servidor: fogueiras que apagaram
 var _pos := Vector2.ZERO  # posição local (o servidor confere)
+var _where_step := 0  # qual fala do C vem agora (ver _say_where)
 var _heading := 0  # 0 norte, 1 nordeste... (Compass)
 var _cell := WorldGen.NO_CELL
 var _region := Vector2i.ZERO  # região em que a criatura está (para o som de mudança)
@@ -253,6 +255,19 @@ func _process(delta: float) -> void:
 		request_move_to.rpc_id(1, _pos)
 
 
+## C é circular: o primeiro toque diz onde a criatura pisa e para onde olha; o
+## seguinte, o momento do dia e o anel; e assim por diante, sem relógio de espera
+## (daqui para frente cabe o clima como mais um passo).
+func _say_where() -> void:
+	var step := _where_step % WHERE_STEPS
+	_where_step = step + 1
+	match step:
+		0:
+			Speech.say(Narrator.stepping_on(world, _pos, _heading))
+		_:
+			Speech.say(daytime.sky_text())
+
+
 ## Onde a criatura está (casas), para quem precisa saber de fora.
 func my_position() -> Vector2:
 	return _pos
@@ -292,7 +307,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action("ajuda"):
 		_say_help()
 	elif event.is_action("onde_estou"):
-		Speech.say(Narrator.where_am_i(world, _pos, _heading))
+		_say_where()
 	elif event.is_action("hora"):
 		Speech.say(daytime.describe())
 	elif event.is_action("direcao"):
@@ -2022,7 +2037,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. T: que horas são; o mundo anoitece e amanhece, e o Calado só ronda de noite. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena é 24; acima disso você anda mais devagar, até o limite de 36. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. C: onde estou. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com o Caminheiro. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia e onde o anel está em relação a você (e assim, em ciclo). T: o período do dia e a estação. O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena é 24; acima disso você anda mais devagar, até o limite de 36. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -3012,7 +3027,7 @@ func _run_auto_commands() -> void:
 			"RADAR":
 				_say_radar()
 			"ONDE":
-				Speech.say(Narrator.where_am_i(world, _pos, _heading))
+				_say_where()
 			"QUEM":
 				_say_who()
 			"PASSAROS":
@@ -3022,6 +3037,9 @@ func _run_auto_commands() -> void:
 			"IR_MEIO_DIA", "IR_ENTARDECER", "IR_GRILOS", "IR_NOITE", "IR_MEIA_NOITE", "IR_CORO", "IR_DIA":  # testes, só quem hospeda: vai para um momento (DayCycle.MOMENTS)
 				if Net.is_server():
 					Speech.say(daytime.jump_to(command.trim_prefix("IR_").to_lower()))
+			"IR_ANEL_ALTO", "IR_LUZ_DESCENDO", "IR_ANEL_BAIXO", "IR_LUZ_SUBINDO":  # testes, só quem hospeda: vai para o começo de uma estação
+				if Net.is_server():
+					Speech.say(daytime.jump_to_season(["IR_ANEL_ALTO", "IR_LUZ_DESCENDO", "IR_ANEL_BAIXO", "IR_LUZ_SUBINDO"].find(command)))
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)
