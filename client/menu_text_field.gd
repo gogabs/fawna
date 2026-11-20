@@ -18,6 +18,8 @@ var value := "":
 var empty_text := "vazio"
 var max_length := 0
 var placeholder := ""
+## Campo de senha: não mostra o que foi digitado, nem na tela nem na fala.
+var secret := false
 
 var _button: Button
 var _edit: LineEdit
@@ -50,6 +52,8 @@ func is_editing() -> bool:
 
 ## O que o leitor de tela e a fala dizem na navegação.
 func spoken() -> String:
+	if secret:
+		return "%s: %s" % [label, "definida" if not value.is_empty() else empty_text]
 	return "%s: %s" % [label, value if not value.is_empty() else empty_text]
 
 
@@ -57,6 +61,7 @@ func begin_edit() -> void:
 	_edit.max_length = max_length
 	_edit.placeholder_text = placeholder
 	_edit.accessibility_name = label
+	_edit.secret = secret
 	_edit.text = value
 	_button.hide()
 	_edit.show()

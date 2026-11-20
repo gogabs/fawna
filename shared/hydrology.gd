@@ -82,7 +82,7 @@ func is_sea(region: Vector2i) -> bool:
 	return _climate_of(region).x < WorldGen.SEA_LEVEL
 
 
-## Altitude da região. O mar é o fundo de tudo; a região da Origem é o alto de
+## Altitude da região. O mar é o fundo de tudo; a região do centro do mundo é o alto de
 ## tudo, para que nenhum rio chegue nela.
 func height(region: Vector2i) -> float:
 	if _heights.has(region):
@@ -115,7 +115,7 @@ func drain(region: Vector2i) -> Vector2i:
 	return target
 
 
-## Chuva da região (quanto de água ela mesma acrescenta). O mar e a Origem não.
+## Chuva da região (quanto de água ela mesma acrescenta). O mar e o centro do mundo não.
 func runoff(region: Vector2i) -> float:
 	if region == Vector2i.ZERO or is_sea(region):
 		return 0.0
