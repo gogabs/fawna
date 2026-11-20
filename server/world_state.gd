@@ -60,6 +60,27 @@ func _init(world_seed: int) -> void:
 	ground = Ground.new()
 
 
+## Senhas dos personagens (ver Credentials).
+var credentials := Credentials.new()
+
+
+## Confere a senha de quem quer entrar. "" = pode entrar; senão o motivo:
+## "curta", "errada", "devagar" (ver Credentials.check) ou "ja_conectado"
+## (o personagem já está no mundo). Na primeira vez de um nome, a senha fica
+## registrada; "criada" também deixa entrar (vem em created).
+func login(player_name: String, password: String) -> Dictionary:
+	var clean_name := player_name.strip_edges().left(24)
+	if clean_name.is_empty():
+		return {"ok": false, "reason": "sem_nome"}
+	for id in players:
+		if players[id]["name"] == clean_name:
+			return {"ok": false, "reason": "ja_conectado"}
+	var result := credentials.check(clean_name, password)
+	if result == "ok" or result == "criada":
+		return {"ok": true, "created": result == "criada"}
+	return {"ok": false, "reason": result}
+
+
 func add_player(id: int, player_name: String) -> Vector2:
 	var clean_name := player_name.strip_edges().left(24)
 	if clean_name.is_empty():
@@ -788,6 +809,7 @@ func to_save() -> Dictionary:
 		"equipment": equipment,
 		"offhand": offhand,
 		"torch_until": torch_until,
+		"credentials": credentials.to_save(),
 		"harvest": harvest.to_save(),
 		"resin": resin.to_save(),
 		"builds": builds.to_save(),
@@ -815,6 +837,9 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	var saved_credentials = data.get("credentials", {})
+	if typeof(saved_credentials) == TYPE_DICTIONARY:
+		state.credentials.load_save(saved_credentials)
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
