@@ -46,6 +46,18 @@ func open_at(title: String, source: Callable) -> String:
 	return "%s. %s" % [title, _describe(_levels[-1])]
 
 
+## Atalho: volta ao começo e abre a opção do primeiro nível com esse rótulo
+## (ex.: I abre a Bolsa, V abre o Caminheiro). Devolve o texto a falar.
+func open_root(label: String) -> String:
+	reset()
+	var items: Array = _levels[0]["items"]
+	for i in items.size():
+		if items[i]["label"] == label:
+			_levels[0]["index"] = i
+			return _confirm()
+	return ""
+
+
 func depth() -> int:
 	return _levels.size()
 

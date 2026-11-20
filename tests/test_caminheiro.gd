@@ -40,7 +40,7 @@ func _free_point(world: WorldGen, p: Vector2) -> Vector2:
 	return p
 
 
-## De vários lugares, em várias sementes, a rota termina na Origem, e dá para
+## De vários lugares, em várias sementes, a rota termina no Centro, e dá para
 ## ir em linha reta de cada beacon ao próximo sem esbarrar.
 func _test_routes_reach_origin() -> void:
 	for world_seed in range(5):
@@ -50,9 +50,9 @@ func _test_routes_reach_origin() -> void:
 		for k in 4:
 			var from := _free_point(world, Vector2(rng.randf_range(-120, 120), rng.randf_range(-120, 120)))
 			var finder := Wayfinder.new(world)
-			_check(finder._plan_trails(from, WorldGen.origin_point()), "deveria achar rota de %s (semente %d)" % [from, world_seed])
+			_check(finder._plan_trails(from, WorldGen.center_point()), "deveria achar rota de %s (semente %d)" % [from, world_seed])
 			var route := finder.full_route()
-			_check(not route.is_empty() and route[-1] == WorldGen.origin_point(), "a rota deveria terminar na Origem (de %s)" % from)
+			_check(not route.is_empty() and route[-1] == WorldGen.center_point(), "a rota deveria terminar no Centro (de %s)" % from)
 			var previous := from
 			var on_trail := 0
 			for point in route:
@@ -62,7 +62,7 @@ func _test_routes_reach_origin() -> void:
 					on_trail += 1
 				previous = point
 			# Quase todos os beacons (60%) ficam em cima de trilha (o resto é a
-			# chegada até a trilha e a clareira da Origem).
+			# chegada até a trilha e a clareira do centro).
 			_check(route.size() < 5 or on_trail >= route.size() * 0.6, "a rota deveria seguir as trilhas (%d de %d beacons) de %s semente %d bioma %s" % [on_trail, route.size(), from, world_seed, world.biome_at(WorldGen.cell_of(from))])
 
 
@@ -125,12 +125,12 @@ func _test_off_trail_goes_to_nearest_trail_first() -> void:
 	var finder := Wayfinder.new(world)
 	var path := finder.nearest_trail_path(from)
 	_check(not path.is_empty() and world.is_trail(path[-1]), "deveria achar o caminho até uma trilha")
-	finder._plan_trails(from, WorldGen.origin_point())
+	finder._plan_trails(from, WorldGen.center_point())
 	var entry := WorldGen.cell_center(path[-1])
 	_check(finder.full_route().has(entry), "a rota deveria passar pela entrada da trilha mais próxima")
 
 
-## Uma criatura que só anda rumo ao beacon atual (com colisão) chega à Origem.
+## Uma criatura que só anda rumo ao beacon atual (com colisão) chega ao Centro.
 func _test_walk_following_beacons() -> void:
 	for world_seed in [0, 7]:
 		var world := WorldGen.new(world_seed)
@@ -141,14 +141,14 @@ func _test_walk_following_beacons() -> void:
 		var arrived := []
 		guide.beacon_reached.connect(func(p): reached.append(p))
 		guide.arrived.connect(func(place): arrived.append(place))
-		_check(guide.start(pos, WorldGen.origin_point(), "Origem"), "o Caminheiro deveria acender")
+		_check(guide.start(pos, WorldGen.center_point(), "Centro"), "o Caminheiro deveria acender")
 		var steps := 0
 		while guide.active and steps < 20000:
 			steps += 1
 			var beacon: Vector2 = guide.current_beacon()
 			pos = _walk(world, pos, (beacon - pos).normalized() * 0.15)
 			guide.update(pos, 0.1)
-		_check(arrived == ["Origem"], "deveria chegar à Origem seguindo os beacons (semente %d, parou em %s)" % [world_seed, pos])
+		_check(arrived == ["Centro"], "deveria chegar ao Centro seguindo os beacons (semente %d, parou em %s)" % [world_seed, pos])
 		_check(reached.size() >= 3, "deveria passar por vários beacons (%d)" % reached.size())
 		_check(not guide.active, "o cristal se apaga no destino")
 		guide.free()
@@ -159,7 +159,7 @@ func _test_replan_when_lost() -> void:
 	var guide := Caminheiro.new()
 	guide.setup(world, null)
 	var from := _free_point(world, Vector2(-60, 40))
-	guide.start(from, WorldGen.origin_point(), "Origem")
+	guide.start(from, WorldGen.center_point(), "Centro")
 	var first: Vector2 = guide.current_beacon()
 	var lost := _free_point(world, from + Vector2(0, 30))
 	guide.update(lost, 0.1)
@@ -173,15 +173,15 @@ func _test_menu() -> void:
 	var lit := [false]
 	var root := func() -> Array:
 		return [{"label": "Caminheiro", "open": func() -> Array:
-			var items := [{"label": "Origem", "run": func(): ran.append("Origem"); lit[0] = true; return "rumo à Origem"}]
+			var items := [{"label": "Centro", "run": func(): ran.append("Centro"); lit[0] = true; return "rumo ao Centro"}]
 			if lit[0]:
 				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = false; return "apagou"})
 			return items}]
 	var menu := FloatingMenu.new(root)
 	_check(menu.press("direita") == "Caminheiro", "com uma opção só, a navegação repete o nome")
-	_check(menu.press("cima") == "Caminheiro. Origem", "cima entra no Caminheiro")
+	_check(menu.press("cima") == "Caminheiro. Centro", "cima entra no Caminheiro")
 	_check(menu.depth() == 2, "deveria estar no submenu")
-	_check(menu.press("cima") == "rumo à Origem" and ran == ["Origem"], "cima na Origem acende o cristal")
+	_check(menu.press("cima") == "rumo ao Centro" and ran == ["Centro"], "cima no Centro acende o cristal")
 	_check(menu.depth() == 2, "depois de executar, o menu continua onde está")
 	_check(menu.press("direita") == "Apagar o cristal, 2 de 2", "aceso, aparece a opção de apagar")
 	_check(menu.press("baixo") == "Caminheiro", "baixo volta")
@@ -196,7 +196,7 @@ func _test_resources() -> void:
 	var GameScript: GDScript = load("res://scenes/game.gd")
 	var world := WorldGen.new(220)
 	var harvest := Harvest.new(world)
-	var start := _free_point(world, WorldGen.origin_point() + Vector2(0, 1.5))
+	var start := _free_point(world, WorldGen.center_point() + Vector2(0, 1.5))
 	for entry: Array in GameScript.CAMINHEIRO_RESOURCES:
 		var cell: Vector2i = GameScript.nearest_collectable(world, harvest, start, entry[1], GameScript.RESOURCE_SEARCH_RADIUS)
 		if entry[0] in ["Frutas", "Madeira", "Cipó", "Fibra vegetal"] and cell == WorldGen.NO_CELL:
@@ -254,7 +254,7 @@ func _test_menu_stay() -> void:
 
 
 func _test_contract() -> void:
-	_check(Narrator.contract("a", "a Origem") == "à Origem", "à Origem")
+	_check(Narrator.contract("a", "o Centro") == "ao Centro", "ao Centro")
 	_check(Narrator.contract("a", "o bambu") == "ao bambu", "ao bambu")
 	_check(Narrator.contract("em", "as pedras") == "nas pedras", "nas pedras")
 	_check(Narrator.contract("a", "Lua") == "a Lua", "sem artigo, só a preposição")
@@ -315,7 +315,7 @@ func _test_menu_open_at() -> void:
 func _test_region_change() -> void:
 	var GameScript: GDScript = load("res://scenes/game.gd")
 	var world := WorldGen.new(173)
-	var cell := WorldGen.cell_of(WorldGen.origin_point())
+	var cell := WorldGen.cell_of(WorldGen.center_point())
 	var region := world.region_of(cell)
 	var border := cell
 	while world.region_of(border + Vector2i(1, 0)) == region:

@@ -141,18 +141,14 @@ static func pickup() -> AudioStreamWAV:
 
 
 ## Som contínuo (em loop) de cada coisa do mundo, para o áudio espacial.
-## "level" escolhe uma versão mais cheia da Origem (usada só pela ocarina
-## guardada, como reserva).
-static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
-	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.ORIGEM else 0]
+static func ambient(thing: WorldGen.Thing) -> AudioStreamWAV:
+	var key := "amb_%d" % thing
 	if not _cache.has(key):
 		match thing:
 			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
-			WorldGen.Thing.ORIGEM:
-				_cache[key] = _origin_loop(level)
 			_:
 				return null
 	return _cache[key]
@@ -187,9 +183,17 @@ static func _bees_loop() -> AudioStreamWAV:
 	return _to_wav(samples, true)
 
 
-## Origem: sininhos numa escala pentatônica, como um sino de vento. Nos
-## níveis mais altos, ganha mais notas, um baixo e passarinhos.
-static func _origin_loop(level: int) -> AudioStreamWAV:
+## Sininhos numa escala pentatônica, como um sino de vento: a musiquinha de
+## reserva quando faltam os arquivos. Nos níveis mais altos, ganha mais notas,
+## um baixo e passarinhos.
+static func bells_loop(level: int) -> AudioStreamWAV:
+	var key := "sinos_%d" % level
+	if not _cache.has(key):
+		_cache[key] = _bells_build(level)
+	return _cache[key]
+
+
+static func _bells_build(level: int) -> AudioStreamWAV:
 	var notes := [523.25, 659.25, 783.99, 659.25] if level == 0 else \
 		[523.25, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33]
 	var count := RATE * 4

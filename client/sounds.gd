@@ -44,7 +44,6 @@ const MANIFEST := {
 	"ui_fechar": ["menu/menu_fechar.ogg", "world/menuclose.ogg"],
 	"amb_agua": ["world/loop_brook.ogg"],
 	"amb_arbusto": ["world/loop_windinbushes.ogg"],
-	"amb_origem": ["world/loop_windchimes1.ogg"],
 	"bussola_norte": ["bussola/norte.ogg"],
 	"bussola_sul": ["bussola/sul.ogg"],
 	"bussola_lateral": ["bussola/lateral.ogg"],
@@ -509,8 +508,6 @@ static func ambient(thing: WorldGen.Thing) -> AudioStream:
 			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
 		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 			key = "amb_arbusto"
-		WorldGen.Thing.ORIGEM:
-			key = "amb_origem"
 	if key.is_empty():
 		return null
 	var stream := _pick(key, func(): return null, false)
@@ -530,12 +527,12 @@ static func dark_music() -> AudioStream:
 static func music(level: int) -> AudioStream:
 	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
 	if stream == null:
-		stream = SoundBank.ambient(WorldGen.Thing.ORIGEM, level)
+		stream = SoundBank.bells_loop(level)
 	return stream
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS]
 
 
 static func _has_file(key: String) -> bool:
