@@ -77,53 +77,57 @@ static func seconds_to_next_phase(t: float, day_seconds: float) -> float:
 	return (next - hour) / 24.0 * day_seconds
 
 
-static func phase_name(phase: int) -> String:
-	match phase:
-		Phase.NIGHT:
-			return "noite"
-		Phase.DAWN:
-			return "amanhecer"
-		Phase.DAY:
-			return "dia"
-		_:
-			return "entardecer"
+## Os períodos que o jogador ouve, só pelo nome e por um texto: [nome, hora em
+## que começa, texto]. Não mexem em nada da simulação (isso é das Phase, acima),
+## só dão cor ao aviso de cada virada e à resposta de "que horas são". Em ordem
+## de hora, começando à meia-noite.
+const PERIODS := [
+	["Noite profunda", 0.0, "O silêncio pesa. Só a coruja e o que não dorme se mexem."],
+	["Amanhecer", 5.0, "A névoa sobe do chão e os pássaros disputam a primeira luz."],
+	["Manhã", 7.0, "O ar esquenta e o mundo respira sem pressa."],
+	["Meio-dia", 12.0, "O sol a pino encolhe as sombras. Tudo parece quieto demais."],
+	["Tarde", 14.0, "A luz desce amarelada e o vento troca de lado."],
+	["Fim de tarde", 18.0, "As sombras se alongam, e os primeiros grilos afinam no escuro."],
+	["Anoitecer", 19.0, "O sol some entre as árvores. Os pássaros se recolhem."],
+	["Noite", 20.0, "O mundo fecha os olhos, e o que ronda no escuro desperta."],
+]
+
+
+## Índice do período em PERIODS.
+static func period_of(t: float) -> int:
+	var hour := hour_of(t)
+	var found := 0
+	for i in PERIODS.size():
+		if hour >= float(PERIODS[i][1]):
+			found = i
+	return found
 
 
 ## O aviso falado quando o período muda.
-static func announcement(phase: int) -> String:
-	match phase:
-		Phase.NIGHT:
-			return "Anoiteceu."
-		Phase.DAWN:
-			return "Amanhece."
-		Phase.DAY:
-			return "O dia clareou."
-		_:
-			return "Entardece."
+static func announcement(period: int) -> String:
+	return "%s. %s" % [PERIODS[period][0], PERIODS[period][2]]
 
 
-## A resposta de "que horas são": a hora do jogo e o período, com o tempo que
-## falta para ele mudar.
+## Segundos de verdade até o próximo período.
+static func seconds_to_next_period(t: float, day_seconds: float) -> float:
+	var hour := hour_of(t)
+	var next_index := (period_of(t) + 1) % PERIODS.size()
+	var next: float = PERIODS[next_index][1]
+	if next <= hour:
+		next += 24.0
+	return (next - hour) / 24.0 * day_seconds
+
+
+## A resposta de "que horas são": o período, o texto dele e quanto falta para
+## o próximo. Sem hora numérica.
 static func describe(t: float, day_seconds: float) -> String:
-	var hour := int(floor(hour_of(t)))
-	var minutes := int(floor((hour_of(t) - hour) * 60.0))
-	var part := ""
-	match phase_of(t):
-		Phase.NIGHT:
-			part = "Madrugada" if hour < DAWN_HOUR else "Noite"
-		Phase.DAWN:
-			part = "Amanhecendo"
-		Phase.DAY:
-			part = "Manhã" if hour < 12 else "Tarde"
-		Phase.DUSK:
-			part = "Entardecendo"
-	var left := int(round(seconds_to_next_phase(t, day_seconds) / 60.0))
+	var left := int(round(seconds_to_next_period(t, day_seconds) / 60.0))
 	var until := "falta menos de um minuto para mudar"
 	if left == 1:
 		until = "falta cerca de um minuto para mudar"
 	elif left > 1:
 		until = "faltam uns %d minutos para mudar" % left
-	return "%s, %s e %02d minutos; %s." % [part, "1 hora" if hour == 1 else "%d horas" % hour, minutes, until]
+	return "%s. %s %s." % [PERIODS[period_of(t)][0], PERIODS[period_of(t)][2], until.substr(0, 1).to_upper() + until.substr(1)]
 
 
 ## Momentos relevantes para a depuração: [chave, rótulo, hora do jogo, chegar

@@ -9,7 +9,7 @@ extends Node
 ##   - pássaros do dia dormem à noite e a coruja assume; ao amanhecer, o coro;
 ##   - grilos ao fundo, cada vez mais, do entardecer até a noite plena
 ##     (menos no mar e no frio), e sapinhos na lagoa e no brejo;
-##   - um aviso falado quando entardece, anoitece e amanhece;
+##   - um aviso falado a cada mudança de período (ver DayCycle.PERIODS);
 ##   - a tecla T diz que horas são.
 ## E o Calado só ronda de noite (ver Horrors).
 
@@ -44,12 +44,12 @@ func start_server(state: WorldState) -> void:
 		t = DayCycle.hour_to_t(Net.day_hour)
 	if Net.day_seconds > 0.0:
 		day_seconds = Net.day_seconds
-	_phase = DayCycle.phase_of(t)
+	_phase = DayCycle.period_of(t)
 
 
 func start_client() -> void:
 	_playing = true
-	_phase = DayCycle.phase_of(t)
+	_phase = DayCycle.period_of(t)
 	if _crickets == null and DisplayServer.get_name() != "headless":
 		_crickets = _make_player("Grilos", SoundBank.crickets())
 		_frogs = _make_player("Sapinhos", SoundBank.frogs())
@@ -127,12 +127,12 @@ func _process(delta: float) -> void:
 
 ## Avisa quando o período muda. Na entrada, não diz nada: a tecla T responde.
 func _track_phase() -> void:
-	var phase := DayCycle.phase_of(t)
-	if phase == _phase:
+	var period := DayCycle.period_of(t)
+	if period == _phase:
 		return
-	_phase = phase
+	_phase = period
 	if _playing:  # só quem joga ouve o aviso
-		Speech.say(DayCycle.announcement(phase), false)
+		Speech.say(DayCycle.announcement(period), false)
 
 
 ## Sons da noite que dependem do bioma: grilos em terra, sapinhos na água.
