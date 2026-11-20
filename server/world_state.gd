@@ -32,6 +32,8 @@ var builds: Builds
 var ground: Ground
 ## id do peer -> { "name": String, "pos": Vector2, "heading": int }
 var players := {}
+## nome da criatura -> última posição (Vector2) em que esteve; é onde ela nasce ao voltar.
+var last_pos := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
 var inventories := {}
 ## nome da criatura -> item empunhado ("" = mãos livres). Ver Bag.
@@ -85,6 +87,10 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if clean_name.is_empty():
 		clean_name = "Criatura %d" % (players.size() + 1)
 	var pos := _spawn_point()
+	if last_pos.has(clean_name):
+		# Volta para onde saiu; se o lugar não for mais livre, o ponto livre mais perto.
+		var saved: Vector2 = last_pos[clean_name]
+		pos = saved if world.is_free(saved) else world.nearest_free(saved)
 	players[id] = {"name": clean_name, "pos": pos, "heading": 0}
 	if not inventories.has(clean_name):
 		inventories[clean_name] = {}
@@ -96,6 +102,8 @@ func add_player(id: int, player_name: String) -> Vector2:
 
 
 func remove_player(id: int) -> void:
+	if players.has(id):
+		last_pos[players[id]["name"]] = players[id]["pos"]
 	builds.touch(owner_key(id))
 	players.erase(id)
 	_last_collect.erase(id)
@@ -801,6 +809,13 @@ func snapshot() -> Dictionary:
 
 
 func to_save() -> Dictionary:
+	# Quem está online conta com a posição de agora (o servidor pode cair sem ninguém sair).
+	var positions := {}
+	for player_name: String in last_pos:
+		positions[player_name] = [last_pos[player_name].x, last_pos[player_name].y]
+	for id in players:
+		var pos: Vector2 = players[id]["pos"]
+		positions[players[id]["name"]] = [pos.x, pos.y]
 	return {
 		"version": 1,
 		"seed": world.world_seed,
@@ -808,6 +823,7 @@ func to_save() -> Dictionary:
 		"equipment": equipment,
 		"offhand": offhand,
 		"torch_until": torch_until,
+		"last_pos": positions,
 		"credentials": credentials.to_save(),
 		"harvest": harvest.to_save(),
 		"resin": resin.to_save(),
@@ -836,6 +852,14 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	var positions = data.get("last_pos", {})
+	if typeof(positions) == TYPE_DICTIONARY:
+		for player_name in positions:
+			var xy = positions[player_name]
+			if typeof(xy) == TYPE_ARRAY and xy.size() == 2:
+				var pos := Vector2(float(xy[0]), float(xy[1]))
+				if pos.is_finite():
+					state.last_pos[player_name] = pos
 	var saved_credentials = data.get("credentials", {})
 	if typeof(saved_credentials) == TYPE_DICTIONARY:
 		state.credentials.load_save(saved_credentials)
