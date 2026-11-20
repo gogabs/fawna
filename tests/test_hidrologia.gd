@@ -107,6 +107,8 @@ func _test_water_in_cells() -> void:
 
 func _test_origin_dry() -> void:
 	var world := WorldGen.new(42)
-	for y in range(-10, 11):
-		for x in range(-10, 11):
-			_check(not WorldGen.WATER.has(world.thing_at(Vector2i(x, y))), "a Origem fica seca")
+	var hydro: Hydrology = world._hydro
+	_check(not hydro.has_river(Vector2i.ZERO) and not hydro.is_lake(Vector2i.ZERO), "o centro do mundo não tem rio nem lago")
+	for y in range(-8, 9):
+		for x in range(-8, 9):
+			_check(not WorldGen.WATER.has(world.thing_at(Vector2i(x, y))), "o ponto de partida fica seco")

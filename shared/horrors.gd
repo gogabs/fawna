@@ -9,7 +9,7 @@ extends RefCounted
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
 ## ele recua. Só a chama de uma fogueira acesa o espanta (um dia, a tocha); trilha e companhia não protegem.
 ## Quem ele alcança é levado ao ponto seguro mais próximo (fogueira acesa,
-## povoado ou a Origem) e perde o que carregava na bolsa de recursos; o
+## povoado; sem nenhum por perto, o cruzamento de trilhas mais próximo) e perde o que carregava na bolsa de recursos; o
 ## equipamento fica. Armas não o afetam (as tochas virão depois).
 
 enum Mode { STALK, HELD, RETREAT }
@@ -26,7 +26,6 @@ const FACING_COS := 0.866
 const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
 const TORCH_SAFE := 5.0  # tocha acesa na mão: espanta a até 7,5 m
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
-const ORIGIN_SAFE := 6.0  # onde se reaparece depois de levado: ele não nasce ali
 const GIVE_UP_DISTANCE := 45.0
 const RESTALK_MAX := 70.0  # mais longe que isso (um salto), ele desiste de vez
 const GONE_DISTANCE := 30.0  # recuando, some quando fica longe assim de todos
@@ -167,10 +166,11 @@ static func fire_near(point: Vector2, fires: Array) -> bool:
 	return false
 
 
-## O ponto seguro mais próximo de "from": a Origem ou algum dos "shelters"
-## (pontos, em casas, de fogueiras acesas e povoados).
-static func nearest_shelter(from: Vector2, shelters: Array) -> Vector2:
-	var best := WorldGen.origin_point()
+## O ponto seguro mais próximo de "from": algum dos "shelters" (pontos, em
+## casas, de fogueiras acesas e povoados) ou, quando não há nenhum mais perto
+## que o cruzamento de trilhas da região de "from", esse cruzamento.
+static func nearest_shelter(world: WorldGen, from: Vector2, shelters: Array) -> Vector2:
+	var best := world.region_landmark(world.region_of(WorldGen.cell_of(from)))
 	for point: Vector2 in shelters:
 		if point.distance_to(from) < best.distance_to(from):
 			best = point
@@ -265,8 +265,6 @@ func _exposed(peer: int, players: Dictionary, fires: Array) -> bool:
 	var pos: Vector2 = players[peer]["pos"]
 	var cell := WorldGen.cell_of(pos)
 	if world.biome_at(cell) == WorldGen.Biome.MAR:
-		return false
-	if pos.distance_to(WorldGen.origin_point()) < ORIGIN_SAFE:
 		return false
 	return not fire_near(pos, fires)
 
