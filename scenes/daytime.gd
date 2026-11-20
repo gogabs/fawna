@@ -73,7 +73,7 @@ func darkness() -> float:
 
 
 func describe() -> String:
-	return DayCycle.describe(t, day_seconds)
+	return DayCycle.describe(t)
 
 
 ## Só no servidor: muda a hora (0 a 24) na hora, para testes e depuração, e

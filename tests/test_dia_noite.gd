@@ -56,14 +56,14 @@ func _test_describe() -> void:
 	_check(DayCycle.PERIODS[DayCycle.period_of(_at(23.0))][0] == "Noite", "23h é noite")
 	_check(DayCycle.PERIODS[DayCycle.period_of(_at(12.0))][0] == "Meio-dia", "12h é meio-dia")
 	_check(is_equal_approx(DayCycle.seconds_to_next_period(_at(23.0), 1800.0), 75.0), "da 23h à meia-noite é uma hora")
-	var text := DayCycle.describe(_at(14.5), 1800.0)
-	_check(text.begins_with("Tarde. ") and text.contains("minuto"), "descreve a tarde: " + text)
+	var text := DayCycle.describe(_at(14.5))
+	_check(text.begins_with("Tarde. ") and not text.contains("minuto"), "descreve a tarde sem tempo restante: " + text)
 	var digits := RegEx.create_from_string("[0-9]")
 	for i in DayCycle.PERIODS.size():
 		var hour: float = DayCycle.PERIODS[i][1]
 		_check(DayCycle.period_of(_at(hour)) == i, "o período %d começa na hora dele" % i)
 		_check(digits.search(DayCycle.announcement(i)) == null, "o aviso do período %d não traz hora numérica" % i)
-		_check(digits.search(DayCycle.describe(_at(hour), 1800.0).split(";")[0].split(". ")[0]) == null, "a resposta não começa com hora numérica")
+		_check(digits.search(DayCycle.describe(_at(hour))) == null, "a resposta não traz número")
 
 
 func _test_moments() -> void:

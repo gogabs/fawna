@@ -118,16 +118,10 @@ static func seconds_to_next_period(t: float, day_seconds: float) -> float:
 	return (next - hour) / 24.0 * day_seconds
 
 
-## A resposta de "que horas são": o período, o texto dele e quanto falta para
-## o próximo. Sem hora numérica.
-static func describe(t: float, day_seconds: float) -> String:
-	var left := int(round(seconds_to_next_period(t, day_seconds) / 60.0))
-	var until := "falta menos de um minuto para mudar"
-	if left == 1:
-		until = "falta cerca de um minuto para mudar"
-	elif left > 1:
-		until = "faltam uns %d minutos para mudar" % left
-	return "%s. %s %s." % [PERIODS[period_of(t)][0], PERIODS[period_of(t)][2], until.substr(0, 1).to_upper() + until.substr(1)]
+## A resposta de "que horas são": o período e o texto dele, sem hora numérica
+## nem tempo restante.
+static func describe(t: float) -> String:
+	return announcement(period_of(t))
 
 
 ## Momentos relevantes para a depuração: [chave, rótulo, hora do jogo, chegar
