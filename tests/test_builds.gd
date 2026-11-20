@@ -28,9 +28,9 @@ func _check(condition: bool, message: String) -> void:
 		printerr("FALHOU: " + message)
 
 
-## Uma casa livre (chão sem nada) perto da Origem, com espaço em volta.
+## Uma casa livre (chão sem nada) perto do centro, com espaço em volta.
 func _free_cell(world: WorldGen, skip := 0) -> Vector2i:
-	var origin := WorldGen.cell_of(WorldGen.origin_point())
+	var origin := WorldGen.cell_of(WorldGen.center_point())
 	var found := 0
 	for r in range(4, 40):
 		for dx in range(-r, r + 1):
@@ -117,7 +117,7 @@ func _test_refusals() -> void:
 	var cell := _free_cell(probe)
 	var state := _state_with_player(cell)
 	_check(state.start_build(2, "marco", cell + Vector2i(0, 9))["reason"] == "longe", "não começa longe")
-	_check(state.start_build(2, "marco", WorldGen.cell_of(WorldGen.origin_point()))["reason"] in ["longe", "lugar"], "não começa na Origem")
+	_check(state.start_build(2, "marco", WorldGen.cell_of(WorldGen.center_point()))["reason"] in ["longe", "lugar"], "não começa no centro")
 	_check(state.start_build(2, "marco", WorldGen.cell_of(state.players[2]["pos"]))["reason"] == "ocupado", "não constrói em cima de alguém")
 	_check(state.start_build(2, "marco", cell)["ok"], "começa o primeiro")
 	_check(state.builds.refusal("fogueira", cell + Vector2i(1, 0)) == "perto", "não cola outra obra")
@@ -128,7 +128,7 @@ func _test_refusals() -> void:
 	var water := Vector2i.ZERO
 	for y in range(-60, 60):
 		for x in range(-60, 60):
-			if probe.thing_at(Vector2i(x, y)) == WorldGen.Thing.RIACHO or probe.thing_at(Vector2i(x, y)) == WorldGen.Thing.LAGO:
+			if WorldGen.WATER.has(probe.thing_at(Vector2i(x, y))):
 				water = Vector2i(x, y)
 	_check(state.builds.refusal("fogueira", water) == "lugar", "não constrói na água")
 
@@ -218,7 +218,7 @@ func _test_save_round_trip() -> void:
 	_check(not build.is_empty() and build["kind"] == "marco", "a obra volta do mundo.json")
 	_check(int(build["deposited"].get("pedra_grande", 0)) == 3 and int(build["work"]) == 1, "com o que foi depositado e trabalhado")
 	_check(not loaded.world.is_passable(cell), "e continua ocupando a casa")
-	var second := loaded.builds.start("fogueira", _free_cell(probe, 3))
+	var second := loaded.builds.start("fogueira", _free_cell(probe, 12))
 	_check(second["ok"] and int(second["id"]) != id, "ids novos não repetem os salvos")
 
 

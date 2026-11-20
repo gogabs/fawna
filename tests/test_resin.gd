@@ -152,7 +152,7 @@ func _test_recipes() -> void:
 	inv["cipo"] = 1
 	# A tocha só se faz na bancada de uma oficina pronta.
 	_check(state.craft(2, "tocha")["reason"] == "sem_bancada", "tocha fora da bancada não sai")
-	var shop_cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
+	var shop_cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(30, 30)
 	var shop := state.builds._fill(state.builds._new_build(9, "oficina", shop_cell, 5, "sul"), {"size": 5, "entrance": "sul"}, 0.0)
 	shop["done"] = true
 	state.builds._add(shop)

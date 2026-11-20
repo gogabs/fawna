@@ -104,8 +104,7 @@ func _forest_spot(world: WorldGen) -> Vector2:
 				for dx in range(-12, 13):
 					var cell := middle + Vector2i(dx, dy)
 					var point := WorldGen.cell_center(cell)
-					if world.biome_at(cell) == WorldGen.Biome.BOSQUE and not world.is_trail(cell) \
-							and point.distance_to(WorldGen.origin_point()) > Horrors.ORIGIN_SAFE + 10.0:
+					if world.biome_at(cell) == WorldGen.Biome.BOSQUE and not world.is_trail(cell):
 						return point
 	return Vector2.ZERO
 

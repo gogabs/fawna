@@ -44,7 +44,6 @@ const MANIFEST := {
 	"ui_fechar": ["menu/menu_fechar.ogg", "world/menuclose.ogg"],
 	"amb_agua": ["world/loop_brook.ogg"],
 	"amb_arbusto": ["world/loop_windinbushes.ogg"],
-	"amb_origem": ["world/loop_windchimes1.ogg"],
 	"bussola_norte": ["bussola/norte.ogg"],
 	"bussola_sul": ["bussola/sul.ogg"],
 	"bussola_lateral": ["bussola/lateral.ogg"],
@@ -289,8 +288,8 @@ static func _pick_fresh(key: String) -> AudioStream:
 
 
 ## Batida do Caminheiro (tambor abafado, como um coração, com passa-baixa e
-## reverb já no arquivo: tools/som_caminheiro.py) e o woosh de chegada a um
-## beacon. Sem os arquivos, sons gerados por código.
+## reverb já no arquivo: tools/som_caminheiro.py).
+## Sem os arquivos, sons gerados por código.
 static func heartbeat() -> AudioStream:
 	return _pick("caminheiro_batida", SoundBank.heartbeat)
 
@@ -308,10 +307,6 @@ static func heartbeat_level(level: int) -> AudioStream:
 ## arquivo, sem suga.
 static func heartbeat_suck() -> AudioStream:
 	return _pick("caminheiro_suga", func(): return null)
-
-
-static func woosh() -> AudioStream:
-	return _pick("caminheiro_woosh", SoundBank.woosh)
 
 
 ## Machado: o golpe no ar, a lâmina batendo (no bambu, por exemplo) e o
@@ -493,7 +488,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 			key = "fundo_mar"
 		WorldGen.Biome.FLORESTA_GELADA:
 			key = "fundo_floresta_gelada"
-		WorldGen.Biome.DESERTO_GELADO:
+		WorldGen.Biome.DESERTO_GELADO, WorldGen.Biome.MONTANHA:
 			key = "fundo_deserto_gelado"
 	var stream := _pick(key, func(): return SoundBank.biome_bed(biome), false)
 	if stream != null:
@@ -505,7 +500,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStream:
 static func ambient(thing: WorldGen.Thing) -> AudioStream:
 	var key := ""
 	match thing:
-		WorldGen.Thing.RIACHO:
+		WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU:
 			key = "amb_agua"
 		WorldGen.Thing.CHARCO:
 			key = "amb_agua"
@@ -513,8 +508,6 @@ static func ambient(thing: WorldGen.Thing) -> AudioStream:
 			key = "amb_lago" if _has_file("amb_lago") else "amb_agua"
 		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 			key = "amb_arbusto"
-		WorldGen.Thing.ORIGEM:
-			key = "amb_origem"
 	if key.is_empty():
 		return null
 	var stream := _pick(key, func(): return null, false)
@@ -534,12 +527,12 @@ static func dark_music() -> AudioStream:
 static func music(level: int) -> AudioStream:
 	var stream := _pick("musica_vila_%d" % clampi(level, 0, 3), func(): return null, false)
 	if stream == null:
-		stream = SoundBank.ambient(WorldGen.Thing.ORIGEM, level)
+		stream = SoundBank.bells_loop(level)
 	return stream
 
 
 static func has_ambient(thing: WorldGen.Thing) -> bool:
-	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.ORIGEM]
+	return thing in [WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS]
 
 
 static func _has_file(key: String) -> bool:

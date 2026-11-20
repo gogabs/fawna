@@ -3,7 +3,7 @@ extends SceneTree
 ## rebrota, rede (info) e salvamento.
 ## Rodar: godot --headless --path . --script res://tests/test_harvest.gd
 
-const SEARCH := 160  # casas em volta da Origem
+const SEARCH := 160  # casas em volta do centro
 
 var _failures := 0
 
@@ -140,8 +140,8 @@ func _near_ground(world: WorldGen, cell: Vector2i, r: int) -> bool:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var t := world.thing_at(cell + Vector2i(dx, dy))
-			if t == WorldGen.Thing.TRILHA or t == WorldGen.Thing.PONTE or t == WorldGen.Thing.ORIGEM \
-					or t == WorldGen.Thing.LAGO or t == WorldGen.Thing.RIACHO:
+			if t == WorldGen.Thing.TRILHA or t == WorldGen.Thing.PONTE \
+					or WorldGen.WATER.has(t):
 				return true
 	return false
 

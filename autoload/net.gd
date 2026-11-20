@@ -20,6 +20,15 @@ var address := DEFAULT_ADDRESS
 var port := DEFAULT_PORT
 ## Vazio até a pessoa escolher o nome em Opções: sem nome não dá para entrar.
 var player_name := ""
+## Senha do personagem, escolhida em Opções e guardada neste PC. O servidor
+## registra a senha na primeira vez que o nome entra; depois só entra quem
+## souber.
+var password := ""
+## Aviso para o menu principal mostrar numa caixa (por que a pessoa voltou
+## para o menu). Vazio = nada a avisar. Quem mostra o limpa.
+var menu_notice := ""
+## Segundos sem entrar no mundo até desistir de conectar.
+const CONNECT_TIMEOUT := 30.0
 ## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
 ## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
 var vsync := false
@@ -62,6 +71,7 @@ func load_settings() -> void:
 	# "Criatura" era o nome padrão das versões antigas, gravado sem a pessoa escolher.
 	if player_name == "Criatura":
 		player_name = ""
+	password = config.get_value("jogador", "senha", password)
 	vsync = config.get_value("video", "vsync", vsync)
 	graphics_off = config.get_value("video", "sem_graficos", graphics_off)
 	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
@@ -70,6 +80,7 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var config := ConfigFile.new()
 	config.set_value("jogador", "nome", player_name)
+	config.set_value("jogador", "senha", password)
 	config.set_value("video", "vsync", vsync)
 	config.set_value("video", "sem_graficos", graphics_off)
 	config.set_value("controles", "navegacao_vertical", vertical_nav)
@@ -171,6 +182,8 @@ func _parse_cmdline() -> void:
 				port = int(value)
 			"--name":
 				player_name = value
+			"--senha":
+				password = value
 			"--seed":
 				world_seed = int(value)
 				seed_from_cmdline = true
@@ -187,6 +200,8 @@ func _parse_cmdline() -> void:
 	# Linha de comando e testes não passam pelo menu, então não exigem nome.
 	if mode != Mode.NONE and player_name.is_empty():
 		player_name = "Criatura"
+	if mode != Mode.NONE and password.is_empty():
+		password = "teste"
 	# Sem tela, só faz sentido rodar como servidor dedicado ou em teste.
 	if DisplayServer.get_name() == "headless" and mode == Mode.NONE:
 		mode = Mode.SERVER

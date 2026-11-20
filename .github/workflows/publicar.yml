@@ -83,6 +83,7 @@ jobs:
         run: |
           ~/godot/godot --headless --path . --import
           ~/godot/godot --headless --path . --script res://tests/test_world.gd
+          ~/godot/godot --headless --path . --script res://tests/test_hidrologia.gd
           ~/godot/godot --headless --path . --script res://tests/test_updater.gd
 
       - name: Instalar extensões (fala e áudio 3D)

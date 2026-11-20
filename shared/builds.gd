@@ -31,8 +31,6 @@ extends RefCounted
 
 ## Quantas casas livres ficam entre uma construção e outra (2 casas, 3 m).
 const SPACING := 2
-## Distância mínima do ponto de chegada da Origem, para não fechar a entrada.
-const ORIGIN_CLEARANCE := 2.5
 var world: WorldGen
 ## id -> { "id", "kind", "cell": Vector2i, "region": Vector2i, "stage": int,
 ## "deposited": {item: qtd}, "work": int, "done": bool, "fuel": s guardados
@@ -41,12 +39,21 @@ var world: WorldGen
 var _builds := {}
 var _by_cell := {}  # Vector2i -> id
 var _next_id := 1
+## Casas que uma obra desmontada deixou limpas: continuam sem árvore, arbusto
+## ou bambu (world.removed), mesmo sem a obra.
+var _cleared := {}
+## Só no servidor: id -> { "hits": int, "at": hora do último golpe }. Golpes de
+## machado numa obra para desmontá-la; esfriam sozinhos (WRECK_COOLDOWN).
+var _wreck := {}
+## Chave de dono -> hora Unix da última vez que a criatura esteve no jogo
+## (WorldState atualiza); define quem é ativo (INACTIVE_DAYS).
+var seen := {}
 
 ## O que uma casa é para quem quer construir nela (cell_status).
 const FREE := 0  # chão livre
 const CLEARABLE := 1  # árvore, arbusto ou bambu: dá para arrancar
 const WATER := 2  # lago, riacho, mar ou charco: não dá
-const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
+const TAKEN := 3  # trilha, recurso, outra obra ou fora da região
 ## Canteiros de uma construção grande: um em cada canto (NO, NE, SE, SO).
 const POSTS := 4
 ## As 9 partes de uma obra grande, de noroeste a sudeste (ver sector_name).
@@ -57,6 +64,22 @@ const POST_REACH := 2.2
 const FURNITURE_REACH := 1.6
 ## Até onde (em casas) da porta Espaço ainda a abre ou fecha.
 const DOOR_REACH := 1.6  # só na frente da porta, dentro ou fora
+## Desmontar: fração dos materiais das etapas prontas que volta (o resto se
+## perde), golpes mínimo e máximo de machado, e segundos sem golpe para os
+## golpes dados se perderem.
+const SALVAGE := 0.5
+const WRECK_MIN_HITS := 4
+const WRECK_MAX_HITS := 40
+const WRECK_COOLDOWN := 15.0
+## Votação no marco para derrubar uma construção comum de um povoado. Membro:
+## dono de abrigo na região há MEMBER_DAYS dias e ativo (visto nos últimos
+## INACTIVE_DAYS). A votação dura VOTE_DAYS; quem propõe espera PROPOSE_DAYS
+## depois que a sua proposta se encerra para propor de novo.
+const DAY := 86400.0
+const MEMBER_DAYS := 7.0
+const INACTIVE_DAYS := 30.0
+const VOTE_DAYS := 3.0
+const PROPOSE_DAYS := 1.0
 
 
 func _init(new_world: WorldGen) -> void:
@@ -440,20 +463,16 @@ func cell_status(cell: Vector2i, region: Vector2i, ignore := -1) -> int:
 		return CLEARABLE
 	if thing != WorldGen.Thing.NADA or not world.is_passable(cell):
 		return TAKEN
-	if WorldGen.cell_center(cell).distance_to(WorldGen.origin_point()) < ORIGIN_CLEARANCE:
-		return TAKEN
 	return FREE
 
 
 ## Por que não dá para começar uma construção pequena nesta casa ("" = dá).
-## "lugar": a casa não está livre (água, trilha, recurso, Origem...);
+## "lugar": a casa não está livre (água, trilha, recurso...);
 ## "perto": outra construção colada; "regiao": já há um marco nesta região.
 func refusal(kind: String, cell: Vector2i) -> String:
 	if not Crafting.BUILDS.has(kind) or Crafting.is_large(kind):
 		return "desconhecida"
 	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell):
-		return "lugar"
-	if WorldGen.cell_center(cell).distance_to(WorldGen.origin_point()) < ORIGIN_CLEARANCE:
 		return "lugar"
 	for dy in range(-SPACING, SPACING + 1):
 		for dx in range(-SPACING, SPACING + 1):
@@ -482,7 +501,8 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 	return {"id": id, "kind": kind, "cell": cell, "region": world.region_of(cell), "stage": 0,
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
-		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}}
+		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}, "owners": [], "lockers": {},
+		"since": {}, "votes": [], "cool": {}, "approved": false, "voters": []}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -496,7 +516,7 @@ static func _zero_posts(size: int) -> Array:
 ## "origin" e lado "size" ("" = dá): "desconhecida", "tamanho", "regiao" (o
 ## terreno atravessa a divisa), "sem_povoado" (falta um marco com nome na
 ## região), "agua", "perto" (outra obra a menos de SPACING casas, trilha,
-## recurso ou Origem no terreno), "entrada" (lado inválido).
+## ou recurso no terreno), "entrada" (lado inválido).
 func site_refusal(kind: String, origin: Vector2i, size: int, entrance: String) -> String:
 	if not Crafting.is_large(kind):
 		return "desconhecida"
@@ -748,20 +768,112 @@ static func inside(build: Dictionary, pos: Vector2) -> bool:
 	return inner.x >= 1 and inner.y >= 1 and inner.x <= size - 2 and inner.y <= size - 2
 
 
-## Esta construção guarda itens?
+## Donos: quem mora na construção. O dono é uma chave de texto (hoje o nome da
+## criatura; com login, o id da conta), vinda de WorldState.owner_key.
+static func owner_slots(build: Dictionary) -> int:
+	return Crafting.owner_slots(str(build.get("kind", "")), int(build.get("size", 1)))
+
+
+static func has_owners(build: Dictionary) -> bool:
+	return bool(build.get("done", false)) and owner_slots(build) > 0
+
+
+static func is_owner(build: Dictionary, key: String) -> bool:
+	return build.get("owners", []).has(key)
+
+
+## "sem dono", "dono: Ana" ou "donos: Ana e Bia (vaga para mais 0)".
+static func owners_text(build: Dictionary) -> String:
+	var owners: Array = build.get("owners", [])
+	var free := owner_slots(build) - owners.size()
+	if owners.is_empty():
+		return "sem dono, %s" % ("uma vaga" if free == 1 else "%d vagas" % free)
+	var text := "dono: %s" % owners[0] if owners.size() == 1 else "donos: %s" % " e ".join(owners)
+	return text + (", mais uma vaga" if free == 1 else "")
+
+
+## A construção pronta do mesmo tipo de que a criatura já é dona ({} se nenhuma).
+func owned_by(key: String, kind: String) -> Dictionary:
+	for build: Dictionary in _builds.values():
+		if build["kind"] == kind and is_owner(build, key):
+			return build
+	return {}
+
+
+## A criatura passa a ser dona da construção. Uma criatura tem um só abrigo.
+## Devolve { ok, reason }. reason: "desconhecida", "sem_dono" (não tem dono),
+## "nao_pronta", "ja_dono", "ja_tem_outro", "lotada".
+func claim(id: int, key: String, at_time := -1.0) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if owner_slots(build) <= 0:
+		return {"ok": false, "reason": "sem_dono"}
+	if not build["done"]:
+		return {"ok": false, "reason": "nao_pronta"}
+	if is_owner(build, key):
+		return {"ok": false, "reason": "ja_dono"}
+	if not owned_by(key, build["kind"]).is_empty():
+		return {"ok": false, "reason": "ja_tem_outro"}
+	if build["owners"].size() >= owner_slots(build):
+		return {"ok": false, "reason": "lotada"}
+	build["owners"].append(key)
+	build["since"][key] = at_time if at_time >= 0.0 else now()
+	touch(key, at_time)
+	_adopt_stock(build)
+	return {"ok": true, "reason": ""}
+
+
+## A criatura deixa de ser dona. reason: "desconhecida", "nao_dono".
+func release(id: int, key: String) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not is_owner(build, key):
+		return {"ok": false, "reason": "nao_dono"}
+	build["owners"].erase(key)
+	build["since"].erase(key)
+	return {"ok": true, "reason": ""}
+
+
+## Esta construção tem onde guardar (pronta e do tipo de STORAGE)? Mesmo onde
+## já não se guarda mais (abrigo de 3 ou 5), o dono ainda pega o que sobrou.
 static func stores(build: Dictionary) -> bool:
 	return bool(build.get("done", false)) and Crafting.STORAGE.has(str(build.get("kind", "")))
 
 
-## Quanto peso a construção guarda no total.
+## O guardado é pessoal (um armário por dono) em vez de comum?
+static func personal(build: Dictionary) -> bool:
+	return Crafting.STORAGE.get(str(build.get("kind", "")), {}).has("per_owner")
+
+
+## Aceita guardar coisas novas? No abrigo, só nos tamanhos de "sizes".
+static func can_store(build: Dictionary) -> bool:
+	if not stores(build):
+		return false
+	var sizes: Array = Crafting.STORAGE[build["kind"]].get("sizes", [])
+	return sizes.is_empty() or sizes.has(int(build.get("size", 1)))
+
+
+## Quanto peso cabe: o armário de cada dono, ou a construção toda.
 static func capacity(build: Dictionary) -> int:
+	var rule: Dictionary = Crafting.STORAGE.get(str(build["kind"]), {})
+	if rule.has("per_owner"):
+		return int(rule["per_owner"]) if can_store(build) else 0
 	var size := int(build.get("size", 1))
-	return int(Crafting.STORAGE.get(str(build["kind"]), {}).get("per_cell", 0)) * size * size
+	return int(rule.get("per_cell", 0)) * size * size
 
 
-## Peso guardado agora.
-static func stock_load(build: Dictionary) -> int:
-	return Bag.weight_of_items(build.get("stock", {}))
+## O estoque que "key" enxerga: o armário dele (abrigo) ou o comum. Só leitura.
+static func stock_of(build: Dictionary, key := "") -> Dictionary:
+	if personal(build):
+		return build.get("lockers", {}).get(key, {})
+	return build.get("stock", {})
+
+
+## Peso guardado agora (no armário de "key", se o guardado é pessoal).
+static func stock_load(build: Dictionary, key := "") -> int:
+	return Bag.weight_of_items(stock_of(build, key))
 
 
 ## Esta construção aceita o item (pela categoria)?
@@ -770,53 +882,89 @@ static func accepts(build: Dictionary, item: String) -> bool:
 
 
 ## "Armazém, 12 de 128" (peso guardado e capacidade).
-static func stock_label(build: Dictionary) -> String:
-	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build), capacity(build)]
+static func stock_label(build: Dictionary, key := "") -> String:
+	return "%s, %d de %d" % [Crafting.build_title(build["kind"]), stock_load(build, key), capacity(build)]
 
 
-## Guarda itens da bolsa "bag" (muda a bolsa). Devolve { ok, reason, item,
-## amount }. reason: "desconhecida", "nao_guarda" (a construção não guarda
-## nada), "nao_aceita" (categoria errada), "nao_tem", "cheio".
-func store(id: int, bag: Dictionary, item: String, amount: int) -> Dictionary:
+## Quem pode mexer no estoque: qualquer um, ou, no guardado pessoal, só um dono.
+static func may_use_stock(build: Dictionary, key: String) -> bool:
+	return not personal(build) or is_owner(build, key)
+
+
+## O estoque de verdade, para escrever (cria o armário na primeira vez).
+func _stock_for_write(build: Dictionary, key: String) -> Dictionary:
+	if personal(build):
+		if not build["lockers"].has(key):
+			build["lockers"][key] = {}
+		return build["lockers"][key]
+	return build["stock"]
+
+
+## O que ficou no estoque comum de um abrigo antigo (de antes dos armários)
+## passa para o armário do dono.
+static func _adopt_stock(build: Dictionary) -> void:
+	if not personal(build) or build["stock"].is_empty() or build["owners"].is_empty():
+		return
+	var key: String = build["owners"][0]
+	if not build["lockers"].has(key):
+		build["lockers"][key] = {}
+	for item in build["stock"]:
+		build["lockers"][key][item] = int(build["lockers"][key].get(item, 0)) + int(build["stock"][item])
+	build["stock"] = {}
+
+
+## Guarda itens da bolsa "bag" (muda a bolsa), no armário de "key" se o guardado
+## for pessoal. Devolve { ok, reason, item, amount }. reason: "desconhecida",
+## "nao_guarda" (não se guarda aqui), "nao_dono", "nao_aceita" (categoria
+## errada), "nao_tem", "cheio".
+func store(id: int, bag: Dictionary, item: String, amount: int, key := "") -> Dictionary:
 	var build := get_build(id)
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
-	if not stores(build):
+	if not can_store(build):
 		return {"ok": false, "reason": "nao_guarda"}
+	if not may_use_stock(build, key):
+		return {"ok": false, "reason": "nao_dono"}
 	if not accepts(build, item):
 		return {"ok": false, "reason": "nao_aceita", "item": item}
 	var have := int(bag.get(item, 0))
 	if have <= 0 or amount <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
-	var room := (capacity(build) - stock_load(build)) / maxi(1, Bag.weight_of(item))
+	var room := (capacity(build) - stock_load(build, key)) / maxi(1, Bag.weight_of(item))
 	var moved := mini(mini(amount, have), room)
 	if moved <= 0:
 		return {"ok": false, "reason": "cheio", "item": item}
 	bag[item] = have - moved
 	if int(bag[item]) <= 0:
 		bag.erase(item)
-	build["stock"][item] = int(build["stock"].get(item, 0)) + moved
+	var stock := _stock_for_write(build, key)
+	stock[item] = int(stock.get(item, 0)) + moved
 	return {"ok": true, "item": item, "amount": moved}
 
 
 ## Tira itens do estoque para a bolsa "bag", até onde cabe na carga. Devolve
-## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda",
+## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda", "nao_dono",
 ## "nao_tem" (não há isso lá), "carga" (a criatura não aguenta mais peso).
-func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int) -> Dictionary:
+func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int, key := "") -> Dictionary:
 	var build := get_build(id)
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
 	if not stores(build):
 		return {"ok": false, "reason": "nao_guarda"}
-	var have := int(build["stock"].get(item, 0))
+	if not may_use_stock(build, key):
+		return {"ok": false, "reason": "nao_dono"}
+	var stock := _stock_for_write(build, key)
+	var have := int(stock.get(item, 0))
 	if have <= 0 or amount <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
 	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item))
 	if moved <= 0:
 		return {"ok": false, "reason": "carga", "item": item}
-	build["stock"][item] = have - moved
-	if int(build["stock"][item]) <= 0:
-		build["stock"].erase(item)
+	stock[item] = have - moved
+	if int(stock[item]) <= 0:
+		stock.erase(item)
+		if personal(build) and stock.is_empty():
+			build["lockers"].erase(key)
 	bag[item] = int(bag.get(item, 0)) + moved
 	return {"ok": true, "item": item, "amount": moved}
 
@@ -927,7 +1075,11 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 		"posts": build["posts"].duplicate(), "door_open": build["door_open"],
 		"dry_left": maxf(0.0, float(build["dry_until"]) - at_time) if float(build["dry_until"]) > 0.0 else 0.0,
-		"stock": build["stock"].duplicate(),
+		"stock": build["stock"].duplicate(), "owners": build["owners"].duplicate(),
+		"approved": build["approved"], "voters": members(build["region"], at_time) if build["kind"] == "marco" else [],
+		"votes": build["votes"].map(func(vote): return {"target": vote["target"], "by": vote["by"], "age": at_time - float(vote["opened"]),
+			"yes": vote["yes"], "no": vote["no"]}),
+		"lockers": build["lockers"].duplicate(true),
 	}
 
 
@@ -953,6 +1105,8 @@ func snapshot(at_time := -1.0) -> Array:
 	var out := []
 	for id: int in _builds:
 		out.append(info(id, at_time))
+	if not _cleared.is_empty():
+		out.append({"cleared": _cells_to_list(_cleared.keys())})
 	return out
 
 
@@ -961,8 +1115,15 @@ func apply_snapshot(data: Array, at_time := -1.0) -> void:
 		_unregister(build)
 	_builds.clear()
 	_by_cell.clear()
+	for cell: Vector2i in _cleared:
+		world.removed.erase(cell)
+	_cleared.clear()
 	for entry in data:
-		if typeof(entry) == TYPE_DICTIONARY:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if entry.has("cleared"):
+			_load_cleared(entry["cleared"])
+		else:
 			apply_info(entry, at_time)
 
 
@@ -979,13 +1140,17 @@ func to_save() -> Dictionary:
 			"size": build["size"], "entrance": build["entrance"], "phase": build["phase"],
 			"prep": _cells_to_list(build["prep"]), "removed": _cells_to_list(build["removed"]),
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
-			"stock": build["stock"],
+			"stock": build["stock"], "owners": build["owners"], "lockers": build["lockers"],
+			"since": build["since"], "votes": build["votes"], "cool": build["cool"], "approved": build["approved"],
 		})
-	return {"next_id": _next_id, "list": list}
+	return {"next_id": _next_id, "list": list, "cleared": _cells_to_list(_cleared.keys()), "seen": seen}
 
 
 func load_save(data: Dictionary) -> void:
 	_next_id = maxi(1, int(data.get("next_id", 1)))
+	_load_cleared(data.get("cleared", []))
+	for key in data.get("seen", {}):
+		seen[str(key)] = float(data["seen"][key])
 	for entry in data.get("list", []):
 		if typeof(entry) != TYPE_DICTIONARY or not Crafting.BUILDS.has(str(entry.get("kind", ""))):
 			continue
@@ -1002,7 +1167,19 @@ func load_save(data: Dictionary) -> void:
 			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""},
 			entry, float(entry.get("dry_until", 0.0))))
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
+	# Donos de antes do registro de atividade começam ativos agora.
+	for build: Dictionary in _builds.values():
+		for key: String in build["owners"]:
+			if not seen.has(key):
+				seen[key] = now()
 	burn_out()
+
+
+func _load_cleared(list: Array) -> void:
+	for entry in list:
+		var cell := Vector2i(int(entry[0]), int(entry[1]))
+		_cleared[cell] = true
+		world.removed[cell] = true
 
 
 ## Completa uma construção com os campos das grandes (tamanho, preparo,
@@ -1034,6 +1211,37 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 		if int(data["stock"][item]) > 0:
 			stock[str(item)] = int(data["stock"][item])
 	build["stock"] = stock
+	var owners := []
+	for owner in data.get("owners", []):
+		if not str(owner).is_empty() and not owners.has(str(owner)):
+			owners.append(str(owner))
+	build["owners"] = owners
+	var since := {}
+	for owner: String in owners:
+		since[owner] = float(data.get("since", {}).get(owner, now()))
+	build["since"] = since
+	build["approved"] = bool(data.get("approved", false))
+	var votes := []
+	for entry in data.get("votes", []):
+		var opened := float(entry["opened"]) if entry.has("opened") else now() - float(entry.get("age", 0.0))
+		votes.append({"target": int(entry["target"]), "by": str(entry["by"]), "opened": opened,
+			"yes": Array(entry.get("yes", []), TYPE_STRING, "", null), "no": Array(entry.get("no", []), TYPE_STRING, "", null)})
+	build["votes"] = votes
+	var cool := {}
+	for key in data.get("cool", {}):
+		cool[str(key)] = float(data["cool"][key])
+	build["cool"] = cool
+	build["voters"] = Array(data.get("voters", []), TYPE_STRING, "", null)
+	var lockers := {}
+	for owner in data.get("lockers", {}):
+		var locker := {}
+		for item in data["lockers"][owner]:
+			if int(data["lockers"][owner][item]) > 0:
+				locker[str(item)] = int(data["lockers"][owner][item])
+		if not locker.is_empty():
+			lockers[str(owner)] = locker
+	build["lockers"] = lockers
+	_adopt_stock(build)
 	return build
 
 
@@ -1079,6 +1287,401 @@ func _unregister(build: Dictionary) -> void:
 		world.removed.erase(cell)
 
 
+# --- Povoado: membros e votação ----------------------------------------------------
+
+## A criatura esteve no jogo agora (ou em "at_time").
+func touch(key: String, at_time := -1.0) -> void:
+	if not key.is_empty():
+		seen[key] = at_time if at_time >= 0.0 else now()
+
+
+func is_active(key: String, at_time := -1.0) -> bool:
+	if at_time < 0.0:
+		at_time = now()
+	return float(seen.get(key, 0.0)) >= at_time - INACTIVE_DAYS * DAY
+
+
+## Todos os donos do abrigo estão inativos (e ele tem dono): foi abandonado.
+func owners_inactive(build: Dictionary, at_time := -1.0) -> bool:
+	for key: String in build["owners"]:
+		if is_active(key, at_time):
+			return false
+	return not build["owners"].is_empty()
+
+
+## O marco com nome (o povoado) da região, ou {}.
+func settlement_marco(region: Vector2i) -> Dictionary:
+	for build: Dictionary in in_region(region):
+		if build["kind"] == "marco" and build["done"] and not str(build["name"]).is_empty():
+			return build
+	return {}
+
+
+## Os membros do povoado da região: donos de abrigo pronto há MEMBER_DAYS dias,
+## ainda ativos. Vazio se a região não tem povoado.
+func members(region: Vector2i, at_time := -1.0) -> Array:
+	if at_time < 0.0:
+		at_time = now()
+	var out := []
+	if settlement_marco(region).is_empty():
+		return out
+	for build: Dictionary in in_region(region):
+		if not has_owners(build):
+			continue
+		for key: String in build["owners"]:
+			if out.has(key) or not is_active(key, at_time):
+				continue
+			if float(build["since"].get(key, at_time)) <= at_time - MEMBER_DAYS * DAY:
+				out.append(key)
+	return out
+
+
+## Uma construção que depende de votação para ser derrubada: não é abrigo com
+## dono e fica num povoado que tem membros.
+func _governed(build: Dictionary, at_time: float) -> bool:
+	return not members(build["region"], at_time).is_empty()
+
+
+## Dá para propor derrubar esta construção por votação? (Não o marco, nem o
+## abrigo com dono, que o dono derruba sozinho.)
+static func votable(build: Dictionary) -> bool:
+	return build["kind"] != "marco" and not has_owners(build)
+
+
+func _vote_of(marco: Dictionary, target_id: int) -> int:
+	for i in marco["votes"].size():
+		if int(marco["votes"][i]["target"]) == target_id:
+			return i
+	return -1
+
+
+## Propõe derrubar a construção "target_id" no marco "marco_id". Devolve { ok,
+## reason }. reason: "desconhecida", "nao_marco", "nao_membro", "alvo" (não é
+## alvo de votação ou é de outra região), "ja_votando" (há votação sobre ela),
+## "ja_aprovada", "ja_propos" (esta criatura já tem uma proposta aberta),
+## "espera" ("wait": segundos até poder propor).
+func propose_wreck(marco_id: int, key: String, target_id: int, at_time := -1.0) -> Dictionary:
+	if at_time < 0.0:
+		at_time = now()
+	var marco := get_build(marco_id)
+	var target := get_build(target_id)
+	if marco.is_empty() or target.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if marco["kind"] != "marco" or settlement_marco(marco["region"]).get("id", -1) != marco_id:
+		return {"ok": false, "reason": "nao_marco"}
+	if not members(marco["region"], at_time).has(key):
+		return {"ok": false, "reason": "nao_membro"}
+	if target["region"] != marco["region"] or not votable(target):
+		return {"ok": false, "reason": "alvo"}
+	if bool(target["approved"]):
+		return {"ok": false, "reason": "ja_aprovada"}
+	if _vote_of(marco, target_id) >= 0:
+		return {"ok": false, "reason": "ja_votando"}
+	for vote: Dictionary in marco["votes"]:
+		if vote["by"] == key:
+			return {"ok": false, "reason": "ja_propos"}
+	var until := float(marco["cool"].get(key, 0.0))
+	if until > at_time:
+		return {"ok": false, "reason": "espera", "wait": until - at_time}
+	marco["votes"].append({"target": target_id, "by": key, "opened": at_time, "yes": [key], "no": []})
+	var result := {"ok": true, "reason": "", "event": "votacao_aberta", "target": target_id}
+	return _settle(marco, marco["votes"].size() - 1, at_time, result)
+
+
+## Um voto. Devolve { ok, reason, event } com event "voto", "votacao_aprovada" ou
+## "votacao_rejeitada" (e "target"). reason: "desconhecida", "nao_membro",
+## "sem_votacao", "ja_votou".
+func vote_wreck(marco_id: int, key: String, target_id: int, yes: bool, at_time := -1.0) -> Dictionary:
+	if at_time < 0.0:
+		at_time = now()
+	var marco := get_build(marco_id)
+	if marco.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if not members(marco["region"], at_time).has(key):
+		return {"ok": false, "reason": "nao_membro"}
+	var index := _vote_of(marco, target_id)
+	if index < 0:
+		return {"ok": false, "reason": "sem_votacao"}
+	var vote: Dictionary = marco["votes"][index]
+	if vote["yes"].has(key) or vote["no"].has(key):
+		return {"ok": false, "reason": "ja_votou"}
+	vote["yes" if yes else "no"].append(key)
+	return _settle(marco, index, at_time, {"ok": true, "reason": "", "event": "voto", "target": target_id})
+
+
+## Confere uma votação: maioria de todos os membros ativos aprova (e libera o
+## machado na obra); maioria impossível ou o prazo acabando rejeita. Nos dois
+## casos ela sai da lista e quem propôs espera PROPOSE_DAYS.
+func _settle(marco: Dictionary, index: int, at_time: float, result: Dictionary) -> Dictionary:
+	var vote: Dictionary = marco["votes"][index]
+	var count := members(marco["region"], at_time).size()
+	var yes: int = vote["yes"].filter(func(key): return is_active(key, at_time)).size()
+	var outcome := ""
+	if yes * 2 > count:
+		outcome = "votacao_aprovada"
+	elif vote["no"].size() * 2 >= count or at_time >= float(vote["opened"]) + VOTE_DAYS * DAY:
+		outcome = "votacao_rejeitada"
+	if outcome.is_empty():
+		return result
+	marco["votes"].remove_at(index)
+	marco["cool"][vote["by"]] = at_time + PROPOSE_DAYS * DAY
+	var target := get_build(int(vote["target"]))
+	if outcome == "votacao_aprovada" and not target.is_empty():
+		target["approved"] = true
+	result["event"] = outcome
+	result["target"] = int(vote["target"])
+	return result
+
+
+## Encerra as votações vencidas e as de obras que já não existem. Devolve
+## [{ marco, target, event }] para avisar.
+func close_votes(at_time := -1.0) -> Array:
+	if at_time < 0.0:
+		at_time = now()
+	var out := []
+	for marco: Dictionary in _builds.values():
+		var i: int = marco["votes"].size() - 1
+		while i >= 0:
+			var vote: Dictionary = marco["votes"][i]
+			if get_build(int(vote["target"])).is_empty():
+				marco["votes"].remove_at(i)
+			else:
+				var settled := _settle(marco, i, at_time, {"event": ""})
+				if not str(settled["event"]).is_empty():
+					out.append({"marco": marco["id"], "target": int(settled["target"]), "event": settled["event"]})
+			i -= 1
+	return out
+
+
+static func _days_text(seconds: float) -> String:
+	if seconds >= DAY * 1.5:
+		return "%d dias" % roundi(seconds / DAY)
+	var hours := ceili(seconds / 3600.0)
+	if hours <= 1:
+		return "menos de uma hora" if seconds < 3600.0 else "1 hora"
+	return "%d horas" % hours
+
+
+## "Derrubar o armazém: 1 a favor, 0 contra, falta mais 1 para a maioria; termina em 2 dias."
+func vote_text(marco_id: int, target_id: int, at_time := -1.0) -> String:
+	if at_time < 0.0:
+		at_time = now()
+	var marco := get_build(marco_id)
+	var index := _vote_of(marco, target_id) if not marco.is_empty() else -1
+	if index < 0:
+		return ""
+	var vote: Dictionary = marco["votes"][index]
+	var count: int = marco["voters"].size()
+	var need := maxi(0, count / 2 + 1 - vote["yes"].size())
+	var left := float(vote["opened"]) + VOTE_DAYS * DAY - at_time
+	return "Derrubar %s: %d a favor, %d contra, %s; termina em %s." % [
+		spoken_name(target_id), vote["yes"].size(), vote["no"].size(),
+		"faltam %d a favor para a maioria" % need if need > 0 else "maioria alcançada", _days_text(maxf(0.0, left))]
+
+
+# --- Desmontar ---------------------------------------------------------------------
+
+## As casas que se golpeiam para desmontar uma obra: a casa única das pequenas;
+## nas grandes, a borda do quadrado (parede e porta) e os móveis, depois que as
+## paredes subiram; antes, só os quatro cantos do canteiro.
+static func wreck_cells(build: Dictionary) -> Array:
+	var size := int(build.get("size", 1))
+	if size <= 1:
+		return [build["cell"]]
+	var cells := []
+	if walls_up(build):
+		for cell: Vector2i in footprint_cells(build["cell"], size):
+			var inner: Vector2i = cell - build["cell"]
+			if inner.x == 0 or inner.y == 0 or inner.x == size - 1 or inner.y == size - 1:
+				cells.append(cell)
+		if bool(build.get("done", false)):
+			for cell: Vector2i in furniture_cells(build).values():
+				cells.append(cell)
+	else:
+		for i in POSTS:
+			cells.append(post_cell(build, i))
+	return cells
+
+
+## A casa de obra mais perto de "pos" (de preferência à frente) que se pode
+## golpear para desmontar, até "reach" casas. Devolve { id, cell } ou {}.
+func wreck_target(pos: Vector2, ahead: Vector2, reach: float) -> Dictionary:
+	var best := {}
+	var best_score := INF
+	for build: Dictionary in _builds.values():
+		for cell: Vector2i in wreck_cells(build):
+			var offset := WorldGen.cell_center(cell) - pos
+			var distance := offset.length()
+			if distance > reach:
+				continue
+			var score := distance - (0.6 if distance > 0.01 and ahead.dot(offset / distance) > 0.5 else 0.0)
+			if score < best_score:
+				best_score = score
+				best = {"id": build["id"], "cell": cell}
+	return best
+
+
+## Batidas de trabalho já gastas na obra (as das etapas prontas e a da atual).
+func invested_work(build: Dictionary) -> int:
+	var total := 0
+	for i in mini(int(build["stage"]), Crafting.stage_count(build["kind"])):
+		total += int(Crafting.stage_of(build["kind"], i, int(build["size"]))["work"])
+	if not bool(build["done"]) and str(build["phase"]) == "obra":
+		total += int(build["work"])
+	return total
+
+
+## Golpes de machado para desmontar: mais batidas já gastas, mais golpes.
+func wreck_hits(id: int) -> int:
+	var build := get_build(id)
+	if build.is_empty():
+		return 0
+	return clampi(ceili(invested_work(build) * 0.6), WRECK_MIN_HITS, WRECK_MAX_HITS)
+
+
+## Por que não dá para desmontar agora ("" = dá): "povoado" (um marco com
+## outras construções na região: desmonte-as antes), "acesa" (fogueira acesa)
+## "nao_dono" (a construção tem dono e "key" não é um deles) ou "votacao" (obra
+## comum de um povoado com membros: só depois que a votação no marco aprova).
+func demolish_refusal(id: int, at_time := -1.0, key := "") -> String:
+	var build := get_build(id)
+	if build.is_empty():
+		return "desconhecida"
+	if at_time < 0.0:
+		at_time = now()
+	if build["kind"] == "marco":
+		for other: Dictionary in in_region(build["region"]):
+			if other["id"] != id:
+				return "povoado"
+	if has_owners(build):
+		# Abrigo pronto: só o dono derruba. Sem dono, ou com todos os donos
+		# inativos, é de ninguém.
+		if not build["owners"].is_empty() and not is_owner(build, key) and not owners_inactive(build, at_time):
+			return "nao_dono"
+	elif _governed(build, at_time) and not bool(build["approved"]):
+		return "votacao"
+	if Crafting.BUILDS[build["kind"]].get("fire", false) and is_lit(id, at_time):
+		return "acesa"
+	return ""
+
+
+## O que volta ao desmontar: metade (arredondada para baixo) dos materiais das
+## etapas prontas e, da etapa em andamento, tudo o que foi depositado se ainda
+## ninguém trabalhou nela, senão metade. Não inclui o estoque (volta inteiro).
+func salvage(build: Dictionary) -> Dictionary:
+	var back := {}
+	var kind: String = build["kind"]
+	for i in mini(int(build["stage"]), Crafting.stage_count(kind)):
+		var materials: Dictionary = Crafting.stage_of(kind, i, int(build["size"]))["materials"]
+		for item: String in materials:
+			var part := floori(int(materials[item]) * SALVAGE)
+			if part > 0:
+				back[item] = int(back.get(item, 0)) + part
+	if not bool(build["done"]) and str(build["phase"]) == "obra":
+		var fraction := 1.0 if int(build["work"]) == 0 else SALVAGE
+		for item: String in build["deposited"]:
+			var part := floori(int(build["deposited"][item]) * fraction)
+			if part > 0:
+				back[item] = int(back.get(item, 0)) + part
+	return back
+
+
+## Onde cai o que sobra de uma obra desmontada: a casa dela, ou, nas grandes,
+## as casas de dentro (sem os móveis).
+static func spill_cells(build: Dictionary) -> Array:
+	var size := int(build.get("size", 1))
+	if size <= 1:
+		return [build["cell"]]
+	var taken := furniture_cells(build).values() if bool(build.get("done", false)) else []
+	var cells := []
+	for dy in range(1, size - 1):
+		for dx in range(1, size - 1):
+			var cell: Vector2i = build["cell"] + Vector2i(dx, dy)
+			if not taken.has(cell):
+				cells.append(cell)
+	return cells
+
+
+## Divide "items" (item -> quantidade) entre "cells", o mais igual possível.
+## Devolve { casa: { item: quantidade } }.
+static func spread(items: Dictionary, cells: Array) -> Dictionary:
+	var piles := {}
+	if cells.is_empty():
+		return piles
+	var shift := 0
+	for item: String in items:
+		var amount := int(items[item])
+		for i in cells.size():
+			var part := amount / cells.size() + (1 if (i + shift) % cells.size() < amount % cells.size() else 0)
+			if part > 0:
+				var pile: Dictionary = piles.get(cells[i], {})
+				pile[item] = int(pile.get(item, 0)) + part
+				piles[cells[i]] = pile
+		shift += 1
+	return piles
+
+
+## Um golpe de machado para desmontar a obra "id". Devolve { ok, reason } nas
+## recusas (demolish_refusal) ou { ok, event, hits_left, total, first }; o
+## evento "derrubada" diz que este golpe completou a conta (quem chama então
+## usa demolish).
+func strike_wreck(id: int, at_time := -1.0, key := "") -> Dictionary:
+	var reason := demolish_refusal(id, at_time, key)
+	if not reason.is_empty():
+		return {"ok": false, "reason": reason}
+	if at_time < 0.0:
+		at_time = now()
+	var entry: Dictionary = _wreck.get(id, {"hits": 0, "at": at_time})
+	if at_time - float(entry["at"]) > WRECK_COOLDOWN:
+		entry["hits"] = 0
+	entry["hits"] = int(entry["hits"]) + 1
+	entry["at"] = at_time
+	var total := wreck_hits(id)
+	if int(entry["hits"]) >= total:
+		return {"ok": true, "event": "derrubada", "hits_left": 0, "total": total, "first": false}
+	_wreck[id] = entry
+	return {"ok": true, "event": "golpe", "hits_left": total - int(entry["hits"]), "total": total, "first": int(entry["hits"]) == 1}
+
+
+## Desmonta a obra: tira-a do mundo (as casas que ela limpou continuam limpas)
+## e devolve { ok, kind, title, piles: { casa: { item: qtd } }, back: { item:
+## qtd } }, com o que sobrou do material e o estoque espalhados dentro do
+## terreno. Quem chama põe as pilhas no chão.
+func demolish(id: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	var title := title_of(id)
+	var back := salvage(build)
+	for item: String in build["stock"]:
+		back[item] = int(back.get(item, 0)) + int(build["stock"][item])
+	for locker: Dictionary in build["lockers"].values():
+		for item: String in locker:
+			back[item] = int(back.get(item, 0)) + int(locker[item])
+	var piles := spread(back, spill_cells(build))
+	var kind: String = build["kind"]
+	remove_build(id)
+	return {"ok": true, "kind": kind, "title": title, "piles": piles, "back": back}
+
+
+## Tira a obra do mundo, sem devolver nada (o servidor usa em demolish; o
+## cliente, quando o servidor avisa). Árvores e arbustos que ela arrancou não
+## voltam.
+func remove_build(id: int) -> void:
+	var build := get_build(id)
+	if build.is_empty():
+		return
+	for cell: Vector2i in build["removed"]:
+		_cleared[cell] = true
+	_unregister(build)
+	_builds.erase(id)
+	_wreck.erase(id)
+	for marco: Dictionary in _builds.values():
+		marco["votes"] = marco["votes"].filter(func(vote): return int(vote["target"]) != id)
+	for cell: Vector2i in _cleared:
+		world.removed[cell] = true
+
+
 # --- Fala -------------------------------------------------------------------------
 
 ## Nome para a fala e para o Caminheiro: "fogueira acesa", "marco em obra".
@@ -1098,6 +1701,8 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		return text + (" acesa" if is_lit(id, at_time) else " apagada")
+	if owner_slots(build) > 0:
+		return text + (" sem dono" if build["owners"].is_empty() else " de " + " e ".join(build["owners"]))
 	return text
 
 

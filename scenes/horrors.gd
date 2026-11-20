@@ -105,7 +105,7 @@ func _server_step() -> void:
 
 
 ## O Calado alcançou o jogador: ele perde os recursos e reaparece no ponto
-## seguro mais próximo (fogueira acesa, povoado ou a Origem).
+## seguro mais próximo (fogueira acesa, povoado ou cruzamento de trilhas).
 func _catch(peer: int) -> void:
 	var game := get_parent()
 	var state: WorldState = game.state
@@ -116,7 +116,7 @@ func _catch(peer: int) -> void:
 		shelters.append(WorldGen.cell_center(settlement["cell"]))
 	var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
 	var from: Vector2 = state.players[peer]["pos"]
-	var spot := Horrors.landing_spot(state.world, Horrors.nearest_shelter(from, shelters), blocked)
+	var spot := Horrors.landing_spot(state.world, Horrors.nearest_shelter(state.world, from, shelters), blocked)
 	var lost := state.strip_resources(peer)
 	state.teleport(peer, spot)
 	game.inventory_changed.rpc_id(peer, state.inventory_of(peer), "", "")
