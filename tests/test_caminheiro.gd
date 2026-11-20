@@ -21,6 +21,7 @@ func _ready() -> void:
 	_test_facing()
 	_test_beat_openness()
 	_test_steering()
+	_test_search_radius()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -372,3 +373,21 @@ func _test_steering() -> void:
 	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 1.0).distance_to(Vector2(1, 0)) < 0.0001, "ponto à frente no primeiro trecho")
 	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 4.0).distance_to(Vector2(2, -2)) < 0.0001, "ponto à frente passa a esquina")
 	_check(Caminheiro.lookahead_point(Vector2.ZERO, route, 50.0).distance_to(Vector2(2, -10)) < 0.0001, "rota curta: o último ponto")
+
+
+## O Caminheiro e o radar enxergam meia região (36 m), cruzando o limite de região.
+func _test_search_radius() -> void:
+	var GameScript: GDScript = load("res://scenes/game.gd")
+	_check(GameScript.RESOURCE_SEARCH_RADIUS * 1.5 == 36.0, "raio de busca: 36 m")
+	var world := WorldGen.new(42)
+	var crossed := 0
+	for k in 60:
+		var pos := Vector2(k * 37.0 - 900.0, k * 53.0 - 700.0)
+		for entry: Array in GameScript.CAMINHEIRO_RESOURCES:
+			var cell: Vector2i = GameScript.nearest_collectable(world, null, pos, entry[1], GameScript.RESOURCE_SEARCH_RADIUS)
+			if cell == WorldGen.NO_CELL:
+				continue
+			_check(WorldGen.cell_center(cell).distance_to(pos) <= GameScript.RESOURCE_SEARCH_RADIUS + 1.0, "%s: dentro do raio" % entry[0])
+			if world.region_of(cell) != world.region_of(WorldGen.cell_of(pos)):
+				crossed += 1
+	_check(crossed > 0, "acha recursos na região vizinha (%d)" % crossed)
