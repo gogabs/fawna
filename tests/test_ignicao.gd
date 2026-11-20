@@ -104,7 +104,7 @@ func _test_flint_cost() -> void:
 func _test_noise() -> void:
 	var world := WorldGen.new(42)
 	var horrors := Horrors.new(world)
-	var players := {1: {"name": "A", "pos": WorldGen.origin_point() + Vector2(60, 60), "heading": 0}}
+	var players := {1: {"name": "A", "pos": WorldGen.center_point() + Vector2(60, 60), "heading": 0}}
 	horrors.update(0, players, [])
 	for i in 40:
 		horrors.hear_noise(1, 8.0)
@@ -121,7 +121,7 @@ func _test_inside() -> void:
 	_check(not Builds.inside(build, WorldGen.cell_center(Vector2i(8, 8))), "fora não é dentro")
 	var state := WorldState.new(173)
 	state.add_player(2, "Lua")
-	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(20, 20)
+	var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(20, 20)
 	var made: Dictionary = state.builds._fill(state.builds._new_build(5, "armazem", cell, 4, "sul"), {"size": 4, "entrance": "sul"}, 0.0)
 	made["done"] = true
 	state.builds._add(made)

@@ -141,18 +141,14 @@ static func pickup() -> AudioStreamWAV:
 
 
 ## Som contínuo (em loop) de cada coisa do mundo, para o áudio espacial.
-## "level" escolhe uma versão mais cheia da Origem (usada só pela ocarina
-## guardada, como reserva).
-static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
-	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.ORIGEM else 0]
+static func ambient(thing: WorldGen.Thing) -> AudioStreamWAV:
+	var key := "amb_%d" % thing
 	if not _cache.has(key):
 		match thing:
 			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
-			WorldGen.Thing.ORIGEM:
-				_cache[key] = _origin_loop(level)
 			_:
 				return null
 	return _cache[key]
@@ -187,9 +183,17 @@ static func _bees_loop() -> AudioStreamWAV:
 	return _to_wav(samples, true)
 
 
-## Origem: sininhos numa escala pentatônica, como um sino de vento. Nos
-## níveis mais altos, ganha mais notas, um baixo e passarinhos.
-static func _origin_loop(level: int) -> AudioStreamWAV:
+## Sininhos numa escala pentatônica, como um sino de vento: a musiquinha de
+## reserva quando faltam os arquivos. Nos níveis mais altos, ganha mais notas,
+## um baixo e passarinhos.
+static func bells_loop(level: int) -> AudioStreamWAV:
+	var key := "sinos_%d" % level
+	if not _cache.has(key):
+		_cache[key] = _bells_build(level)
+	return _cache[key]
+
+
+static func _bells_build(level: int) -> AudioStreamWAV:
 	var notes := [523.25, 659.25, 783.99, 659.25] if level == 0 else \
 		[523.25, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33]
 	var count := RATE * 4
@@ -247,29 +251,6 @@ static func heartbeat() -> AudioStreamWAV:
 				samples[i] *= 0.95 / peak
 		_cache["coracao"] = _to_wav(samples)
 	return _cache["coracao"]
-
-
-## Woosh do Caminheiro: um sopro que cresce e some, abrindo e fechando o
-## brilho no meio. Quem toca move a fonte rumo ao próximo beacon.
-static func woosh() -> AudioStreamWAV:
-	if not _cache.has("woosh"):
-		var count := int(0.75 * RATE)
-		var samples := PackedFloat32Array()
-		samples.resize(count)
-		var rng := RandomNumberGenerator.new()
-		rng.seed = 31415
-		var low := 0.0
-		var band := 0.0
-		for i in count:
-			var k := float(i) / count
-			var envelope := pow(sin(PI * pow(k, 0.7)), 2.0)
-			# Mais aberto (menos suavizado) no meio do sopro.
-			var smooth := lerpf(0.97, 0.8, envelope)
-			low = lerpf(rng.randf_range(-1.0, 1.0), low, smooth)
-			band = lerpf(low, band, 0.6)
-			samples[i] = (low - band * 0.5) * envelope * 1.4
-		_cache["woosh"] = _to_wav(samples)
-	return _cache["woosh"]
 
 
 ## Machado cortando o ar: um sopro curto.

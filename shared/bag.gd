@@ -24,6 +24,11 @@ const STARTER := {"machado": 1}
 ## grandes, 2 médias e 1 pequena = 25) não cabe numa viagem só, e uma
 ## fogueira (23) só cabe se o machado (3) ficar no chão.
 const CAPACITY := 24
+## Sobrecarga: dá para levar até MAX_LOAD (150% da carga) ao custo de
+## velocidade. De CAPACITY para cima a criatura anda mais devagar, em linha
+## reta, até MIN_SPEED_FACTOR da velocidade normal no limite absoluto.
+const MAX_LOAD := 36
+const MIN_SPEED_FACTOR := 0.5
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
@@ -183,10 +188,25 @@ static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
 			+ (0 if offhand.is_empty() else weight_of(offhand))
 
 
-## Quanto peso ainda cabe (0 se a criatura já está no limite ou acima dele,
-## como quem vem de um mundo salvo antes do limite existir).
+## Fração da velocidade de andar (1.0 até CAPACITY, caindo em linha reta até
+## MIN_SPEED_FACTOR em MAX_LOAD).
+static func speed_factor(bag: Dictionary, wielded := "", offhand := "") -> float:
+	var over := load_of(bag, wielded, offhand) - CAPACITY
+	if over <= 0:
+		return 1.0
+	return lerpf(1.0, MIN_SPEED_FACTOR, minf(1.0, float(over) / float(MAX_LOAD - CAPACITY)))
+
+
+## Está além da carga plena (anda mais devagar).
+static func is_overloaded(bag: Dictionary, wielded := "", offhand := "") -> bool:
+	return load_of(bag, wielded, offhand) > CAPACITY
+
+
+## Quanto peso ainda cabe, contando a sobrecarga (0 se a criatura já está no
+## limite absoluto ou acima dele, como quem vem de um mundo salvo antes do
+## limite existir).
 static func free_space(bag: Dictionary, wielded := "", offhand := "") -> int:
-	return maxi(0, CAPACITY - load_of(bag, wielded, offhand))
+	return maxi(0, MAX_LOAD - load_of(bag, wielded, offhand))
 
 
 ## Quantas unidades de "item" ainda cabem.
@@ -229,4 +249,7 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 
 ## "Carga, 18 de 24".
 static func load_label(bag: Dictionary, wielded := "", offhand := "") -> String:
-	return "Carga, %d de %d" % [load_of(bag, wielded, offhand), CAPACITY]
+	var text := "Carga, %d de %d" % [load_of(bag, wielded, offhand), CAPACITY]
+	if is_overloaded(bag, wielded, offhand):
+		text += ", sobrecarregado, andando a %d%%" % roundi(speed_factor(bag, wielded, offhand) * 100.0)
+	return text

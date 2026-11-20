@@ -51,10 +51,7 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 		WorldGen.Thing.PONTE:
 			biome = "numa ponte, " + biome
 	var facing := "olhando para o %s" % Compass.name_of(heading)
-	var to_origin := WorldGen.origin_point() - pos
-	if to_origin.length() <= WorldState.ORIGIN_REACH:
-		return "Você está na Origem, %s, %s." % [biome, facing]
-	return "Você está %s, %s. A Origem fica %s." % [biome, facing, Compass.describe(to_origin, heading)]
+	return "Você está %s, %s." % [biome, facing]
 
 
 ## Lista o que está por perto, do mais próximo ao mais distante, em relação
