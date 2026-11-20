@@ -25,7 +25,7 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _cell(dx: int, dy := 0) -> Vector2i:
-	return WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(-20 + dx, -20 + dy)
+	return WorldGen.cell_of(WorldGen.center_point()) + Vector2i(-20 + dx, -20 + dy)
 
 
 ## Povoado de teste: marco com nome, um armazém, uma fogueira e abrigos de

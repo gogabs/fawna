@@ -31,8 +31,6 @@ extends RefCounted
 
 ## Quantas casas livres ficam entre uma construção e outra (2 casas, 3 m).
 const SPACING := 2
-## Distância mínima do ponto de chegada da Origem, para não fechar a entrada.
-const ORIGIN_CLEARANCE := 2.5
 var world: WorldGen
 ## id -> { "id", "kind", "cell": Vector2i, "region": Vector2i, "stage": int,
 ## "deposited": {item: qtd}, "work": int, "done": bool, "fuel": s guardados
@@ -55,7 +53,7 @@ var seen := {}
 const FREE := 0  # chão livre
 const CLEARABLE := 1  # árvore, arbusto ou bambu: dá para arrancar
 const WATER := 2  # lago, riacho, mar ou charco: não dá
-const TAKEN := 3  # trilha, recurso, Origem, outra obra ou fora da região
+const TAKEN := 3  # trilha, recurso, outra obra ou fora da região
 ## Canteiros de uma construção grande: um em cada canto (NO, NE, SE, SO).
 const POSTS := 4
 ## As 9 partes de uma obra grande, de noroeste a sudeste (ver sector_name).
@@ -465,20 +463,16 @@ func cell_status(cell: Vector2i, region: Vector2i, ignore := -1) -> int:
 		return CLEARABLE
 	if thing != WorldGen.Thing.NADA or not world.is_passable(cell):
 		return TAKEN
-	if WorldGen.cell_center(cell).distance_to(WorldGen.origin_point()) < ORIGIN_CLEARANCE:
-		return TAKEN
 	return FREE
 
 
 ## Por que não dá para começar uma construção pequena nesta casa ("" = dá).
-## "lugar": a casa não está livre (água, trilha, recurso, Origem...);
+## "lugar": a casa não está livre (água, trilha, recurso...);
 ## "perto": outra construção colada; "regiao": já há um marco nesta região.
 func refusal(kind: String, cell: Vector2i) -> String:
 	if not Crafting.BUILDS.has(kind) or Crafting.is_large(kind):
 		return "desconhecida"
 	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell):
-		return "lugar"
-	if WorldGen.cell_center(cell).distance_to(WorldGen.origin_point()) < ORIGIN_CLEARANCE:
 		return "lugar"
 	for dy in range(-SPACING, SPACING + 1):
 		for dx in range(-SPACING, SPACING + 1):
@@ -522,7 +516,7 @@ static func _zero_posts(size: int) -> Array:
 ## "origin" e lado "size" ("" = dá): "desconhecida", "tamanho", "regiao" (o
 ## terreno atravessa a divisa), "sem_povoado" (falta um marco com nome na
 ## região), "agua", "perto" (outra obra a menos de SPACING casas, trilha,
-## recurso ou Origem no terreno), "entrada" (lado inválido).
+## ou recurso no terreno), "entrada" (lado inválido).
 func site_refusal(kind: String, origin: Vector2i, size: int, entrance: String) -> String:
 	if not Crafting.is_large(kind):
 		return "desconhecida"

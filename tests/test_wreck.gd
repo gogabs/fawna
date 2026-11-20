@@ -24,7 +24,7 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _origin_cell() -> Vector2i:
-	return WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(8, 8)
+	return WorldGen.cell_of(WorldGen.center_point()) + Vector2i(8, 8)
 
 
 func _large(state: WorldState, kind: String, id: int, done: bool, stage := 0) -> Dictionary:

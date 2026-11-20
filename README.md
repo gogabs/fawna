@@ -70,7 +70,7 @@ cada uma com uma característica só: bosque de micélio, pradaria de
 girassóis ou lagoa das vitórias-régias. O que há dentro delas é gerado aos
 pedaços, conforme alguém chega perto. Trilhas de terra ligam o ponto de
 encontro de cada região aos das vizinhas, com pontes onde cruzam a água; a
-Origem (nome provisório) é o ponto de encontro da primeira região. As trilhas são a base para o
+região do centro do mundo é onde nasce quem entra pela primeira vez. As trilhas são a base para o
 Caminheiro e para os caminhos dos NPCs. As falas dizem onde as coisas
 estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
@@ -80,7 +80,7 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta (em Opções dá para trocar para Vertical: ↑ e ↓ passam, → confirma e ← volta). As opções são o
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
-O Caminheiro tem três submenus: **Locais** (a Origem e os povoados com nome),
+O Caminheiro tem três submenus: **Locais** (os povoados com nome),
 **Construções** (só as da região em que você está) e **Recursos** (Bambu, Lenha,
 Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
@@ -141,8 +141,7 @@ trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
 o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
 curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
 vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
-beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
-Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
+beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso
 apaga o cristal.
@@ -158,7 +157,7 @@ apaga o cristal.
    - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.
 
    O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, pedras em 10, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
-2. A Origem, no centro do mundo, é o ponto de partida. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
+2. Quem entra pela primeira vez nasce no cruzamento de trilhas do centro do mundo. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
 
@@ -174,7 +173,7 @@ Para instalar o Prism, baixe `prismatoid-gdextension` na [página de releases](h
 
 ## Áudio espacial
 
-Árvores, água, arbustos e a Origem tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
+Árvores, água, e arbustos tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
 
 Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) instalado, o som usa o HRTF binaural do Steam Audio, que deixa frente e trás claros **com fone de ouvido**. Sem ele, o jogo usa o áudio 3D do Godot (esquerda, direita e distância). O console avisa qual está em uso (`[audio] HRTF ...`).
 
