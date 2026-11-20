@@ -82,13 +82,13 @@ static func seconds_to_next_phase(t: float, day_seconds: float) -> float:
 ## só dão cor ao aviso de cada virada e à resposta de "que horas são". Em ordem
 ## de hora, começando à meia-noite.
 const PERIODS := [
-	["Noite profunda", 0.0, "O silêncio pesa. Só a coruja e o que não dorme se mexem."],
-	["Amanhecer", 5.0, "A névoa sobe do chão e os pássaros disputam a primeira luz."],
+	["Noite profunda", 0.0, "O silêncio pesa, e só o que não dorme se mexe."],
+	["Amanhecer", 5.0, "A névoa sobe do chão, e uma luz fria toca o horizonte."],
 	["Manhã", 7.0, "O ar esquenta e o mundo respira sem pressa."],
 	["Meio-dia", 12.0, "O sol a pino encolhe as sombras. Tudo parece quieto demais."],
 	["Tarde", 14.0, "A luz desce amarelada e o vento troca de lado."],
-	["Fim de tarde", 18.0, "As sombras se alongam, e os primeiros grilos afinam no escuro."],
-	["Anoitecer", 19.0, "O sol some entre as árvores. Os pássaros se recolhem."],
+	["Fim de tarde", 18.0, "As sombras se alongam e a luz esfria, dourada."],
+	["Anoitecer", 19.0, "O sol some no horizonte, e a escuridão toma o chão."],
 	["Noite", 20.0, "O mundo fecha os olhos, e o que ronda no escuro desperta."],
 ]
 
