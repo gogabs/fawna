@@ -53,6 +53,7 @@ const BRIDGE_COLOR := Color("503a24")
 var _world: WorldGen
 var _audio: SpatialAudio
 var _harvest: Harvest
+var _obras: BuildsView3D
 var _bridges := {}  # pedaço -> casas de ponte (para refazer as coisas)
 var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
 var _camera: Camera3D
@@ -66,7 +67,7 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0) -> void:
 	_world = world
 	_audio = audio
 	_harvest = harvest
@@ -92,6 +93,11 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null) -> voi
 	add_child(_camera)
 	_camera.make_current()
 	_setup_environment()
+	if builds != null:
+		_obras = BuildsView3D.new()
+		_obras.name = "Obras3D"
+		add_child(_obras)
+		_obras.setup(world, builds, players, my_id, _shapes, _material)
 
 
 ## Chamado a cada movimento: onde a criatura está. O giro vem do ouvinte,
@@ -101,10 +107,18 @@ func follow(pos: Vector2) -> void:
 	if _camera == null:
 		return
 	_camera.position = Vector3(pos.x, 0.0, pos.y) * METERS + Vector3.UP * EYE_HEIGHT
+	if _obras != null:
+		_obras.follow(pos)
 	var chunk := _chunk_of(WorldGen.cell_of(pos))
 	if chunk != _center_chunk:
 		_center_chunk = chunk
 		_plan(chunk)
+
+
+## As construções mudaram (nova, em andamento, acesa ou apagada).
+func refresh_builds() -> void:
+	if _obras != null:
+		_obras.refresh()
 
 
 func chunk_count() -> int:
@@ -381,33 +395,38 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 			match thing:
 				WorldGen.Thing.ARVORE:
 					var s := 0.8 + 0.5 * r1
-					_put(lists, "trunk", base, Vector3(s, 2.2 * s, s), turn, 1.1 * s, TRUNK_COLOR * shade)
+					put(lists, "trunk", base, Vector3(s, 2.2 * s, s), turn, 1.1 * s, TRUNK_COLOR * shade)
 					var crown: Color = TREE_CROWN.get(_world.biome_at(cell), TREE_CROWN_DEFAULT)
-					_put(lists, "cone", base, Vector3(1.3 * s, 3.4 * s, 1.3 * s), turn, 3.3 * s, crown * shade)
+					put(lists, "cone", base, Vector3(1.3 * s, 3.4 * s, 1.3 * s), turn, 3.3 * s, crown * shade)
 				WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 					var s := 0.8 + 0.5 * r1
 					# Arbusto é arbusto: o de frutas não pode se distinguir (decisão do Gabs).
-					_put(lists, "blob", base, Vector3(1.0 * s, 0.7 * s, 1.0 * s), turn, 0.3 * s, SHRUB_COLOR * shade)
+					put(lists, "blob", base, Vector3(1.0 * s, 0.7 * s, 1.0 * s), turn, 0.3 * s, SHRUB_COLOR * shade)
 				WorldGen.Thing.BAMBU:
 					for k in 3:
 						var offset := Vector3((_rand(cell, 10 + k) - 0.5) * 1.0, 0.0, (_rand(cell, 20 + k) - 0.5) * 1.0)
 						var h := 3.5 + 2.0 * _rand(cell, 30 + k)
-						_put(lists, "stalk", base + offset, Vector3(1.0, h, 1.0), 0.0, h * 0.5, BAMBOO_COLOR * shade)
+						put(lists, "stalk", base + offset, Vector3(1.0, h, 1.0), 0.0, h * 0.5, BAMBOO_COLOR * shade)
 				WorldGen.Thing.PEDRAS:
 					var s := 0.6 + 0.6 * r1
-					_put(lists, "blob", base, Vector3(s, 0.6 * s * (0.7 + r3), s * (0.8 + 0.4 * r2)), turn, 0.15 * s, STONE_COLOR * shade)
+					put(lists, "blob", base, Vector3(s, 0.6 * s * (0.7 + r3), s * (0.8 + 0.4 * r2)), turn, 0.15 * s, STONE_COLOR * shade)
 				WorldGen.Thing.ARGILA:
-					_put(lists, "blob", base, Vector3(0.9, 0.25, 0.9), turn, 0.05, CLAY_COLOR * shade)
+					put(lists, "blob", base, Vector3(0.9, 0.25, 0.9), turn, 0.05, CLAY_COLOR * shade)
 				WorldGen.Thing.SILEX:
-					_put(lists, "blob", base, Vector3(0.3, 0.22, 0.25), turn, 0.07, FLINT_COLOR * shade)
+					put(lists, "blob", base, Vector3(0.3, 0.22, 0.25), turn, 0.07, FLINT_COLOR * shade)
 				WorldGen.Thing.FIBRA:
-					_put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
+					put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
 				WorldGen.Thing.CIPO:
-					_put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
+					put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
 	_sources[first / CHUNK] = sources
 	var holder_parent := Node3D.new()
 	holder_parent.name = "Coisas"
 	parent.add_child(holder_parent)
+	flush(lists, _shapes, _material, holder_parent)
+
+
+## Cria um MultiMesh por forma com as peças guardadas e os põe em "parent".
+static func flush(lists: Dictionary, shapes: Dictionary, material: Material, parent: Node3D) -> void:
 	for shape: String in lists:
 		var items: Array = lists[shape]
 		if items.is_empty():
@@ -415,20 +434,20 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
 		multi.use_colors = true
-		multi.mesh = _shapes[shape]
+		multi.mesh = shapes[shape]
 		multi.instance_count = items.size()
 		for i in items.size():
 			multi.set_instance_transform(i, items[i][0])
 			multi.set_instance_color(i, items[i][1])
 		var holder := MultiMeshInstance3D.new()
 		holder.multimesh = multi
-		holder.material_override = _material
+		holder.material_override = material
 		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		holder_parent.add_child(holder)
+		parent.add_child(holder)
 
 
 ## Guarda uma peça: escala, giro, altura do centro e cor.
-static func _put(lists: Dictionary, shape: String, at: Vector3, scale: Vector3, turn: float, height: float, color: Color) -> void:
+static func put(lists: Dictionary, shape: String, at: Vector3, scale: Vector3, turn: float, height: float, color: Color) -> void:
 	var basis := Basis(Vector3.UP, turn).scaled(scale)
 	color.a = 1.0
 	lists[shape].append([Transform3D(basis, at + Vector3.UP * height), color])
@@ -439,11 +458,11 @@ static func _put(lists: Dictionary, shape: String, at: Vector3, scale: Vector3, 
 func _add_bridge(lists: Dictionary, cell: Vector2i) -> void:
 	var center := Vector3((cell.x + 0.5) * METERS, 0.0, (cell.y + 0.5) * METERS)
 	var shade := 0.9 + 0.2 * _rand(cell, 4)
-	_put(lists, "box", center, Vector3(METERS, 0.14, METERS), 0.0, 0.07, BRIDGE_COLOR * shade)
+	put(lists, "box", center, Vector3(METERS, 0.14, METERS), 0.0, 0.07, BRIDGE_COLOR * shade)
 	var half := METERS * 0.5 - 0.06
 	for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 		if not _is_water(_world.thing_at(cell + dir)):
 			continue
 		var side := Vector3(dir.x, 0.0, dir.y) * half
 		var size := Vector3(0.1, 0.6, METERS) if dir.x != 0 else Vector3(METERS, 0.6, 0.1)
-		_put(lists, "box", center + side, size, 0.0, 0.14 + 0.3, BRIDGE_COLOR * 0.75)
+		put(lists, "box", center + side, size, 0.0, 0.14 + 0.3, BRIDGE_COLOR * 0.75)

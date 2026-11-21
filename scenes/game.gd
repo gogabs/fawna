@@ -2524,7 +2524,7 @@ func _setup_view3d() -> void:
 	view3d = WorldView3D.new()
 	view3d.name = "View3D"
 	add_child(view3d)
-	view3d.setup(world, audio, harvest)
+	view3d.setup(world, audio, harvest, builds, players, my_id)
 	view.visible = false
 
 
@@ -3456,6 +3456,8 @@ func _refresh_fires() -> void:
 		if builds.is_lit(int(build["id"])):
 			cells.append(build["cell"])
 	audio.set_lit_fires(cells)
+	if view3d != null:
+		view3d.refresh_builds()
 
 
 func _on_menu_sound(kind: String) -> void:
