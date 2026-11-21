@@ -13,6 +13,7 @@ extends Node3D
 ## por quadro, para andar não gerar engasgo.
 
 const CHUNK := WorldGen.CHUNK
+const TEXTURE_METERS := 3.0  # tamanho de um ladrilho da textura do chão
 const METERS := WorldGen.METERS_PER_CELL
 ## Quantos pedaços em volta (além do da criatura) ficam montados. O alcance
 ## visível é um pouco menor que isso, e a neblina esconde a borda.
@@ -44,6 +45,7 @@ const WATER_COLORS := {
 	WorldGen.Thing.RIO: Color("21405a"),
 	WorldGen.Thing.VAU: Color("2c4d63"),  # vau: água rasa, mais clara
 }
+const WATER_DRIFT := Vector2(0.018, 0.011)  # deslocamento das ondas por segundo (ladrilhos)
 const WATER_LEVEL := -0.18  # a água fica abaixo do chão
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
@@ -68,6 +70,8 @@ var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para 
 var _camera: Camera3D
 var _chunks := {}  # Vector2i (pedaço) -> MeshInstance3D
 var _material: StandardMaterial3D
+var _water_time := 0.0
+var _materials := {}  # forma -> material com a textura dela
 var _water_material: StandardMaterial3D
 var _noise := FastNoiseLite.new()
 var _shapes := {}  # forma (String) -> Mesh, criadas uma vez e repartidas entre os pedaços
@@ -83,13 +87,23 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_harvest = harvest
 	_noise.seed = 1234
 	_noise.frequency = 0.9
-	_material = StandardMaterial3D.new()
-	_material.vertex_color_use_as_albedo = true
-	_material.roughness = 1.0
+	var textures := WorldTextures.make_all()
+	_material = _textured(textures["ground"])
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var bark := _textured(textures["bark"])
+	var leaf := _textured(textures["leaf"])
+	var stone := _textured(textures["stone"])
+	# Cada forma ganha a textura que combina: casca nos troncos, hastes e peças
+	# retas, folhagem nas copas, pedra nas pedras e arbustos.
+	_materials = {"trunk": bark, "stalk": bark, "box": bark, "cone": leaf, "blob": stone}
 	_water_material = StandardMaterial3D.new()
 	_water_material.vertex_color_use_as_albedo = true
-	_water_material.roughness = 0.15
+	_water_material.roughness = 0.12
+	_water_material.normal_enabled = true
+	_water_material.normal_texture = WorldTextures.water_normal()
+	_water_material.normal_scale = 0.8
+	_water_material.texture_repeat = true
+	_water_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	_water_material.metallic_specular = 0.9
 	_water_material.emission_enabled = true
 	_water_material.emission = Color("0d2233")
@@ -107,7 +121,7 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		_obras = BuildsView3D.new()
 		_obras.name = "Obras3D"
 		add_child(_obras)
-		_obras.setup(world, builds, players, my_id, _shapes, _material)
+		_obras.setup(world, builds, players, my_id, _shapes, _materials)
 	if birds != null or horrors != null:
 		var wildlife := WildlifeView3D.new()
 		wildlife.name = "Bichos3D"
@@ -267,6 +281,7 @@ func _plan(center: Vector2i) -> void:
 
 func _process(delta: float) -> void:
 	_update_sky(delta)
+	_animate_water(delta)
 	if _held_flame != null and _held_flame.visible:
 		var flicker := 1.0 + 0.12 * sin(Time.get_ticks_msec() * 0.021) + 0.06 * sin(Time.get_ticks_msec() * 0.047)
 		_held_flame.scale = Vector3(0.07, 0.17 * flicker, 0.07)
@@ -350,14 +365,18 @@ class _Surface:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
 
 	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, normal: Vector3) -> void:
 		var v := vertices.size()
 		vertices.append_array(PackedVector3Array([a, b, c, d]))
-		for k in 4:
+		for point: Vector3 in [a, b, c, d]:
 			colors.append(color)
 			normals.append(normal)
+			# Textura em coordenadas do mundo (um ladrilho a cada TEXTURE_METERS), para
+			# não haver emenda entre casas nem entre pedaços.
+			uvs.append(Vector2(point.x, point.z) / TEXTURE_METERS if normal.y > 0.5 else Vector2(point.x + point.z, point.y) / TEXTURE_METERS)
 		# O mesmo giro serve para chão (cima) e margens: a luz de duas faces
 		# não importa, o material não tem culling.
 		indices.append_array(PackedInt32Array([v, v + 1, v + 2, v, v + 2, v + 3]))
@@ -370,6 +389,7 @@ class _Surface:
 		arrays[Mesh.ARRAY_VERTEX] = vertices
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
 		arrays[Mesh.ARRAY_INDEX] = indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
@@ -519,11 +539,12 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 	var holder_parent := Node3D.new()
 	holder_parent.name = "Coisas"
 	parent.add_child(holder_parent)
-	flush(lists, _shapes, _material, holder_parent)
+	flush(lists, _shapes, _materials, holder_parent)
 
 
 ## Cria um MultiMesh por forma com as peças guardadas e os põe em "parent".
-static func flush(lists: Dictionary, shapes: Dictionary, material: Material, parent: Node3D) -> void:
+## "materials": um material por forma (Dictionary) ou um só para todas.
+static func flush(lists: Dictionary, shapes: Dictionary, materials: Variant, parent: Node3D) -> void:
 	for shape: String in lists:
 		var items: Array = lists[shape]
 		if items.is_empty():
@@ -538,9 +559,20 @@ static func flush(lists: Dictionary, shapes: Dictionary, material: Material, par
 			multi.set_instance_color(i, items[i][1])
 		var holder := MultiMeshInstance3D.new()
 		holder.multimesh = multi
-		holder.material_override = material
+		holder.material_override = materials[shape] if materials is Dictionary else materials
 		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(holder)
+
+
+## Material de cores nos vértices com uma textura em tons de cinza por baixo.
+static func _textured(texture: Texture2D) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.albedo_texture = texture
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	material.texture_repeat = true
+	material.roughness = 1.0
+	return material
 
 
 ## Guarda uma peça: escala, giro, altura do centro e cor.
@@ -577,6 +609,14 @@ const NIGHT_AMBIENT := Color("56627a")
 const SUN_COLOR := Color("d6cfbd")
 const MOON_COLOR := Color("a9b6cf")
 const RING_GLOW := Color("9fb4d6")  # a luz refletida do anel, de noite
+
+
+## A água se mexe: o relevo das ondas desliza devagar em duas direções ao
+## mesmo tempo (só mexe no deslocamento do material, sem custo de malha).
+func _animate_water(delta: float) -> void:
+	_water_time += delta
+	_water_material.uv1_offset = Vector3(_water_time * WATER_DRIFT.x, _water_time * WATER_DRIFT.y, 0.0)
+	_water_material.uv1_scale = Vector3.ONE * (0.9 + 0.1 * sin(_water_time * 0.3))
 
 
 ## Liga céu, neblina e luz ao relógio do jogo: dark fantasy, então o dia é

@@ -24,6 +24,7 @@ var _builds: Builds
 var _players: Dictionary
 var _my_id := 0
 var _material: StandardMaterial3D
+var _materials := {}
 var _flame_material: StandardMaterial3D
 var _shapes := {}
 var _built_root: Node3D
@@ -40,13 +41,14 @@ const TORCH_ENERGY := 2.6
 const TORCH_RANGE := 11.0
 
 
-func setup(world: WorldGen, builds: Builds, players: Dictionary, my_id: int, shapes: Dictionary, material: StandardMaterial3D) -> void:
+func setup(world: WorldGen, builds: Builds, players: Dictionary, my_id: int, shapes: Dictionary, materials: Dictionary) -> void:
 	_world = world
 	_builds = builds
 	_players = players
 	_my_id = my_id
 	_shapes = shapes
-	_material = material
+	_materials = materials
+	_material = materials["blob"]
 	_flame_material = StandardMaterial3D.new()
 	_flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_flame_material.albedo_color = FLAME_COLOR
@@ -125,7 +127,7 @@ func refresh() -> void:
 		if middle.distance_to(_center) * METERS > SHOW_RANGE:
 			continue
 		_add_build(lists, build)
-	WorldView3D.flush(lists, _shapes, _material, _built_root)
+	WorldView3D.flush(lists, _shapes, _materials, _built_root)
 
 
 func _cell_at(cell: Vector2i, height := 0.0) -> Vector3:
