@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_save_round_trip()
 	_test_species()
 	_test_faint_loss()
+	_test_bar()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -139,3 +140,11 @@ func _test_faint_loss() -> void:
 	Body.step(wolf_cold, DAY * 0.1, _ctx({"season": 2, "night": true, "species": "lobo"}))
 	Body.step(deer_cold, DAY * 0.1, _ctx({"season": 2, "night": true, "species": "cervo"}))
 	_check(wolf_cold["warmth"] > deer_cold["warmth"], "o Geado (pelagem) aguenta mais o frio que o Ramado (leve)")
+
+
+func _test_bar() -> void:
+	_check(Body.bar_step(100.0) == 0 and Body.bar_step(81.0) == 0, "acima de 80, posição 0")
+	_check(Body.bar_step(80.0) == 1, "em 80 já é a posição 1")
+	_check(Body.bar_step(20.0) == 4 and Body.bar_step(0.0) == 5, "20 é a 4, vazio a 5")
+	_check(Body.bar_pan(0) == 1.0 and Body.bar_pan(5) == -1.0, "cheia à direita, vazia à esquerda")
+	_check(absf(Body.bar_pan(1) - 0.6) < 0.001, "80 soa perto da direita")

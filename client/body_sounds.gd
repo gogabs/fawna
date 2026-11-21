@@ -26,6 +26,55 @@ static func _pick(key: String, maker: Callable) -> AudioStreamWAV:
 	return list[_rng.randi() % list.size()]
 
 
+## Barra sonora: um toque curto, colocado no estéreo pela posição na barra
+## (Body.bar_pan). A fome é um toque grave e amadeirado; o calor, um toque
+## agudo de vidro, para não se confundirem.
+static func ping(kind: String, step: int) -> AudioStreamWAV:
+	var key := "ping_%s_%d" % [kind, step]
+	if not _cache.has(key):
+		_cache[key] = [_make_ping(kind, Body.bar_pan(step))]
+	return _cache[key][0]
+
+
+static func _make_ping(kind: String, pan: float) -> AudioStreamWAV:
+	var food := kind == "food"
+	var seconds := 0.35 if food else 0.45
+	var base := 392.0 if food else 1046.5
+	var count := int(seconds * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	for i in count:
+		var t := float(i) / RATE
+		var attack := minf(t / 0.004, 1.0)
+		var tone: float
+		if food:
+			# Madeira: fundamental e um parcial inarmônico que some depressa.
+			tone = sin(TAU * base * t) * exp(-t * 14.0) + 0.4 * sin(TAU * base * 2.76 * t) * exp(-t * 30.0)
+		else:
+			# Vidro: parciais altos, cauda mais longa.
+			tone = sin(TAU * base * t) * exp(-t * 7.0) + 0.3 * sin(TAU * base * 2.4 * t) * exp(-t * 11.0)
+		samples[i] = tone * attack * 0.45
+	return _to_stereo(samples, pan)
+
+
+## Mono para estéreo com pan de potência constante (-1 esquerda, 1 direita).
+static func _to_stereo(samples: PackedFloat32Array, pan: float) -> AudioStreamWAV:
+	var angle := (clampf(pan, -1.0, 1.0) + 1.0) * PI * 0.25
+	var left := cos(angle)
+	var right := sin(angle)
+	var data := PackedByteArray()
+	data.resize(samples.size() * 4)
+	for i in samples.size():
+		data.encode_s16(i * 4, int(clampf(samples[i] * left, -1.0, 1.0) * 32767.0))
+		data.encode_s16(i * 4 + 2, int(clampf(samples[i] * right, -1.0, 1.0) * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = RATE
+	wav.stereo = true
+	wav.data = data
+	return wav
+
+
 ## Barriga roncando: um gorgolejo grave que sobe e desce, com bolhas.
 static func growl() -> AudioStreamWAV:
 	return _pick("growl", _make_growl)

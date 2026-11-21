@@ -7,6 +7,11 @@ extends Node
 ## conta quem está zerado há tempo demais para desfalecer. No cliente, guarda
 ## as duas reservas, fala a frase quando uma piora de limiar e toca os sons do
 ## corpo (barriga, tremor) de vez em quando, mais seguido quanto pior.
+##
+## Barra sonora (ideia do Gabs): a cada 20 pontos que uma reserva cruza, para
+## baixo ou para cima, um toque soa no estéreo, da direita (cheia) para a
+## esquerda (vazia). A fome tem um toque, o calor outro. A barra visual fica no
+## canto da tela (BodyBars).
 
 const STEP_SECONDS := 1.0
 ## O servidor manda as reservas a cada tanto, e na hora em que um limiar muda.
@@ -16,17 +21,21 @@ const SOUND_GAPS := [[50.0, 90.0], [22.0, 40.0], [9.0, 16.0]]
 const BODY_DB := -10.0  # baixos: o corpo fala baixo
 const WARM_DB := -12.0
 const FAINT_SECONDS := 2.5  # do apagar até acordar no ponto seguro
+const PING_DB := -8.0  # toque da barra sonora
+const PING_GAP := 0.35  # fome e calor mudando juntos: um toque depois do outro
 
 # Servidor
 var _step := 0.0
 var _since_send := {}  # peer -> segundos desde o último envio
-var _sent_levels := {}  # peer -> [nível da fome, nível do calor] enviados
+var _sent_levels := {}  # peer -> marcas enviadas (Body.level_of e Body.bar_step de cada reserva)
 
 # Cliente
 var food := Body.START
 var warmth := Body.START
 var _known := false  # já chegou a primeira notícia do servidor
 var _levels := [0, 0]
+var _bar_steps := [0, 0]  # posição de cada reserva na barra sonora (Body.bar_step)
+var _bars: BodyBars
 var _sound_wait := [0.0, 0.0]
 var _out := false  # desfalecida: não anda até acordar
 var _was_fire := false
@@ -90,9 +99,9 @@ func _server_step(seconds: float) -> void:
 		if empty and float(state.faint_clock[peer]) >= Body.FAINT_SECONDS:
 			_faint(peer)
 			continue
-		var pair := [int(levels["food"]), int(levels["warmth"])]
+		var marks := _marks_of(entry)
 		_since_send[peer] = float(_since_send.get(peer, 0.0)) + seconds
-		if pair != _sent_levels.get(peer, []) or float(_since_send[peer]) >= SEND_SECONDS:
+		if marks != _sent_levels.get(peer, []) or float(_since_send[peer]) >= SEND_SECONDS:
 			send_to(peer)
 
 
@@ -103,8 +112,15 @@ func send_to(peer: int) -> void:
 		return
 	var entry := state.body_of(peer)
 	_since_send[peer] = 0.0
-	_sent_levels[peer] = [Body.level_of(entry["food"]), Body.level_of(entry["warmth"])]
+	_sent_levels[peer] = _marks_of(entry)
 	body_state.rpc_id(peer, float(entry["food"]), float(entry["warmth"]))
+
+
+## O que, ao mudar, faz o servidor mandar na hora: os limiares falados e as
+## posições da barra sonora.
+func _marks_of(entry: Dictionary) -> Array:
+	return [Body.level_of(entry["food"]), Body.level_of(entry["warmth"]),
+		Body.bar_step(entry["food"]), Body.bar_step(entry["warmth"])]
 
 
 func forget_peer(peer: int) -> void:
@@ -172,7 +188,16 @@ func body_state(new_food: float, new_warmth: float) -> void:
 		if levels[i] > 0 and _levels[i] == 0:
 			_sound_wait[i] = _gap(levels[i])
 	_levels = levels
+	var steps := [Body.bar_step(food), Body.bar_step(warmth)]
+	if _known and not _out:
+		var delay := 0.0
+		for i in 2:
+			if steps[i] != _bar_steps[i]:
+				_ping("food" if i == 0 else "warmth", steps[i], delay)
+				delay += PING_GAP
+	_bar_steps = steps
 	_known = true
+	_show_bars()
 
 
 @rpc("authority", "call_local", "reliable")
@@ -210,6 +235,27 @@ func fainted(spot: Vector2, cause: String, lost_something := false) -> void:
 	if lost_something:
 		text += " A bolsa está mais leve."
 	Speech.say(text)
+
+
+## Um toque da barra sonora, depois de "delay" segundos.
+func _ping(kind: String, step: int, delay: float) -> void:
+	if DisplayServer.get_name() == "headless":
+		print("[barra] %s na posição %d" % [kind, step])
+		return
+	if delay > 0.0:
+		await get_tree().create_timer(delay).timeout
+	_play(BodySounds.ping(kind, step), PING_DB)
+
+
+## A barra visual, criada na primeira notícia (só quem tem tela).
+func _show_bars() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if _bars == null:
+		_bars = BodyBars.new()
+		_bars.name = "BarrasDoCorpo"
+		add_child(_bars)
+	_bars.show_values(food, warmth)
 
 
 ## Desfalecida: não anda até acordar.

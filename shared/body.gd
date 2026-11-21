@@ -29,6 +29,11 @@ const FAINT_SECONDS := 60.0
 const WEAK_SPEED := 0.85
 const WEAK_WORK := 0.75
 
+## Barra sonora: a cada vez que uma reserva cruza um destes valores (para
+## baixo ou para cima), um toque soa no estéreo, da direita (cheia) para a
+## esquerda (vazia), em 6 posições: 100, 80, 60, 40, 20 e 0.
+const BAR_MARKS := [80.0, 60.0, 40.0, 20.0, 0.0]
+
 ## Fome: quantos dias a reserva cheia dura, em cada estação (Coroada, Declínio,
 ## Longa Escuridão, Ressurgência). O frio queima mais.
 const HUNGER_DAYS := [1.5, 1.4, 1.0, 1.4]
@@ -91,6 +96,20 @@ static func level_of(value: float) -> int:
 		if (value <= limit) if limit <= 0.0 else (value < limit):
 			level = i + 1
 	return level
+
+
+## Posição na barra sonora: 0 (acima de 80) a 5 (vazia). Em 80 já é a 1.
+static func bar_step(value: float) -> int:
+	var step := 0
+	for mark: float in BAR_MARKS:
+		if value <= mark:
+			step += 1
+	return step
+
+
+## Onde o toque da barra soa no estéreo: 1 à direita (cheia), -1 à esquerda (vazia).
+static func bar_pan(step: int) -> float:
+	return 1.0 - 2.0 * float(clampi(step, 0, BAR_MARKS.size())) / float(BAR_MARKS.size())
 
 
 ## Abatido por qualquer das reservas?
