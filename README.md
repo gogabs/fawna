@@ -233,6 +233,7 @@ Cada nome tem uma senha, definida em **Opções** (mínimo de 4 caracteres) e gu
 godot --headless --path . --script res://tests/test_world.gd
 godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
+godot --headless --path . res://tests/test_ceu_3d.tscn
 godot --headless --path . --script res://tests/test_credentials.gd
 godot --headless --path . --script res://tests/test_harvest.gd
 godot --headless --path . --script res://tests/test_dia_noite.gd

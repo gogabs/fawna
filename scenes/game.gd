@@ -2542,6 +2542,7 @@ func _setup_view3d() -> void:
 	view3d.name = "View3D"
 	add_child(view3d)
 	view3d.setup(world, audio)
+	view3d.darkness_source = daytime.darkness_here
 	view.visible = false
 
 

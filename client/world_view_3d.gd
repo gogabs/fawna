@@ -20,8 +20,22 @@ const EYE_HEIGHT := 1.2  # metros: uma criatura baixinha
 const FOV := 80.0
 const FOG_END := RADIUS_CHUNKS * CHUNK * METERS * 0.85
 
-const SKY_COLOR := Color("0d1217")
+const SKY_COLOR := Color("0d1217")  # as cores da noite; o dia vem em DAY_*
 const FOG_COLOR := Color("141b20")
+const AMBIENT_COLOR := Color("56627a")
+const LIGHT_COLOR := Color("a9b6cf")
+const LIGHT_ENERGY := 0.55
+const DAY_SKY_COLOR := Color("86a0b0")
+const DAY_FOG_COLOR := Color("98aab2")
+const DAY_AMBIENT_COLOR := Color("a4b0bc")
+const DAY_LIGHT_COLOR := Color("fff1d6")
+const DAY_LIGHT_ENERGY := 1.0
+const TWILIGHT_COLOR := Color("d9824a")  # o laranja do amanhecer e do entardecer
+const NIGHT_SUN_PITCH := -18.0  # graus: a luz baixa no escuro, alta de dia
+const DAY_SUN_PITCH := -62.0
+## Quão rápido o céu acompanha o relógio (por segundo), para não dar salto
+## quando o tempo pula (depuração).
+const SKY_EASE := 2.0
 
 const BIOME_COLORS := {
 	WorldGen.Biome.BOSQUE: Color("26362a"),
@@ -53,6 +67,12 @@ var _noise := FastNoiseLite.new()
 var _center_chunk := Vector2i(1 << 30, 1 << 30)
 var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais longe
 var _pos := Vector2.ZERO
+var _env: Environment
+var _sun: DirectionalLight3D
+var _dark := 1.0  # 0 de dia, 1 de noite: o que o céu mostra agora
+## Quem diz o quanto está escuro (0 a 1) onde a criatura está; vazio deixa a
+## noite de sempre. O jogo põe aqui o relógio do dia.
+var darkness_source := Callable()
 
 
 func setup(world: WorldGen, audio: SpatialAudio) -> void:
@@ -103,15 +123,37 @@ func _setup_environment() -> void:
 	env.fog_depth_begin = FOG_END * 0.2
 	env.fog_depth_end = FOG_END
 	env.fog_depth_curve = 1.4
+	_env = env
 	var holder := WorldEnvironment.new()
 	holder.environment = env
 	add_child(holder)
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-55.0, 30.0, 0.0)
-	light.light_color = Color("a9b6cf")
-	light.light_energy = 0.55
-	light.shadow_enabled = false
-	add_child(light)
+	_sun = DirectionalLight3D.new()
+	_sun.rotation_degrees = Vector3(NIGHT_SUN_PITCH, 30.0, 0.0)
+	_sun.light_color = LIGHT_COLOR
+	_sun.light_energy = LIGHT_ENERGY
+	_sun.shadow_enabled = false
+	add_child(_sun)
+	_apply_sky(1.0)
+
+
+## Põe o céu, a neblina e a luz no ponto "dark" (0 dia, 1 noite). No amanhecer
+## e no entardecer (dark no meio) a luz puxa para o laranja.
+func _apply_sky(dark: float) -> void:
+	_dark = dark
+	if _env == null:
+		return
+	var twilight := sin(PI * dark)
+	_env.background_color = DAY_SKY_COLOR.lerp(SKY_COLOR, dark)
+	_env.fog_light_color = DAY_FOG_COLOR.lerp(FOG_COLOR, dark).lerp(TWILIGHT_COLOR, twilight * 0.25)
+	_env.ambient_light_color = DAY_AMBIENT_COLOR.lerp(AMBIENT_COLOR, dark)
+	_sun.light_color = DAY_LIGHT_COLOR.lerp(LIGHT_COLOR, dark).lerp(TWILIGHT_COLOR, twilight * 0.6)
+	_sun.light_energy = lerpf(DAY_LIGHT_ENERGY, LIGHT_ENERGY, dark)
+	_sun.rotation_degrees.x = lerpf(DAY_SUN_PITCH, NIGHT_SUN_PITCH, dark)
+
+
+## O quanto o céu está escuro agora (para os testes).
+func sky_darkness() -> float:
+	return _dark
 
 
 static func _chunk_of(cell: Vector2i) -> Vector2i:
@@ -135,9 +177,13 @@ func _plan(center: Vector2i) -> void:
 		return (a - center).length_squared() > (b - center).length_squared())  # o mais perto no fim, para pop_back
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _camera != null and _audio != null:
 		_camera.rotation.y = _audio.facing_yaw()
+	if darkness_source.is_valid():
+		var target: float = clampf(darkness_source.call(), 0.0, 1.0)
+		if not is_equal_approx(target, _dark):
+			_apply_sky(move_toward(_dark, target, SKY_EASE * delta))
 	for i in MAX_BUILDS_PER_FRAME:
 		if _wanted.is_empty():
 			return
