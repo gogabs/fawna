@@ -88,8 +88,9 @@ func _test_fire_master_ignition() -> void:
 	var started := state.light_torch(2)
 	_check(started.get("started", false) and started["method"] == "pedra", "começa a riscar com pedra")
 	var lit := false
+	var base := Time.get_ticks_msec()
 	for i in 12:
-		var spark := state.strike_spark(2, Time.get_ticks_msec() + 1000 * (i + 1))
+		var spark := state.strike_spark(2, base + 500 * (i + 1))
 		if spark["event"] == "acendeu":
 			lit = true
 			break

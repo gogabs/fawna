@@ -21,7 +21,7 @@ extends RefCounted
 ##   calado_delay: tempo que o Calado leva até chegar
 ## Tags que já valem no jogo (LIVE_TAGS); as outras aparecem no menu de
 ## personagem, mas o efeito delas entra em PRs seguintes.
-const LIVE_TAGS: Array[String] = ["pesado", "leve", "resistente", "guerreiro", "fogo"]
+const LIVE_TAGS: Array[String] = ["pesado", "leve", "resistente", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar"]
 ##
 ## A escolha é feita uma vez por nome de personagem e fica gravada no servidor.
 
@@ -167,7 +167,12 @@ static func unique_tags(id: String) -> Array:
 
 ## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".
 static func tag_text(tag: String) -> String:
-	return "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+	var text := "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+	if is_active(tag):
+		var summary := Abilities.summary(tag)
+		if not summary.is_empty():
+			text += " Em números: %s." % summary
+	return text
 
 
 ## Quem tem a tag pode ter essa espécie? Pergunta direta, sem varrer a lista.

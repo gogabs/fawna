@@ -579,14 +579,17 @@ func prep_cells(id: int) -> Dictionary:
 
 
 ## A casa de preparo mais perto de "pos" (de preferência à frente), até "reach"
-## casas. Devolve { id, cell } ou {} se não há. "tool" é o que está nas mãos.
-func prep_target(pos: Vector2, ahead: Vector2, reach: float, tool: String) -> Dictionary:
+## casas. Devolve { id, cell } ou {} se não há. "tool" é o que está nas mãos
+## (vazio: qualquer fase; no_trees: pula as árvores, que só o machado arranca).
+func prep_target(pos: Vector2, ahead: Vector2, reach: float, tool: String, no_trees := false) -> Dictionary:
 	var best := {}
 	var best_score := INF
 	for build: Dictionary in _builds.values():
-		if build["done"] or str(build["phase"]) == "obra" or Crafting.PREP_TOOLS[build["phase"]] != tool:
+		if build["done"] or str(build["phase"]) == "obra" or (not tool.is_empty() and Crafting.PREP_TOOLS[build["phase"]] != tool):
 			continue
 		for cell: Vector2i in build["prep"]:
+			if no_trees and world.thing_at(cell) == WorldGen.Thing.ARVORE and str(build["phase"]) == "limpeza":
+				continue
 			var offset := WorldGen.cell_center(cell) - pos
 			var distance := offset.length()
 			if distance > reach:

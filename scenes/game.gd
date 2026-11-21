@@ -145,6 +145,12 @@ var _tracked_destination := Vector2.ZERO  # para onde o cristal leva (vale com e
 ## que o Tab usa para achar o mais próximo. Continua valendo com o cristal
 ## apagado.
 var _menu: FloatingMenu
+# Habilidades ativas (ms de Time.get_ticks_msec): a disparada dobra a velocidade
+# e depois cansa; o token cancela os sons repetidos de fuçar e arar.
+var _dash_until := 0
+var _tired_until := 0
+var _dash_boost := 1.0
+var _channel_token := 0
 ## Vozes dos sons da própria criatura (passos, coleta...). Um passo novo vai
 ## para uma voz livre em vez de reiniciar a que ainda está tocando, então o
 ## fim do passo anterior não é cortado e os dois se sobrepõem naturalmente.
@@ -200,6 +206,9 @@ func _process(delta: float) -> void:
 				where.append(state.players[id]["pos"])
 			if not state.harvest.prune(-1.0, where).is_empty():
 				_dirty = true
+		if not state.channels.is_empty():
+			for finished: Dictionary in state.update_channels():
+				_finish_channel(finished)
 		if not state.striking.is_empty():
 			for striker: int in state.expire_strikes():
 				torch_striking.rpc_id(striker, "cancelou", "demora")
@@ -304,6 +313,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_shortcut("Bolsa")
 	elif event.is_action("atalho_caminheiro"):
 		_open_shortcut("Caminheiro")
+	elif event.is_action("habilidade"):
+		_use_ability()
 	elif event.is_action("ajuda"):
 		_say_help()
 	elif event.is_action("onde_estou"):
@@ -370,6 +381,145 @@ func request_species(species_id: String) -> void:
 	if state.choose_species(id, species_id):
 		print("[servidor] %s escolheu a espécie %s" % [state.players[id]["name"], species_id])
 		species_chosen.rpc(id, species_id)
+
+
+## H: usa a habilidade ativa da espécie (ver Abilities e WorldState.use_ability).
+@rpc("any_peer", "call_local", "reliable")
+func request_ability() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	var result := state.use_ability(id)
+	if not result["ok"]:
+		if state.players.has(id):
+			ability_failed.rpc_id(id, str(result["reason"]), str(result.get("tag", "")), int(result.get("seconds", 0)))
+		return
+	if float(result.get("noise", 0.0)) > 0.0:
+		horrors.hear_noise(id, float(result["noise"]))
+	var data := {}
+	match str(result["event"]):
+		"salto":
+			data = {"to": result["to"]}
+		"disparada":
+			data = {"seconds": result["seconds"], "tired": result["tired"], "boost": result["boost"]}
+		"uivo":
+			data = {"pos": result["pos"]}
+			horrors.repel(result["pos"], float(result["radius"]))
+		"fucar", "arar":
+			data = {"seconds": result["seconds"]}
+	ability_event.rpc(id, str(result["tag"]), "usou", data)
+
+
+## O que terminou de uma habilidade parada (fuçar, arar), no servidor.
+func _finish_channel(event: Dictionary) -> void:
+	var id: int = event["id"]
+	var tag := str(event["tag"])
+	match str(event["event"]):
+		"cancelada":
+			ability_event.rpc(id, tag, "cancelada", {})
+		"nada":
+			ability_event.rpc(id, tag, "nada", {})
+		"achou":
+			_dirty = true
+			ground_changed.rpc(event["cell"], event["pile"], "caiu", id, {str(event["item"]): int(event["amount"])})
+			ability_event.rpc(id, tag, "achou", {"item": event["item"], "amount": event["amount"]})
+		"arou":
+			_broadcast_prep(id, int(event["build"]), event["result"])
+			ability_event.rpc(id, tag, "terminou", {})
+
+
+@rpc("authority", "call_local", "reliable")
+func ability_failed(reason: String, _tag: String, seconds: int) -> void:
+	if world == null:
+		return
+	match reason:
+		"espera":
+			Speech.say("Habilidade em espera: faltam %d segundos." % seconds)
+		"ocupado":
+			Speech.say("Você está ocupado: fique parado até terminar.")
+		"sem_espaco":
+			Speech.say("Sem espaço para saltar.")
+		"sem_terreno":
+			Speech.say("Não há terreno de obra ao alcance para arar. Arar limpa grama, arbustos e bambus, mas não árvores.")
+		"sem_pesca":
+			Speech.say("Ainda não há onde pescar: a pesca ainda não existe no jogo.")
+		_:
+			Speech.say("Sua espécie não tem habilidade ativa.")
+
+
+## Uma habilidade de alguém: começou ("usou"), foi cancelada, ou o que se
+## fez parado terminou ("achou", "nada", "terminou"). Quem usou ouve a fala;
+## os outros, o som, de onde a criatura está (o uivo se ouve de longe).
+@rpc("authority", "call_local", "reliable")
+func ability_event(id: int, tag: String, event: String, data: Dictionary) -> void:
+	if world == null or not players.has(id):
+		return
+	var mine := id == my_id
+	var pos: Vector2 = data.get("to", data.get("pos", players[id]["pos"]))
+	match event:
+		"usou":
+			match tag:
+				"salto":
+					players[id]["pos"] = pos
+					if mine:
+						_set_pos(pos)
+						_last_sent = pos
+						_play(AbilitySounds.jump())
+					else:
+						_play_ability_other(pos, AbilitySounds.jump())
+				"disparada":
+					if mine:
+						var now := Time.get_ticks_msec()
+						_dash_until = now + int(float(data["seconds"]) * 1000.0)
+						_tired_until = _dash_until + int(float(data["tired"]) * 1000.0)
+						_dash_boost = float(data["boost"])
+						_play(AbilitySounds.dash())
+					else:
+						_play_ability_other(pos, AbilitySounds.dash())
+				"uivo":
+					if mine:
+						_play(AbilitySounds.howl())
+					else:
+						audio.play_at_point(pos, AbilitySounds.howl(), 0.0, true, false)
+						Speech.say("Um uivo, %s." % Compass.describe(pos - _pos, _heading), false)
+				"fucar", "arar":
+					if mine:
+						Speech.say("Fuçando, fique parado." if tag == "fucar" else "Arando, fique parado.")
+						_channel_token += 1
+						_play_channel_sounds(tag, _channel_token, int(float(data["seconds"])))
+					else:
+						_play_ability_other(pos, AbilitySounds.dig() if tag == "fucar" else AbilitySounds.plow())
+			view.queue_redraw()
+		"cancelada":
+			_channel_token += 1
+			if mine:
+				Speech.say("Você se mexeu e parou.")
+		"nada":
+			_channel_token += 1
+			if mine:
+				Speech.say("Nada por aqui.")
+		"achou":
+			_channel_token += 1
+			if mine:
+				_play(AbilitySounds.found())
+				Speech.say("Você achou %s no chão." % Economy.items_text({str(data["item"]): int(data["amount"])}))
+		"terminou":
+			_channel_token += 1
+
+
+## Sons de uma habilidade de outra criatura (até um pouco além do alcance dos passos).
+func _play_ability_other(pos: Vector2, stream: AudioStream) -> void:
+	if pos.distance_to(_pos) <= HEARING_RADIUS * 2.0:
+		audio.play_at_point(pos, stream, 0.0, true, true)
+
+
+## Enquanto se fuça ou ara, o som se repete a cada segundo até acabar ou ser cancelado.
+func _play_channel_sounds(tag: String, token: int, seconds: int) -> void:
+	for i in seconds:
+		if token != _channel_token:
+			return
+		_play(AbilitySounds.dig() if tag == "fucar" else AbilitySounds.plow(), true, -6.0)
+		await get_tree().create_timer(1.0).timeout
 
 
 @rpc("authority", "call_local", "reliable")
@@ -720,6 +870,11 @@ func request_prep(build_id: int, cell: Vector2i) -> void:
 		if state.players.has(id) and result["reason"] in ["ferramenta", "fase"]:
 			action_failed.rpc_id(id, "preparo_" + result["reason"], str(result.get("tool", "")))
 		return
+	_broadcast_prep(id, build_id, result)
+
+
+## Avisa todos de um preparo de terreno que deu certo (golpe, casa pronta, fase).
+func _broadcast_prep(id: int, build_id: int, result: Dictionary) -> void:
 	_dirty = true
 	var extra := {"cell": result["cell"]}
 	for key in ["left", "cells_left", "next", "drop", "thing", "cleared"]:
@@ -927,7 +1082,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	var others := players.size() - 1
 	var company := "Você está só por enquanto." if others == 0 else \
 		"Há mais %d criatura%s no mundo." % [others, "" if others == 1 else "s"]
-	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte H para ouvir os comandos." % [
+	Speech.say("Boas-vindas ao Fawna, %s. %s %s Aperte F1 para ouvir os comandos." % [
 		me["name"], Narrator.where_am_i(world, _pos, _heading), company])
 	_warn_version_mismatch()
 	if str(me.get("species", "")).is_empty():
@@ -1639,7 +1794,13 @@ func _my_species() -> String:
 ## Quanto da velocidade de andar vale agora: sobrecarga e tags da espécie.
 func _speed_scale() -> float:
 	var species := _my_species()
-	return Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed")
+	var scale := Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed")
+	var now := Time.get_ticks_msec()
+	if now < _dash_until:
+		scale *= _dash_boost
+	elif now < _tired_until:
+		scale *= float(Abilities.DATA["disparada"]["tired_factor"])
+	return scale
 
 
 func _wanted_motion() -> Vector2:
@@ -2075,8 +2236,18 @@ func _swing() -> void:
 		request_swing.rpc_id(1)
 
 
+## H: pede ao servidor para usar a habilidade ativa da espécie.
+func _use_ability() -> void:
+	if world == null or horrors.is_caught():
+		return
+	if _my_species().is_empty():
+		Speech.say("Escolha a sua espécie primeiro, no menu das setas, em Personagem.")
+		return
+	request_ability.rpc_id(1)
+
+
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -3103,6 +3274,11 @@ func _run_auto_commands() -> void:
 			"N", "S", "L", "O":  # anda 1 casa nessa direção do mapa
 				var dirs := {"N": Vector2.UP, "S": Vector2.DOWN, "L": Vector2.RIGHT, "O": Vector2.LEFT}
 				await _auto_walk(_pos + dirs[command])
+			"HABILIDADE":
+				_use_ability()
+				await get_tree().create_timer(0.3).timeout
+			"ESPERAR_6":
+				await get_tree().create_timer(6.0).timeout
 			"FRENTE":
 				await _auto_walk(_pos + Compass.forward(_heading))
 			"GIRAR_D":

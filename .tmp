@@ -4,17 +4,17 @@
 		"list": [],
 		"next_id": 1,
 		"seen": {
-			"Criatura": 1795238196.51503
+			"Criatura": 1795238456.82877
 		}
 	},
 	"credentials": {
 		"Criatura": {
-			"hash": "c46cf79cec964c32ef8cc59b3ef3642fd4f180800e4f266acdeaaf44cc73dd44",
-			"salt": "4d32acff01bb50e0dbec494e3b72a6b0"
+			"hash": "4f799352ac22f0859baaa1008155e01ec370ebe93b4edca21a89034a49a2c93f",
+			"salt": "17e95d9e3a595945b12320433b4dba33"
 		}
 	},
 	"day_n": 6,
-	"day_t": 0.334014957037037,
+	"day_t": 0.339325254444448,
 	"equipment": {
 		"Criatura": ""
 	},
@@ -35,7 +35,7 @@
 
 	},
 	"resin": [],
-	"seed": 4173518456,
+	"seed": 699620882,
 	"species": {
 
 	},

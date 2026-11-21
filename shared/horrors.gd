@@ -140,6 +140,21 @@ func hear_noise(peer: int, seconds: float) -> void:
 	_exposure[peer] = float(_exposure.get(peer, 0.0)) + seconds
 
 
+## Um som que afasta (o uivo): todo Calado a até "radius" casas de "pos", ou
+## caçando alguém que esteja lá, passa a recuar. Devolve quantos foram.
+func repel(pos: Vector2, radius: float, players: Dictionary) -> int:
+	var count := 0
+	for horror in horrors.values():
+		var target: int = horror["target"]
+		var near_target: bool = players.has(target) and (players[target]["pos"] as Vector2).distance_to(pos) <= radius
+		if (horror["pos"] as Vector2).distance_to(pos) <= radius or near_target:
+			if horror["mode"] != Mode.RETREAT:
+				horror["mode"] = Mode.RETREAT
+				horror["retreat_s"] = 0.0
+			count += 1
+	return count
+
+
 ## Faz o Calado aparecer atrás de um jogador (testes e, um dia, eventos).
 ## Devolve o id, ou -1 se o jogador não existe ou já tem um atrás de si.
 func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:
