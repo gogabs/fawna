@@ -8,24 +8,34 @@ extends RefCounted
 ## some, e de dia ninguém o atrai. Surge
 ## atrás de quem fica exposto em qualquer bioma (menos o mar), em trilha ou não, longe do fogo,
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
-## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
-## ele recua. Só a chama de uma fogueira acesa o espanta (um dia, a tocha); trilha e companhia não protegem.
+## passa. Encará-lo não adianta. Quem golpeia o Calado o empurra e o estressa;
+## correr dele também o estressa. Com a barra cheia, ele desiste. A fogueira
+## acesa e a tocha o espantam; trilha e companhia não protegem.
 ## Quem ele alcança é levado ao ponto seguro mais próximo (fogueira acesa,
 ## povoado; sem nenhum por perto, o cruzamento de trilhas mais próximo) e perde o que carregava na bolsa de recursos; o
-## equipamento fica. Armas não o afetam (as tochas virão depois).
+## equipamento fica.
 
-enum Mode { STALK, HELD, RETREAT }
+enum Mode { STALK, HELD, RETREAT }  # HELD não é mais usado (encarar não segura)
 
 ## Distâncias em casas, tempos em segundos.
 const SPAWN_DISTANCE := 20.0  # nasce a essa distância, às costas do alvo
-const STALK_SPEED := 1.1  # mais lento que a criatura (1,8): dá para se afastar andando
+const STALK_SPEED := 1.9  # mais rápido que a criatura (1,8): só os rápidos (1,98 e mais) escapam andando
 const RETREAT_SPEED := 2.6
 const CATCH_RANGE := 1.2  # chegando a essa distância, ele alcançou
-const SIGHT := 22.0  # até onde encarar o segura
 ## Encarar: o alvo olha para ele dentro deste ângulo. Os giros são de 45°,
 ## então 30° para cada lado garantem que sempre há uma direção que serve.
 const FACING_COS := 0.866
-const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
+# Estresse: cada Calado tem uma barra (0 a STRESS_MAX), invisível para quem
+# joga. Cheia, ele desiste. Encará-lo não faz nada.
+const STRESS_MAX := 100.0
+const STRESS_PER_HIT := 20.0  # cada golpe de arma que acerta
+const STRESS_PER_SECOND := 2.5  # correr dele (andando, com ele a até RUN_RADIUS)
+const RUN_RADIUS := 15.0
+const STRESS_DECAY := 2.0  # por segundo, se a criatura está longe (mais que RUN_RADIUS + 6)
+const STRIKE_REACH := 4.5  # até onde o golpe o alcança (a lança e as garras vão mais longe)
+const STRIKE_REACH_LONG := 5.5
+const KNOCKBACK := 5.0  # casas que o golpe o empurra
+const STUN_SECONDS := 1.5  # tempo que ele fica parado depois do golpe
 const TORCH_SAFE := 5.0  # tocha acesa na mão: espanta a até 7,5 m
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
 const GIVE_UP_DISTANCE := 45.0
@@ -53,7 +63,7 @@ var world: WorldGen
 ## Depuração: com falso, o Calado não aparece sozinho (só chamado por summon).
 var spawning := true
 
-## id -> { id, target, pos: Vector2, mode, stare, wait, retreat_s, watchers }
+## id -> { id, target, pos: Vector2, mode, stress, stun, wait, retreat_s, watchers }
 var horrors := {}
 
 var _next_id := 1
@@ -166,7 +176,7 @@ func summon(peer: int, players: Dictionary, distance := SPAWN_DISTANCE) -> int:
 	var behind := _rear_direction(int(player.get("heading", 0)))
 	var horror := {
 		"id": _next_id, "target": peer, "pos": (player["pos"] as Vector2) + behind * distance,
-		"mode": Mode.STALK, "stare": 0.0, "wait": 0.0, "retreat_s": 0.0, "watchers": {},
+		"mode": Mode.STALK, "stress": 0.0, "stun": 0.0, "last_target": (player["pos"] as Vector2), "wait": 0.0, "retreat_s": 0.0, "watchers": {},
 	}
 	_next_id += 1
 	horrors[horror["id"]] = horror
@@ -258,7 +268,6 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		if distance <= RESTALK_MAX and _exposed(peer, players, fires):
 			var behind := _rear_direction(int(players[peer].get("heading", 0)))
 			horror["pos"] = target + behind * SPAWN_DISTANCE
-			horror["stare"] = 0.0
 			horror["mode"] = Mode.STALK
 			return
 		_remove(horror, now_ms, out)
@@ -266,14 +275,18 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 	if fire_near(target, fires) or fire_near(pos, fires):
 		horror["mode"] = Mode.RETREAT
 		return
-	var watched := distance <= SIGHT and is_facing(target, int(players[peer].get("heading", 0)), pos)
-	if watched:
-		horror["stare"] = float(horror["stare"]) + delta
-	if float(horror["stare"]) >= STARE_SECONDS:
-		horror["mode"] = Mode.RETREAT
+	# Correr dele enche a barra de estresse; longe, ela esvazia.
+	var moved := target.distance_to(horror["last_target"]) > 0.02
+	horror["last_target"] = target
+	if distance <= RUN_RADIUS and moved:
+		horror["stress"] = float(horror["stress"]) + STRESS_PER_SECOND * delta
+	elif distance > RUN_RADIUS + 6.0:
+		horror["stress"] = maxf(0.0, float(horror["stress"]) - STRESS_DECAY * delta)
+	if float(horror["stress"]) >= STRESS_MAX:
+		_give_up(horror, out)
 		return
-	if watched:
-		horror["mode"] = Mode.HELD
+	if float(horror["stun"]) > 0.0:
+		horror["stun"] = float(horror["stun"]) - delta
 		return
 	horror["mode"] = Mode.STALK
 	var light := float(_lights.get(peer, 0.0))
@@ -282,6 +295,39 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE * (1.0 - RING_CATCH_SHRINK * light):
 		out.append([peer, "caught", [horror["id"]]])
 		_remove(horror, now_ms, out)
+
+
+## A barra encheu: ele desiste. Recua, e quem o ouvia recebe o aviso de que
+## foi embora (som e sinal visual, ver scenes/horrors.gd).
+func _give_up(horror: Dictionary, out: Array) -> void:
+	horror["mode"] = Mode.RETREAT
+	horror["retreat_s"] = 0.0
+	out.append([horror["target"], "gaveup", [horror["id"]]])
+	for peer in horror["watchers"]:
+		if peer != horror["target"]:
+			out.append([peer, "gaveup", [horror["id"]]])
+
+
+## O jogador golpeou na direção do Calado que o persegue: se ele está ao
+## alcance e à frente, leva o golpe (estresse e empurrão). "reach": alcance
+## deste golpe; "power": força relativa (1 = a de uma arma comum). Devolve
+## { hit, messages }.
+func strike(peer: int, players: Dictionary, reach := STRIKE_REACH, power := 1.0) -> Dictionary:
+	var horror := hunting(peer)
+	if horror.is_empty() or horror["mode"] == Mode.RETREAT or not players.has(peer):
+		return {"hit": false, "messages": []}
+	var from: Vector2 = players[peer]["pos"]
+	var pos: Vector2 = horror["pos"]
+	if from.distance_to(pos) > reach or not is_facing(from, int(players[peer].get("heading", 0)), pos):
+		return {"hit": false, "messages": []}
+	var away := (pos - from).normalized()
+	horror["pos"] = pos + away * KNOCKBACK
+	horror["stun"] = STUN_SECONDS
+	horror["stress"] = float(horror["stress"]) + STRESS_PER_HIT * power
+	var out := []
+	if float(horror["stress"]) >= STRESS_MAX:
+		_give_up(horror, out)
+	return {"hit": true, "messages": out}
 
 
 func _remove(horror: Dictionary, now_ms: int, out: Array) -> void:

@@ -164,6 +164,103 @@ static func relief_samples() -> PackedFloat32Array:
 	return buf
 
 
+## Gelo craquelando: poucos estalos secos e agudos, em sequência curta. O
+## Calado perto soa assim, mais rápido quanto mais perto ele está. Quatro
+## variações, para não repetir.
+const CRACKLE_VARIANTS := 4
+
+
+static func crackle(variant: int) -> AudioStream:
+	var key := "gelo%d" % (variant % CRACKLE_VARIANTS)
+	if not _cache.has(key):
+		_cache[key] = _to_one_shot(crackle_samples(variant % CRACKLE_VARIANTS))
+	return _cache[key]
+
+
+static func crackle_samples(variant: int) -> PackedFloat32Array:
+	var count := int(0.22 * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(count)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5100 + variant
+	var clicks := rng.randi_range(3, 5)
+	for k in clicks:
+		var first := int(rng.randf_range(0.0, 0.16) * RATE)
+		var amp := rng.randf_range(0.35, 0.8)
+		var decay := rng.randf_range(450.0, 900.0)
+		var last := 0.0
+		for i in int(0.05 * RATE):
+			var n := first + i
+			if n >= count:
+				break
+			var t := float(i) / RATE
+			var noise := rng.randf_range(-1.0, 1.0)
+			var bright := noise - last  # passa-alta: só o agudo
+			last = noise
+			buf[n] += bright * exp(-t * decay) * amp * 0.5
+	return buf
+
+
+## Um golpe que acerta o Calado: um baque seco e um sopro curto que se afasta.
+static func hit() -> AudioStream:
+	if not _cache.has("golpe"):
+		_cache["golpe"] = _to_one_shot(hit_samples())
+	return _cache["golpe"]
+
+
+static func hit_samples() -> PackedFloat32Array:
+	var count := int(0.45 * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(count)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5201
+	var low := 0.0
+	var band := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var thump := sin(TAU * (110.0 - 60.0 * minf(t * 4.0, 1.0)) * t) * exp(-t * 11.0) * 0.8
+		var f := 2.0 * sin(PI * lerpf(700.0, 250.0, t / 0.45) / RATE)
+		var high := rng.randf_range(-1.0, 1.0) - low - 0.4 * band
+		band += f * high
+		low += f * band
+		buf[i] = thump + band * exp(-t * 7.0) * 0.4
+	return buf
+
+
+## O Calado desiste: um suspiro longo e grave que se afasta e some no silêncio,
+## com um baque surdo no início e um agudo curto de gelo que se parte, para o
+## alívio se ouvir.
+const GAVE_UP_SECONDS := 3.2
+
+
+static func gave_up() -> AudioStream:
+	if not _cache.has("desistiu"):
+		_cache["desistiu"] = _to_one_shot(gave_up_samples())
+	return _cache["desistiu"]
+
+
+static func gave_up_samples() -> PackedFloat32Array:
+	var count := int(GAVE_UP_SECONDS * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(count)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5301
+	var low := 0.0
+	var band := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var x := t / GAVE_UP_SECONDS
+		var f := 2.0 * sin(PI * lerpf(520.0, 140.0, x) / RATE)
+		var high := rng.randf_range(-1.0, 1.0) - low - 0.3 * band
+		band += f * high
+		low += f * band
+		var swell := pow(sin(PI * minf(x * 1.15, 1.0)), 1.4) * (1.0 - x)
+		var thump := sin(TAU * 55.0 * t) * exp(-t * 3.0) * 0.5
+		var crack := (rng.randf_range(-1.0, 1.0) * exp(-t * 90.0) * 0.4) if t < 0.08 else 0.0
+		buf[i] = band * swell * 0.55 + thump + crack
+	return buf
+
+
 static func _to_one_shot(samples: PackedFloat32Array) -> AudioStreamWAV:
 	var wav := _to_loop(samples)
 	wav.loop_mode = AudioStreamWAV.LOOP_DISABLED

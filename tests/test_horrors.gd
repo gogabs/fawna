@@ -13,7 +13,8 @@ func _init() -> void:
 	_test_stalks_from_behind()
 	_test_rear_directions()
 	_test_caught_consequences()
-	_test_stare_holds_and_repels()
+	_test_stare_does_nothing()
+	_test_strike_and_stress()
 	_test_fire_repels()
 	_test_trail_and_company_do_not_protect()
 	_test_gives_up_and_rests()
@@ -159,7 +160,7 @@ func _test_stalks_from_behind() -> void:
 	var after: float = (horror["pos"] as Vector2).distance_to(spot)
 	_check(after < start - 3.0, "o Calado deveria se aproximar de quem não olha para ele (%.1f -> %.1f)" % [start, after])
 	_check(start - after <= Horrors.STALK_SPEED * 5.0 + 0.1, "o Calado não deveria andar mais rápido que a velocidade dele")
-	_check(Horrors.STALK_SPEED < 1.8, "o Calado deveria ser mais lento que a criatura andando")
+	_check(Horrors.STALK_SPEED > 1.8 and Horrors.STALK_SPEED < 1.98, "o Calado deveria alcançar quem anda normal, e só os rápidos (1,98 ou mais) escaparem")
 	var messages := _run(horrors, players, [], 5000, 60.0)
 	var caught := messages.filter(func(m): return m[1] == "caught")
 	_check(caught.size() == 1 and caught[0][0] == 1, "sem ser encarado, o Calado deveria alcançar o alvo (uma vez só)")
@@ -207,7 +208,14 @@ func _test_caught_consequences() -> void:
 	_check(state.move_to(1, origin + Vector2(0, 3.3))["ok"], "depois de levado, andar a partir dali deveria valer")
 
 
-func _test_stare_holds_and_repels() -> void:
+func _facing_heading(spot: Vector2, point: Vector2) -> int:
+	for heading in Compass.STEPS:
+		if Horrors.is_facing(spot, heading, point):
+			return heading
+	return 0
+
+
+func _test_stare_does_nothing() -> void:
 	var world := WorldGen.new(42)
 	var horrors := Horrors.new(world)
 	var spot := _forest_spot(world)
@@ -215,31 +223,13 @@ func _test_stare_holds_and_repels() -> void:
 	var id := horrors.summon(1, players)
 	var horror: Dictionary = horrors.horrors[id]
 	_run(horrors, players, [], 0, 2.0)
-	# Ele vem de uma das três direções de trás: vira para a que o encara.
-	var face := 4
-	for heading in [3, 4, 5]:
-		if Horrors.is_facing(spot, heading, horror["pos"]):
-			face = heading
-	var away := (face + 4) % 8
-	players[1]["heading"] = face
-	_check(Horrors.is_facing(spot, face, horror["pos"]), "virado para ele, o alvo deveria estar encarando o Calado")
-	_check(not Horrors.is_facing(spot, away, horror["pos"]), "virado para o lado oposto, não")
+	players[1]["heading"] = _facing_heading(spot, horror["pos"])
 	var before: Vector2 = horror["pos"]
-	_run(horrors, players, [], 2000, 2.0)
-	_check(horror["mode"] == Horrors.Mode.HELD, "encarado, o Calado deveria parar")
-	_check((horror["pos"] as Vector2).is_equal_approx(before), "encarado, o Calado não deveria sair do lugar")
-	# Desvia o olhar: ele volta a andar, e o tempo encarado não se perde.
-	players[1]["heading"] = away
-	_run(horrors, players, [], 4000, 1.0)
-	_check(horror["mode"] == Horrors.Mode.STALK, "sem o olhar, o Calado deveria voltar a se aproximar")
-	players[1]["heading"] = face
-	_run(horrors, players, [], 5000, Horrors.STARE_SECONDS - 2.0 + 0.5)
-	_check(horror["mode"] == Horrors.Mode.RETREAT, "encarado por tempo bastante, o Calado deveria recuar")
-	var far: float = (horror["pos"] as Vector2).distance_to(spot)
-	var messages := _run(horrors, players, [], 12000, Horrors.RETREAT_MAX + 1.0)
-	_check(not horrors.horrors.has(id), "depois de recuar, o Calado deveria sumir")
-	_check(messages.any(func(m): return m[1] == "gone" and m[0] == 1), "quem o ouvia deveria ser avisado de que ele sumiu")
-	_check(far < Horrors.GONE_DISTANCE, "o recuo deveria começar de perto")
+	_run(horrors, players, [], 2000, 4.0)
+	_check(horror["mode"] == Horrors.Mode.STALK, "encarado, o Calado continua vindo")
+	_check((horror["pos"] as Vector2).distance_to(spot) < before.distance_to(spot) - 3.0, "encarar não o segura")
+	var messages := _run(horrors, players, [], 6000, 60.0)
+	_check(messages.any(func(m): return m[1] == "caught"), "encarando o tempo todo, ele ainda alcança")
 	# Todos os giros de 45° têm de servir para encarar algo em qualquer direção.
 	for degrees in range(0, 360, 5):
 		var point := Vector2.from_angle(deg_to_rad(degrees)) * 10.0
@@ -247,6 +237,61 @@ func _test_stare_holds_and_repels() -> void:
 		for heading in Compass.STEPS:
 			seen = seen or Horrors.is_facing(Vector2.ZERO, heading, point)
 		_check(seen, "alguma das 8 direções deveria encarar um ponto a %d graus" % degrees)
+
+
+func _test_strike_and_stress() -> void:
+	var world := WorldGen.new(42)
+	var horrors := Horrors.new(world)
+	var spot := _forest_spot(world)
+	var players := {1: _player(spot)}
+	var id := horrors.summon(1, players)
+	var horror: Dictionary = horrors.horrors[id]
+	# Longe demais: o golpe não alcança.
+	players[1]["heading"] = _facing_heading(spot, horror["pos"])
+	_check(not horrors.strike(1, players)["hit"], "a 20 casas o golpe não alcança")
+	# Ao alcance, mas de costas: não acerta.
+	horror["pos"] = spot + (horror["pos"] - spot).normalized() * 4.0
+	players[1]["heading"] = (_facing_heading(spot, horror["pos"]) + 4) % 8
+	_check(not horrors.strike(1, players)["hit"], "de costas para ele, o golpe não acerta")
+	players[1]["heading"] = _facing_heading(spot, horror["pos"])
+	var before: Vector2 = horror["pos"]
+	var result := horrors.strike(1, players)
+	_check(result["hit"], "de frente e a 4 casas, o golpe acerta")
+	_check((horror["pos"] as Vector2).distance_to(spot) >= before.distance_to(spot) + Horrors.KNOCKBACK - 0.01, "o golpe o empurra")
+	_check(is_equal_approx(float(horror["stress"]), Horrors.STRESS_PER_HIT), "o golpe soma estresse")
+	var held: Vector2 = horror["pos"]
+	_run(horrors, players, [], 0, Horrors.STUN_SECONDS - 0.5)
+	_check((horror["pos"] as Vector2).is_equal_approx(held), "depois do golpe ele fica atordoado, parado")
+	# Cinco golpes (20 cada) esgotam a barra: ele desiste e avisa.
+	var gave_up := false
+	var t := 10000
+	for hit in 6:
+		horror["pos"] = spot + (horror["pos"] - spot).normalized() * 3.0
+		horror["stun"] = 0.0
+		var r := horrors.strike(1, players)
+		gave_up = gave_up or (r["messages"] as Array).any(func(m): return m[1] == "gaveup" and m[0] == 1)
+		if horror["mode"] == Horrors.Mode.RETREAT:
+			break
+	_check(gave_up and horror["mode"] == Horrors.Mode.RETREAT, "com a barra cheia, ele desiste e avisa")
+	var messages := _run(horrors, players, [], t, Horrors.RETREAT_MAX + 1.0)
+	_check(not horrors.horrors.has(id), "depois de desistir, ele some")
+	_check(messages.any(func(m): return m[1] == "gone" and m[0] == 1), "quem o ouvia sabe que ele sumiu")
+	# Correr dele também enche a barra, sem ganhar distância.
+	var runner := Horrors.new(world)
+	var run_players := {1: _player(spot)}
+	var run_id := runner.summon(1, run_players, 10.0)
+	var chaser: Dictionary = runner.horrors[run_id]
+	var now := 0
+	var gave := false
+	var walker := spot
+	while now < 120000 and not gave and runner.horrors.has(run_id):
+		walker += Vector2(0.45, 0.0)  # andando
+		run_players[1]["pos"] = walker
+		chaser["pos"] = walker + Vector2(-8.0, 0.0)  # ele fica sempre a 8 casas
+		gave = runner.update(now, run_players, []).any(func(m): return m[1] == "gaveup")
+		now += 250
+	_check(gave, "correr dele, andando sempre, o faz desistir")
+	_check(now / 1000.0 >= Horrors.STRESS_MAX / Horrors.STRESS_PER_SECOND - 1.0 and now / 1000.0 <= Horrors.STRESS_MAX / Horrors.STRESS_PER_SECOND + 5.0, "leva uns 40 s de fuga (levou %.0f)" % (now / 1000.0))
 
 
 func _test_fire_repels() -> void:
@@ -384,6 +429,11 @@ func _test_birds_hush() -> void:
 
 
 func _test_sound() -> void:
+	for samples in [HorrorSounds.crackle_samples(0), HorrorSounds.crackle_samples(3), HorrorSounds.hit_samples(), HorrorSounds.gave_up_samples()]:
+		var peak := 0.0
+		for v: float in samples:
+			peak = maxf(peak, absf(v))
+		_check(samples.size() > 0 and peak > 0.05 and peak <= 1.2, "sons novos do Calado: audíveis e sem estourar (pico %.2f)" % peak)
 	var samples := HorrorSounds.calado_breath_samples()
 	_check(samples.size() == int(HorrorSounds.BREATH_SECONDS * HorrorSounds.RATE), "a respiração deveria ter o tamanho do ciclo")
 	var peak := 0.0
