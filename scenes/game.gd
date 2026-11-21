@@ -258,6 +258,7 @@ func _process(delta: float) -> void:
 			occupants.append(players[id]["pos"])
 		if not harvest.prune(-1.0, occupants).is_empty():
 			audio.refresh_resources()
+			_refresh_view3d()
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta, Compass.forward(_heading))
 	_send_timer += delta
@@ -1106,6 +1107,7 @@ func harvest_snapshot(data: Dictionary) -> void:
 		return
 	harvest.apply_snapshot(data)
 	audio.refresh_resources()
+	_refresh_view3d()
 
 
 ## Os itens que já estão no chão, para quem acabou de entrar.
@@ -1147,6 +1149,11 @@ func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int
 
 
 ## O que há no monte desta casa, para a fala.
+func _refresh_view3d() -> void:
+	if view3d != null:
+		view3d.refresh_state()
+
+
 func _pile_text(cell: Vector2i) -> String:
 	return Economy.items_text(ground.items_at(cell))
 
@@ -1178,6 +1185,7 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
+	_refresh_view3d()
 
 
 ## Um golpe de faca numa árvore: o som sai do tronco e quem golpeou ouve os
@@ -2516,7 +2524,7 @@ func _setup_view3d() -> void:
 	view3d = WorldView3D.new()
 	view3d.name = "View3D"
 	add_child(view3d)
-	view3d.setup(world, audio)
+	view3d.setup(world, audio, harvest)
 	view.visible = false
 
 

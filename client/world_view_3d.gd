@@ -50,6 +50,8 @@ const BRIDGE_COLOR := Color("503a24")
 
 var _world: WorldGen
 var _audio: SpatialAudio
+var _harvest: Harvest
+var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
 var _camera: Camera3D
 var _chunks := {}  # Vector2i (pedaço) -> MeshInstance3D
 var _material: StandardMaterial3D
@@ -60,9 +62,10 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null) -> void:
 	_world = world
 	_audio = audio
+	_harvest = harvest
 	_noise.seed = 1234
 	_noise.frequency = 0.9
 	_material = StandardMaterial3D.new()
@@ -131,6 +134,7 @@ func _plan(center: Vector2i) -> void:
 		if maxi(absi(key.x - center.x), absi(key.y - center.y)) > RADIUS_CHUNKS + 1:
 			_chunks[key].queue_free()
 			_chunks.erase(key)
+			_sources.erase(key)
 	_wanted.clear()
 	for dy in range(-RADIUS_CHUNKS, RADIUS_CHUNKS + 1):
 		for dx in range(-RADIUS_CHUNKS, RADIUS_CHUNKS + 1):
@@ -283,14 +287,41 @@ static func _rand(cell: Vector2i, salt: int) -> float:
 	return float((h ^ (h >> 16)) & 0xFFFF) / 65535.0
 
 
+## A fonte desta casa está de pé (não foi derrubada nem recolhida)?
+func _standing(cell: Vector2i, thing: int) -> bool:
+	if _harvest == null or not Harvest.is_source(thing):
+		return true
+	return _harvest.is_available(cell) and not _world.cleared.has(cell)
+
+
+## Chamado quando algo foi colhido, derrubado ou rebrotou: refaz só os
+## pedaços onde alguma fonte mudou de estado.
+func refresh_state() -> void:
+	for key: Vector2i in _chunks:
+		for entry: Array in _sources.get(key, []):
+			if _standing(entry[0], _world.thing_at(entry[0])) != entry[1]:
+				var old: Node = _chunks[key].get_node_or_null("Coisas")
+				if old != null:
+					_chunks[key].remove_child(old)
+					old.queue_free()
+				_add_things(_chunks[key], key * CHUNK)
+				break
+
+
 func _add_things(parent: Node3D, first: Vector2i) -> void:
 	var lists := {"trunk": [], "cone": [], "blob": [], "stalk": []}
+	var sources := []
 	for y in CHUNK:
 		for x in CHUNK:
 			var cell := first + Vector2i(x, y)
 			var thing := _world.thing_at(cell)
 			if thing == WorldGen.Thing.NADA:
 				continue
+			if Harvest.is_source(thing):
+				var standing := _standing(cell, thing)
+				sources.append([cell, standing])
+				if not standing:
+					continue
 			var base := Vector3((cell.x + 0.5) * METERS, 0.0, (cell.y + 0.5) * METERS)
 			var r1 := _rand(cell, 1)
 			var r2 := _rand(cell, 2)
@@ -323,6 +354,10 @@ func _add_things(parent: Node3D, first: Vector2i) -> void:
 					_put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
 				WorldGen.Thing.CIPO:
 					_put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
+	_sources[first / CHUNK] = sources
+	var holder_parent := Node3D.new()
+	holder_parent.name = "Coisas"
+	parent.add_child(holder_parent)
 	for shape: String in lists:
 		var items: Array = lists[shape]
 		if items.is_empty():
@@ -339,7 +374,7 @@ func _add_things(parent: Node3D, first: Vector2i) -> void:
 		holder.multimesh = multi
 		holder.material_override = _material
 		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		parent.add_child(holder)
+		holder_parent.add_child(holder)
 
 
 ## Guarda uma peça: escala, giro, altura do centro e cor.
