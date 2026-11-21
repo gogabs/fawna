@@ -285,6 +285,16 @@ func choose_species(id: int, species_id: String) -> bool:
 	return true
 
 
+## Depuração: troca a espécie do jogador, mesmo já escolhida.
+func debug_set_species(id: int, species_id: String) -> bool:
+	if not players.has(id) or not Species.is_species(species_id):
+		return false
+	species[players[id]["name"]] = species_id
+	players[id]["species"] = species_id
+	_ability_ready.erase(id)
+	return true
+
+
 func species_of(id: int) -> String:
 	return str(players[id].get("species", "")) if players.has(id) else ""
 

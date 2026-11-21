@@ -29,6 +29,18 @@ const CAPACITY := 24
 ## reta, até MIN_SPEED_FACTOR da velocidade normal no limite absoluto.
 const MAX_LOAD := 36
 const MIN_SPEED_FACTOR := 0.5
+## A carga em uso: a plena e o limite absoluto. Só mudam no menu de
+## depuração (DebugTools), para testar com a bolsa cheia; no jogo normal são
+## sempre CAPACITY e MAX_LOAD.
+static var capacity := CAPACITY
+static var max_load := MAX_LOAD
+
+
+## Depuração: acima de CAPACITY, os dois limites (carga plena e absoluto)
+## viram "limit", e a criatura não anda mais devagar; senão, volta ao normal.
+static func apply_limit(limit: int) -> void:
+	capacity = maxi(limit, CAPACITY)
+	max_load = maxi(limit, MAX_LOAD)
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
@@ -191,11 +203,11 @@ static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
 ## Carga plena e limite absoluto de uma espécie (ver Species: pesado, leve e
 ## guerreiro mexem na carga). Sem espécie, são CAPACITY e MAX_LOAD.
 static func capacity_for(species := "") -> int:
-	return roundi(CAPACITY * Species.effect(species, "capacity"))
+	return roundi(capacity * Species.effect(species, "capacity"))
 
 
 static func max_load_for(species := "") -> int:
-	return roundi(MAX_LOAD * Species.effect(species, "capacity"))
+	return roundi(max_load * Species.effect(species, "capacity"))
 
 
 ## Fração da velocidade de andar (1.0 até a carga plena, caindo em linha reta
