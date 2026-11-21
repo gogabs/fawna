@@ -122,17 +122,14 @@ static func tags_of(id: String) -> Array:
 	return DATA[id]["tags"] if DATA.has(id) else []
 
 
-## "Pesado, Guerreiro" (para o menu).
-static func tag_names(id: String) -> String:
-	var names: PackedStringArray = []
-	for tag: String in tags_of(id):
-		names.append(tag_label(tag))
-	return ", ".join(names)
+## "Troncudo, urso, Largo e lento, ..." (nome, animal e descrição, para os menus).
+static func choice_label(id: String) -> String:
+	return "%s, %s" % [name_and_animal(id), description(id)] if DATA.has(id) else ""
 
 
-## "Salto (ativa)" para as ativas; o nome puro para as outras.
+## "Pesado (passiva)" para as passivas; o nome puro para as ativas.
 static func tag_label(tag: String) -> String:
-	return "%s (ativa)" % TAGS[tag]["name"] if is_active(tag) else str(TAGS[tag]["name"])
+	return str(TAGS[tag]["name"]) if is_active(tag) else "%s (passiva)" % TAGS[tag]["name"]
 
 
 ## A tag já vale no jogo?
@@ -166,9 +163,9 @@ static func unique_tags(id: String) -> Array:
 
 
 
-## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".
+## Uma tag com o que ela dá e o que custa: "Pesado (passiva). Carga plena 20% maior...".
 static func tag_text(tag: String) -> String:
-	var text := "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+	var text := "%s. %s" % [tag_label(tag), TAGS[tag]["text"]]
 	if is_active(tag):
 		var summary := Abilities.summary(tag)
 		if not summary.is_empty():

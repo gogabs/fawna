@@ -51,7 +51,10 @@ func _test_data() -> void:
 	_check(Species.unique_tags("cervo") == ["veloz", "disparada"], "únicas do cervo")
 	_check(Species.name_and_animal("raposa") == "Brasido, raposa", "nome e animal")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
-	_check(Species.tag_names("coelho") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
+	_check(Species.tag_label("leve") == "Leve (passiva)" and Species.tag_label("salto") == "Salto", "só as passivas são marcadas")
+	_check(Species.tag_text("leve").begins_with("Leve (passiva). "), "tag: nome (passiva). efeito")
+	_check(Species.tag_text("salto").begins_with("Salto. "), "tag ativa: nome. efeito")
+	_check(Species.choice_label("raposa").begins_with("Brasido, raposa, "), "espécie: nome, animal, descrição")
 
 
 func _test_choose_once() -> void:

@@ -2627,8 +2627,8 @@ func _character_items() -> Array:
 	var items := [{"label": "Nome: %s" % me.get("name", Net.player_name),
 		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
 	if Species.is_species(species_id):
-		items.append({"label": "Espécie: %s" % Species.name_and_animal(species_id),
-			"info": "%s Tags: %s." % [Species.description(species_id), Species.tag_names(species_id)]})
+		items.append({"label": "Espécie: %s" % Species.choice_label(species_id),
+			"info": Species.choice_label(species_id)})
 		items.append({"label": "Tags", "open": _tag_items.bind(species_id)})
 	else:
 		items.append({"label": "Escolher espécie", "open": _species_choices})
@@ -2639,14 +2639,12 @@ func _character_items() -> Array:
 func _species_choices() -> Array:
 	var items := []
 	for id: String in Species.ORDER:
-		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.tag_names(id)],
-			"open": _species_confirm.bind(id)})
+		items.append({"label": Species.choice_label(id), "open": _species_confirm.bind(id)})
 	return items
 
 
 func _species_confirm(id: String) -> Array:
-	var items := [{"label": "Sobre", "info": Species.description(id)}]
-	items.append_array(_tag_items(id))
+	var items := _tag_items(id)
 	items.append({"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
 		"run": _choose_species.bind(id), "close": true})
 	return items
@@ -2659,7 +2657,7 @@ func _tag_items(id: String) -> Array:
 		var text := Species.tag_text(tag)
 		if not Species.is_live(tag):
 			text += " Ainda sem efeito no jogo."
-		items.append({"label": Species.tag_label(tag), "info": text})
+		items.append({"label": text, "info": text})
 	return items
 
 
