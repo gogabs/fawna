@@ -19,6 +19,7 @@ extends RefCounted
 ##   torch: duração da tocha            calado_hearing: alcance com que se
 ##   calado_noise: o Calado percebe de mais longe (ou mais perto)       ouve o Calado
 ##   calado_delay: tempo que o Calado leva até chegar
+##   work: ritmo de trabalho nas obras (0.75 = cada batida leva 1/0.75 do tempo)
 ## Tags que já valem no jogo (LIVE_TAGS); as outras aparecem no menu de
 ## personagem, mas o efeito delas entra em PRs seguintes.
 const LIVE_TAGS: Array[String] = ["pesado", "leve", "veloz", "furtividade", "resistente", "audicao", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar"]
@@ -34,8 +35,8 @@ const TAGS := {
 		"text": "Anda 10% mais rápido, mas faz barulho e o Calado o percebe de mais longe."},
 	"resistente": {"name": "Resistente", "effects": {"overload": 0.5, "speed": 0.95},
 		"text": "A sobrecarga custa metade da lentidão, mas anda 5% mais devagar."},
-	"audicao": {"name": "Audição apurada", "effects": {"calado_hearing": 1.3, "caminheiro_regions": 1},
-		"text": "Ouve o Calado e os pássaros de mais longe, e o Caminheiro alcança também as 8 regiões ao redor, mas todo som alto abafa o mundo por um instante, mais quanto mais alto: uma árvore caindo abafa muito, uma machadada médio, os ruídos de obra pouco, e passos e pássaros não abafam nada (ver Loudness)."},
+	"audicao": {"name": "Audição apurada", "effects": {"calado_hearing": 1.3, "caminheiro_regions": 1, "axe": 0.7, "work": 0.75},
+		"text": "Ouve o Calado e os pássaros de mais longe, e o Caminheiro alcança também as 8 regiões ao redor, mas é franzino: o machado corta 30% menos e as obras andam 25% mais devagar."},
 	"fogo": {"name": "Mestre do fogo", "effects": {"torch": 1.3},
 		"text": "A tocha dura mais e acende sem sílex, mas não consegue cruzar água."},
 	"guerreiro": {"name": "Guerreiro", "effects": {"axe": 1.15, "capacity": 0.9},

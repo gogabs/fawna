@@ -881,10 +881,16 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	if Builds.reach_distance(build, pos) > BUILD_REACH:
 		return {"ok": false, "reason": "longe"}
 	var now := Time.get_ticks_msec()
-	if now - int(_last_build.get(id, -BUILD_COOLDOWN_MS)) < BUILD_COOLDOWN_MS:
+	if float(now - int(_last_build.get(id, -BUILD_COOLDOWN_MS))) < build_cooldown_ms(id):
 		return {"ok": false, "reason": "devagar"}
 	_last_build[id] = now
 	return builds.work(build_id, inventory_of(id), -1.0, pos)
+
+
+## Intervalo mínimo entre batidas numa obra: quem trabalha mais devagar
+## (efeito "work" da espécie) leva mais tempo por batida.
+func build_cooldown_ms(id: int) -> float:
+	return BUILD_COOLDOWN_MS / maxf(0.1, Species.effect(species_of(id), "work"))
 
 
 ## A chave de dono de uma criatura (Builds.claim). Hoje é o nome; quando houver

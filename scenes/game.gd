@@ -140,7 +140,6 @@ var _wind: AudioStreamPlayer  # vento dos lugares abertos
 var _wind_tween: Tween
 var _bed_tween: Tween
 var _caminheiro: Caminheiro
-var _muffle: HearingMuffle  # abafamento da audição apurada (ver HearingMuffle)
 var _tracked_resource := WorldGen.NO_CELL  # recurso que o cristal procura (NO_CELL: um lugar)
 var _tracked_destination := Vector2.ZERO  # para onde o cristal leva (vale com ele aceso)
 ## O último recurso pedido ao Caminheiro (coisas do mundo e nome com artigo),
@@ -480,15 +479,12 @@ func ability_event(id: int, tag: String, event: String, data: Dictionary) -> voi
 					else:
 						_play_ability_other(pos, AbilitySounds.dash())
 				"uivo":
-					_hear_loud("uivo")
 					if mine:
 						_play(AbilitySounds.howl())
 					else:
 						audio.play_at_point(pos, AbilitySounds.howl(), 0.0, true, false)
 						Speech.say("Um uivo, %s." % Compass.describe(pos - _pos, _heading), false)
 				"fucar", "arar":
-					if mine or pos.distance_to(_pos) <= HEARING_RADIUS * 2.0:
-						_hear_loud("coleta" if tag == "fucar" else "enxada")
 					if mine:
 						Speech.say("Fuçando, fique parado." if tag == "fucar" else "Arando, fique parado.")
 						_channel_token += 1
@@ -1080,9 +1076,6 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	horrors.start_client(audio)
 	daytime.start_client()
 	_setup_caminheiro()
-	_muffle = HearingMuffle.new()
-	_muffle.name = "Abafamento"
-	add_child(_muffle)
 	Music.start()
 	_update_listener()
 	_update_biome_bed()
@@ -1164,7 +1157,6 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 	match event:
 		"golpe":
 			if near:
-				_hear_loud("machadada")
 				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
 				# Nos últimos golpes o tronco range: avisa que falta pouco.
 				if tree and harvest.hits_left(cell) <= Harvest.CREAK_HITS:
@@ -1173,7 +1165,6 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 			# A queda de uma árvore se ouve de mais longe.
 			var reach := HEARING_RADIUS * (TREE_FALL_REACH if tree else 1.0)
 			if where.distance_to(_pos) <= reach:
-				_hear_loud("arvore_caindo" if tree else "machadada")
 				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
 				audio.play_at_point(where, Sounds.tree_fall() if tree else Sounds.bamboo_fall())
 			if by_id == my_id:
@@ -2513,13 +2504,6 @@ func _sender_id() -> int:
 
 
 # --- Caminheiro e menu das setas ---------------------------------------------
-
-## Um som alto (Loudness) soou ao alcance: quem tem audição apurada fica um
-## tempo com o mundo abafado.
-func _hear_loud(sound: String) -> void:
-	if _muffle != null and Species.has_tag(_my_species(), "audicao"):
-		_muffle.hear(sound)
-
 
 func _setup_caminheiro() -> void:
 	_caminheiro = Caminheiro.new()
