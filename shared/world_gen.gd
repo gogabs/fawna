@@ -39,6 +39,8 @@ const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
 ## Frequência do ruído que curva as trilhas: baixa, para cada trilha fazer no
 ## máximo uma ou duas curvas longas e suaves entre regiões, em vez de
 ## serpentear.
+const TRAIL_BRIDGE_SEARCH := 12.0  # casas: até onde procurar uma travessia reta
+const TRAIL_BRIDGE_EASE := 8  # pontos da linha (4 casas) soltos de cada lado da ponte
 const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
 const TRAIL_EDGE := 2
@@ -876,10 +878,112 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 		var last := i
 		while last + 1 < points.size() - 1 and wet[last + 1]:
 			last += 1
-		var bridge := _orthogonal_bridge(points[i - 1], points[last + 1])
+		if i == 1 and wet[0]:
+			# Ponto de encontro na água: a ponte sai dele em linha reta.
+			var from_landmark := _crossing_to_landmark(points[last + 1], points[0])
+			if not from_landmark.is_empty():
+				var skip := maxi(0, mini(TRAIL_BRIDGE_EASE, points.size() - 2 - (last + 1)))
+				while skip > 0 and (_wet_length(from_landmark[0], points[last + 1 + skip]) > 0.0 or wet[last + 1 + skip]):
+					skip -= 1
+				line.append_array(from_landmark)
+				i = last + 1 + skip
+				continue
+		var bridge := _straight_crossing(points[i - 1], points[last + 1])
+		if bridge.is_empty():
+			bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
+			line.append_array(bridge)
+			i = last + 1
+			continue
+		# A trilha em terra se curva até a ponte: solta uns pontos antes e
+		# depois, para a mudança de direção ser aberta e não uma quina.
+		var before := mini(TRAIL_BRIDGE_EASE, line.size() - 1)
+		var after := maxi(0, mini(TRAIL_BRIDGE_EASE, points.size() - 2 - (last + 1)))
+		while before > 0 and (_wet_length(line[line.size() - 1 - before], bridge[0]) > 0.0 or _is_water_at(cell_of(line[line.size() - 1 - before]))):
+			before -= 1
+		while after > 0 and (_wet_length(bridge[bridge.size() - 1], points[last + 1 + after]) > 0.0 or wet[last + 1 + after]):
+			after -= 1
+		line.resize(line.size() - before)
 		line.append_array(bridge)
-		i = last + 1
+		i = last + 1 + after
 	return line
+
+
+## Travessia reta: em vez de manter as margens onde a diagonal da trilha
+## tocou a água, procura perto dali uma linha só leste-oeste ou só norte-sul
+## que cruze a água, pelo lugar mais estreito, e a trilha em terra faz a curva
+## até lá. Devolve as duas margens da nova ponte, ou nada se não achar uma
+## (margem de chegada na água, ou volta em terra que molhasse).
+func _straight_crossing(from: Vector2, to: Vector2) -> PackedVector2Array:
+	if _is_water_at(cell_of(to)):
+		return _crossing_to_landmark(from, to)
+	var best := PackedVector2Array()
+	var best_score := INF
+	var middle := (from + to) * 0.5
+	for horizontal in [true, false]:
+		var lo := (minf(from.y, to.y) if horizontal else minf(from.x, to.x)) - TRAIL_BRIDGE_SEARCH
+		var hi := (maxf(from.y, to.y) if horizontal else maxf(from.x, to.x)) + TRAIL_BRIDGE_SEARCH
+		var scan_lo := (minf(from.x, to.x) if horizontal else minf(from.y, to.y)) - TRAIL_BRIDGE_SEARCH
+		var scan_hi := (maxf(from.x, to.x) if horizontal else maxf(from.y, to.y)) + TRAIL_BRIDGE_SEARCH
+		var across := lo
+		while across <= hi:
+			# Água contínua mais perto do meio do trecho, nesta fileira.
+			var wet_start := NAN
+			var wet_end := NAN
+			var best_gap := INF
+			var run_start := NAN
+			var along := scan_lo
+			while along <= scan_hi + TRAIL_STEP:
+				var q := Vector2(along, across) if horizontal else Vector2(across, along)
+				var wet := along <= scan_hi and _is_water_at(cell_of(q))
+				if wet and is_nan(run_start):
+					run_start = along
+				elif not wet and not is_nan(run_start):
+					var centre := (run_start + along) * 0.5
+					var target := middle.x if horizontal else middle.y
+					if absf(centre - target) < best_gap:
+						best_gap = absf(centre - target)
+						wet_start = run_start
+						wet_end = along
+					run_start = NAN
+				along += TRAIL_STEP
+			if not is_nan(wet_start):
+				var a := Vector2(wet_start - 1.0, across) if horizontal else Vector2(across, wet_start - 1.0)
+				var b := Vector2(wet_end + 0.5, across) if horizontal else Vector2(across, wet_end + 0.5)
+				# Da margem de lá para cá: a ponte segue no sentido da trilha.
+				if from.distance_to(a) > from.distance_to(b):
+					var swap := a
+					a = b
+					b = swap
+				var width := a.distance_to(b)
+				var score := width + from.distance_to(a) + b.distance_to(to) + width * 0.0
+				if score < best_score and _wet_length(from, a) == 0.0 and _wet_length(b, to) == 0.0 and not _is_water_at(cell_of(a)) and not _is_water_at(cell_of(b)):
+					best_score = score
+					best = PackedVector2Array([a, b])
+			across += TRAIL_STEP
+	return best
+
+
+## Ponto de encontro na água: a ponte chega nele em linha reta, pela fileira
+## ou pela coluna dele, vinda da margem mais próxima de "from". Devolve a
+## margem de partida (a ponte vai dela até o ponto de encontro) ou nada.
+func _crossing_to_landmark(from: Vector2, landmark: Vector2) -> PackedVector2Array:
+	var best := PackedVector2Array()
+	var best_length := INF
+	for step: Vector2 in [Vector2(signf(from.x - landmark.x), 0.0), Vector2(0.0, signf(from.y - landmark.y))]:
+		if step == Vector2.ZERO:
+			continue
+		var pos := landmark
+		var walked := 0.0
+		while walked <= TRAIL_BRIDGE_SEARCH * 2.0:
+			if not _is_water_at(cell_of(pos)):
+				var bank := pos + step
+				if walked < best_length and _wet_length(from, bank) == 0.0:
+					best_length = walked
+					best = PackedVector2Array([bank])
+				break
+			pos += step * TRAIL_STEP
+			walked += TRAIL_STEP
+	return best
 
 
 ## Ponte ortogonal entre a última margem seca "from" e a próxima "to" (ou o
