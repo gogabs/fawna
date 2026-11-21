@@ -157,6 +157,7 @@ func _test_regions_and_trails() -> void:
 func _test_straight_bridges() -> void:
 	var world := WorldGen.new(7)
 	var bridges := 0
+	var orthogonal := 0
 	for ry in range(-3, 3):
 		for rx in range(-3, 3):
 			for d: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
@@ -166,10 +167,19 @@ func _test_straight_bridges() -> void:
 				for i in line.size() - 1:
 					var a: Vector2 = line[i]
 					var b: Vector2 = line[i + 1]
-					# Sobre a água não há curva: a linha só tem pontos nas
-					# margens, e a ponte é a reta entre eles.
-					if i > 0 and i < line.size() - 1:
-						_check(world.thing_at(WorldGen.cell_of(a)) != WorldGen.Thing.PONTE, "curva de trilha em cima da água em %s" % a)
+					# Ponte só sobre rio e riacho, sempre reta (norte-sul ou
+					# leste-oeste): nada de diagonal, de L, nem de ponte sobre lago
+					# ou poça (a trilha contorna), e nenhuma quina em cima da água.
+					if a.distance_to(b) > 0.75 and world._wet_length(a, b) > 0.0:
+						_check(is_equal_approx(a.x, b.x) or is_equal_approx(a.y, b.y), "ponte na diagonal de %s a %s" % [a, b])
+						orthogonal += 1
+					var along := maxi(1, ceili(a.distance_to(b) / 0.25))
+					for k in along + 1:
+						var c := WorldGen.cell_of(a.lerp(b, float(k) / along))
+						var water := world._is_water(c, world.region_of(c), world.region_biome(world.region_of(c)))
+						_check(water == WorldGen.Thing.NADA or water == WorldGen.Thing.VAU or water == WorldGen.Thing.RIACHO or water == WorldGen.Thing.RIO, "trilha sobre lago ou poça em %s" % c)
+					if i > 0 and world._is_water_at(WorldGen.cell_of(a)):
+						_check(false, "quina de ponte em cima da água em %s" % a)
 					if a.distance_to(b) > WorldGen.TRAIL_STEP * 1.5:
 						bridges += 1
 					# Seguir a linha da trilha nunca esbarra em nada.
@@ -180,6 +190,7 @@ func _test_straight_bridges() -> void:
 							_check(false, "a linha da trilha esbarra em algo em %s" % p)
 							return
 	_check(bridges > 0, "deveria haver alguma ponte perto do centro")
+	_check(orthogonal > 0, "deveria haver alguma ponte ortogonal")
 	# A linha é a mesma nos dois sentidos.
 	var there := world.trail_line(Vector2i.ZERO, Vector2i.RIGHT)
 	var back := world.trail_line(Vector2i.RIGHT, Vector2i.ZERO)
@@ -204,7 +215,15 @@ func _test_clear_wide_trails() -> void:
 						var p: Vector2 = line[i]
 						var dir: Vector2 = (line[i + 1] - line[i - 1]).normalized()
 						# Curva suave: entre pontos vizinhos, a direção muda pouco.
-						if line[i].distance_to(line[i - 1]) < WorldGen.TRAIL_STEP * 1.5 and line[i + 1].distance_to(line[i]) < WorldGen.TRAIL_STEP * 1.5:
+						# (As quinas das pontes ortogonais ficam de fora.)
+						var bridge_corner: bool = is_equal_approx(line[i].x, line[i - 1].x) or is_equal_approx(line[i].y, line[i - 1].y) or is_equal_approx(line[i].x, line[i + 1].x) or is_equal_approx(line[i].y, line[i + 1].y)
+						# Junto da água a trilha pode dar um pequeno desvio até uma ponte reta.
+						var near_water := false
+						for wy in range(-3, 4):
+							for wx in range(-3, 4):
+								if world._is_water_at(WorldGen.cell_of(p) + Vector2i(wx, wy)):
+									near_water = true
+						if not bridge_corner and not near_water and line[i].distance_to(line[i - 1]) < WorldGen.TRAIL_STEP * 1.5 and line[i + 1].distance_to(line[i]) < WorldGen.TRAIL_STEP * 1.5:
 							var turn := absf((line[i] - line[i - 1]).angle_to(line[i + 1] - line[i]))
 							_check(turn < deg_to_rad(12.0), "trilha vira de repente em %s (semente %d)" % [p, world_seed])
 						var side := dir.orthogonal()

@@ -39,6 +39,12 @@ const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
 ## Frequência do ruído que curva as trilhas: baixa, para cada trilha fazer no
 ## máximo uma ou duas curvas longas e suaves entre regiões, em vez de
 ## serpentear.
+const TRAIL_BRIDGE_EASE := 8  # pontos da linha (4 casas) soltos de cada lado da ponte
+const TRAIL_DETOUR_MARGIN := 8  # casas em volta do trecho em que se procura a volta por terra
+const TRAIL_DETOUR_LOOKAHEAD := 120  # pontos da linha (60 casas) que se tenta adiante
+const TRAIL_BRIDGE_COST := 3.0  # casas de custo extra por ponte, para preferir poucas pontes
+const TRAIL_LAKE_BAND := 2  # casas de terra junto de lago ou poça em que a trilha evita andar
+const TRAIL_LAKE_COST := 5.0  # quanto mais caro é andar nessa faixa
 const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
 const TRAIL_EDGE := 2
@@ -236,6 +242,7 @@ const FROZEN_FOREST_SCALE := 0.2
 ## Sílex: nódulos soltos nos campos (por bioma) e, mais comuns, na beira da água.
 const FLINT_CHANCE := {Biome.PRADARIA: 0.003, Biome.DESERTO_GELADO: 0.006, Biome.MONTANHA: 0.006}
 const FLINT_WATER_CHANCE := 0.008
+const ISLET_MAX_CELLS := 200  # casas: terra menor que isso, cercada de água, vira lago
 const WATERSIDE_BANK := 3.0  # casas além da margem da água
 
 var world_seed: int
@@ -249,6 +256,11 @@ var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada ca
 var _climate_noise := FastNoiseLite.new()  # clima, medido em regiões
 var _regions := {}  # Vector2i (região) -> Biome
 var _features := {}  # Vector2i (região) -> Feature
+var _detour_target := 0  # qual dos alvos o último _detour_crossing alcançou
+var _islets := {}  # Vector2i (casa) -> true: terra pequena cercada de água
+var _dry_chunks := {}  # Vector2i (pedaço) -> água e terra de cada casa
+var _islet_chunks := {}  # Vector2i (pedaço) -> já calculado
+var _landmarks := {}  # Vector2i (região) -> ponto de encontro
 var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 ## Casas ocupadas por construções (marco, fogueira): não deixam passar.
 ## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
@@ -471,13 +483,51 @@ func biome_at(cell: Vector2i) -> Biome:
 
 ## Ponto de encontro da região: onde as trilhas se cruzam. Na região
 ## (0, 0), é o centro do mundo; nas outras, um ponto perto do centro da região.
+## Nunca fica na água: se o sorteio cair num lago ou rio, o ponto vai para a
+## terra firme mais próxima, para as trilhas não terminarem em cima de uma ponte.
 func region_landmark(region: Vector2i) -> Vector2:
+	if _landmarks.has(region):
+		return _landmarks[region]
+	var point := _raw_landmark(region)
+	if region != Vector2i.ZERO and region_biome(region) != Biome.MAR and not _dry_around(point):
+		point = _nearest_dry_point(point)
+	_landmarks[region] = point
+	return point
+
+
+func _raw_landmark(region: Vector2i) -> Vector2:
 	var middle := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
 	if region == Vector2i.ZERO:
 		return center_point()
 	var spread := REGION_SIZE * 0.25
 	var offset := Vector2(_random([region.x, region.y, "px"]) - 0.5, _random([region.x, region.y, "py"]) - 0.5)
 	return middle + offset * 2.0 * spread
+
+
+## Terra firme no ponto e numa casa em volta (cabe a trilha sem molhar).
+func _dry_around(point: Vector2) -> bool:
+	for offset: Vector2 in [Vector2.ZERO, Vector2(2, 0), Vector2(-2, 0), Vector2(0, 2), Vector2(0, -2)]:
+		if _is_water_at(cell_of(point + offset)):
+			return false
+	return true
+
+
+func _nearest_dry_point(point: Vector2) -> Vector2:
+	for radius in range(1, 61):
+		var best := Vector2.INF
+		var best_distance := INF
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if maxi(absi(dx), absi(dy)) != radius:
+					continue
+				var candidate := Vector2(floorf(point.x) + dx + 0.5, floorf(point.y) + dy + 0.5)
+				var distance := candidate.distance_to(point)
+				if distance < best_distance and _dry_around(candidate):
+					best = candidate
+					best_distance = distance
+		if best != Vector2.INF:
+			return best
+	return point
 
 
 ## Regiões ligadas por trilha a esta (as 4 vizinhas). É a base para achar
@@ -706,13 +756,115 @@ func _pool_level(cell: Vector2i) -> float:
 	return POOL_LEVEL - POOL_WET_BONUS if water_shore(cell) < POOL_WET_REACH else POOL_LEVEL
 
 
-func _is_water(cell: Vector2i, _region: Vector2i, biome: Biome) -> Thing:
+func _is_water(cell: Vector2i, region: Vector2i, biome: Biome) -> Thing:
+	var raw := _raw_water(cell, region, biome)
+	if raw != Thing.NADA or biome == Biome.MAR:
+		return raw
+	# Ilhota (terra pequena cercada de água) vira lago: não há ilhotas no mundo.
+	return Thing.LAGO if _is_islet(cell) else Thing.NADA
+
+
+func _raw_water(cell: Vector2i, _region: Vector2i, biome: Biome) -> Thing:
 	if biome == Biome.MAR:
 		return Thing.NADA if is_beach(cell) else Thing.MAR
 	if biome == Biome.BREJO and _lake_noise.get_noise_2d(cell.x, cell.y) > _pool_level(cell):
 		return Thing.CHARCO
 	# Rios e lagos, das bacias. O centro do mundo não recebe água (ver Hydrology.height).
 	return _hydro_water(cell)
+
+
+## A casa seca é uma ilhota: faz parte de uma terra de menos de ISLET_MAX_CELLS
+## casas, cercada de água. Terra que encosta no mar nunca é ilhota. Decidido por
+## pedaço (_islet_chunks), igual para quem pergunta de qualquer lado.
+func _is_islet(cell: Vector2i) -> bool:
+	var chunk := Vector2i(floori(float(cell.x) / CHUNK), floori(float(cell.y) / CHUNK))
+	if not _islet_chunks.has(chunk):
+		_compute_islets(chunk)
+	return _islets.has(cell)
+
+
+func _compute_islets(chunk: Vector2i) -> void:
+	_islet_chunks[chunk] = true
+	# Sem água no pedaço nem nos vizinhos, não há ilhota para achar.
+	var near_water := false
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if _dry_chunk(chunk + Vector2i(dx, dy))[CHUNK * CHUNK] == 1:
+				near_water = true
+	if not near_water:
+		return
+	var origin := chunk * CHUNK
+	var done := {}
+	for y in CHUNK:
+		for x in CHUNK:
+			var start := origin + Vector2i(x, y)
+			if done.has(start) or _raw_dry(start) != 1:
+				continue
+			# Terra ligada a "start" (8 vizinhos), até o limite.
+			var seen := {start: true}
+			var queue: Array[Vector2i] = [start]
+			var head := 0
+			var big := false
+			while head < queue.size() and not big:
+				var cell := queue[head]
+				head += 1
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						var next := cell + Vector2i(dx, dy)
+						if seen.has(next):
+							continue
+						# Sem passar pela quina entre duas casas de água (a trilha
+						# também não passa).
+						if dx != 0 and dy != 0 and (_raw_dry(cell + Vector2i(dx, 0)) == 0 or _raw_dry(cell + Vector2i(0, dy)) == 0):
+							continue
+						var kind := _raw_dry(next)
+						if kind == 0:
+							continue
+						if kind == 2:
+							big = true  # encosta no mar ou sai do mundo
+							continue
+						seen[next] = true
+						queue.append(next)
+						if seen.size() >= ISLET_MAX_CELLS:
+							big = true
+			for cell: Vector2i in seen:
+				done[cell] = true
+				if not big:
+					_islets[cell] = true
+
+
+## 0 água, 1 terra comum, 2 terra de região de mar ou fora do mundo.
+func _raw_dry(cell: Vector2i) -> int:
+	var chunk := Vector2i(floori(float(cell.x) / CHUNK), floori(float(cell.y) / CHUNK))
+	return _dry_chunk(chunk)[_chunk_index(cell)]
+
+
+## Água e terra de cada casa do pedaço (_raw_dry), guardado em cache. Um byte a
+## mais no fim diz se há alguma água no pedaço.
+func _dry_chunk(chunk: Vector2i) -> PackedByteArray:
+	if _dry_chunks.has(chunk):
+		return _dry_chunks[chunk]
+	var kinds := PackedByteArray()
+	kinds.resize(CHUNK * CHUNK + 1)
+	var origin := chunk * CHUNK
+	var any_water := 0
+	for y in CHUNK:
+		for x in CHUNK:
+			var cell := origin + Vector2i(x, y)
+			var kind := 2
+			if in_bounds(cell):
+				var region := region_of(cell)
+				var biome := region_biome(region)
+				if biome == Biome.MAR:
+					kind = 2 if is_beach(cell) else 0
+				else:
+					kind = 1 if _raw_water(cell, region, biome) == Thing.NADA else 0
+			kinds[y * CHUNK + x] = kind
+			if kind == 0:
+				any_water = 1
+	kinds[CHUNK * CHUNK] = any_water
+	_dry_chunks[chunk] = kinds
+	return kinds
 
 
 ## Distância (em casas) da casa até a margem da água dos rios e lagos: negativa
@@ -863,13 +1015,254 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 		var ease := smoothstep(0.0, 1.0, minf(t, 1.0 - t) * length / TRAIL_SWAY_EASE)
 		var p := s + side * _trail_noise.get_noise_2d(s.x, s.y) * TRAIL_SWAY * ease
 		points.append(p)
-		wet.append(_is_water_at(cell_of(p)))
-	# Sobre a água, só ficam as margens: a ponte é a reta entre elas.
+		wet.append(_is_water_at(cell_of(p)) or _lake_touches(cell_of(p)))
+	# Água no caminho: rio e riacho ganham ponte reta (norte-sul ou leste-oeste);
+	# lago e poça não, a trilha contorna pela margem (_detour_crossing).
 	var line := PackedVector2Array()
-	for i in points.size():
+	var i := 0
+	while i < points.size():
 		if not wet[i] or i == 0 or i == points.size() - 1:
 			line.append(points[i])
+			i += 1
+			continue
+		var last := i
+		while last + 1 < points.size() - 1 and wet[last + 1]:
+			last += 1
+		var to_index := last + 1
+		var bridge := _detour_crossing(points[i - 1], PackedVector2Array([points[to_index]]))
+		# Procura cada vez mais longe; sem caminho nenhum até o ponto, tenta os
+		# pontos seguintes da linha (um ponto seco pode ser ilhota no meio do lago).
+		for wider in [3, 8]:
+			if bridge.is_empty():
+				bridge = _detour_crossing(points[i - 1], PackedVector2Array([points[to_index]]), TRAIL_DETOUR_MARGIN * wider)
+		if bridge.is_empty():
+			var later := PackedVector2Array()
+			var later_index := []
+			for k in range(last + 2, mini(points.size(), last + 2 + TRAIL_DETOUR_LOOKAHEAD)):
+				if not wet[k]:
+					later.append(points[k])
+					later_index.append(k)
+			if not later.is_empty():
+				bridge = _detour_crossing(points[i - 1], later, TRAIL_DETOUR_MARGIN * 2)
+				if not bridge.is_empty():
+					to_index = later_index[_detour_target]
+		if bridge.is_empty():
+			i = last + 1
+			continue
+		last = to_index - 1
+		# A trilha em terra se curva até a ponte: solta uns pontos antes e
+		# depois, para a mudança de direção ser aberta e não uma quina.
+		var before := mini(TRAIL_BRIDGE_EASE, line.size() - 1)
+		var after := maxi(0, mini(TRAIL_BRIDGE_EASE, points.size() - 2 - (last + 1)))
+		while before > 0 and (_wet_length(line[line.size() - 1 - before], bridge[0]) > 0.0 or _is_water_at(cell_of(line[line.size() - 1 - before]))):
+			before -= 1
+		while after > 0 and (_wet_length(bridge[bridge.size() - 1], points[last + 1 + after]) > 0.0 or wet[last + 1 + after]):
+			after -= 1
+		line.resize(line.size() - before)
+		line.append_array(bridge)
+		i = last + 1 + after
 	return line
+
+
+## Caminho de "from" até "to" em terra firme que atravessa água só em pontes
+## retas (leste-oeste ou norte-sul) sobre rio ou riacho; lago e poça a trilha
+## contorna pela margem, com folga. Devolve os pontos entre os dois (volta em
+## terra e as duas pontas de cada ponte), ou nada se não houver caminho.
+func _detour_crossing(from: Vector2, targets: PackedVector2Array, margin := TRAIL_DETOUR_MARGIN) -> PackedVector2Array:
+	var lo_v := from
+	var hi_v := from
+	for t in targets:
+		lo_v = Vector2(minf(lo_v.x, t.x), minf(lo_v.y, t.y))
+		hi_v = Vector2(maxf(hi_v.x, t.x), maxf(hi_v.y, t.y))
+	var lo := Vector2i(floori(lo_v.x), floori(lo_v.y)) - Vector2i.ONE * margin
+	var hi := Vector2i(floori(hi_v.x), floori(hi_v.y)) + Vector2i.ONE * margin
+	# 0 terra, 1 rio ou riacho (atravessa com ponte), 2 lago, poça ou mar.
+	var kind := {}
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			var thing := _is_water(Vector2i(x, y), region_of(Vector2i(x, y)), region_biome(region_of(Vector2i(x, y))))
+			kind[Vector2i(x, y)] = 0 if thing == Thing.NADA else (1 if thing == Thing.VAU or thing == Thing.RIACHO or thing == Thing.RIO else 2)
+	# Terra colada num lago: anda, mas custa caro, para a trilha ficar longe da margem.
+	var near_lake := {}
+	for cell: Vector2i in kind:
+		if kind[cell] != 2:
+			continue
+		for dy in range(-TRAIL_LAKE_BAND, TRAIL_LAKE_BAND + 1):
+			for dx in range(-TRAIL_LAKE_BAND, TRAIL_LAKE_BAND + 1):
+				near_lake[cell + Vector2i(dx, dy)] = true
+	var start := cell_of(from)
+	var goals := {}  # casa -> índice do alvo
+	for k in targets.size():
+		var goal_cell := cell_of(targets[k])
+		if kind.get(goal_cell, 2) == 0 and not goals.has(goal_cell):
+			goals[goal_cell] = k
+	if kind.get(start, 2) != 0 or goals.is_empty():
+		return PackedVector2Array()
+	var goal := Vector2i.ZERO
+	var found := false
+	# Dijkstra: andar em terra (8 vizinhos, sem cortar quina de água) ou saltar
+	# uma faixa de rio em linha reta até a terra do outro lado (uma ponte).
+	var best := {start: 0.0}
+	var previous := {}  # casa -> [casa anterior, é ponte?]
+	var heap: Array = [[0.0, start]]
+	while not heap.is_empty():
+		var top: Array = _heap_pop(heap)
+		var cell: Vector2i = top[1]
+		var cost: float = top[0]
+		if cost > best[cell]:
+			continue
+		if goals.has(cell):
+			goal = cell
+			found = true
+			break
+		var moves := []
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if dx == 0 and dy == 0:
+					continue
+				var next := cell + Vector2i(dx, dy)
+				if kind.get(next, 2) != 0:
+					continue
+				if dx != 0 and dy != 0 and (kind.get(cell + Vector2i(dx, 0), 2) != 0 or kind.get(cell + Vector2i(0, dy), 2) != 0):
+					continue
+				var step := Vector2(dx, dy).length()
+				moves.append([next, step * (TRAIL_LAKE_COST if near_lake.has(next) else 1.0), false])
+		for dir: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			var across := cell + dir
+			if kind.get(across, 0) != 1:
+				continue
+			while kind.get(across, 0) == 1:
+				across += dir
+			if kind.get(across, 2) == 0:
+				moves.append([across, float((across - cell).length()) + TRAIL_BRIDGE_COST, true])
+		for move: Array in moves:
+			var new_cost: float = cost + move[1]
+			if not best.has(move[0]) or new_cost < best[move[0]]:
+				best[move[0]] = new_cost
+				previous[move[0]] = [cell, move[2]]
+				_heap_push(heap, [new_cost, move[0]])
+	if not found or (goal != start and not previous.has(goal)):
+		return PackedVector2Array()
+	_detour_target = goals[goal]
+	var to := targets[_detour_target]
+	# Do fim para o começo: casas de cada trecho em terra e as pontes.
+	var path: Array[Vector2i] = [goal]
+	var jumps: Array[bool] = []  # jumps[i]: o passo de path[i] para path[i+1] foi ponte
+	var at := goal
+	while at != start:
+		var step: Array = previous[at]
+		at = step[0]
+		path.append(at)
+		jumps.append(step[1])
+	path.reverse()
+	jumps.reverse()
+	var result := PackedVector2Array()
+	var run: Array[Vector2i] = [path[0]]
+	var origin := from
+	for i in jumps.size():
+		if jumps[i]:
+			# Termina o trecho em terra na ponta da ponte e atravessa.
+			result.append_array(_simplify_path(origin, run))
+			if result.is_empty() or result[result.size() - 1] != cell_center(path[i]):
+				result.append(cell_center(path[i]))
+			result.append(cell_center(path[i + 1]))
+			origin = cell_center(path[i + 1])
+			run = [path[i + 1]]
+		else:
+			run.append(path[i + 1])
+	# Último trecho em terra, alisado de "to" para trás, para sair de "to" de verdade.
+	if run.size() > 1:
+		var reversed_run: Array[Vector2i] = run.duplicate()
+		reversed_run.reverse()
+		var tail := _simplify_path(to, reversed_run)
+		tail.reverse()
+		# Sem ponte, "tail[0]" é o centro da casa de "from" e entra também.
+		for k in range(1 if not result.is_empty() else 0, tail.size()):
+			result.append(tail[k])
+	if result.is_empty():
+		result.append(cell_center(start))
+	return result
+
+
+func _heap_push(heap: Array, item: Array) -> void:
+	heap.append(item)
+	var i := heap.size() - 1
+	while i > 0:
+		var parent := (i - 1) / 2
+		if (heap[parent][0] as float) <= (heap[i][0] as float):
+			break
+		var swap = heap[parent]
+		heap[parent] = heap[i]
+		heap[i] = swap
+		i = parent
+
+
+func _heap_pop(heap: Array) -> Array:
+	var top: Array = heap[0]
+	var last: Array = heap.pop_back()
+	if not heap.is_empty():
+		heap[0] = last
+		var i := 0
+		while true:
+			var left := i * 2 + 1
+			var right := left + 1
+			var smallest := i
+			if left < heap.size() and (heap[left][0] as float) < (heap[smallest][0] as float):
+				smallest = left
+			if right < heap.size() and (heap[right][0] as float) < (heap[smallest][0] as float):
+				smallest = right
+			if smallest == i:
+				break
+			var swap = heap[smallest]
+			heap[smallest] = heap[i]
+			heap[i] = swap
+			i = smallest
+	return top
+
+
+## Alisa o caminho em casas: do ponto "origin", pula direto para a casa mais
+## longe que ainda se alcança em linha reta sem molhar.
+func _simplify_path(origin: Vector2, cells: Array[Vector2i]) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var at := origin
+	var index := 0
+	# Se o ponto de partida está colado na água, sai primeiro para o centro da
+	# casa dele (que é terra firme) em vez de cortar a quina molhada.
+	if cells.size() > 1 and at != cell_center(cells[0]) and _wet_length(at, cell_center(cells[1])) > 0.0:
+		at = cell_center(cells[0])
+		result.append(at)
+	while index < cells.size() - 1:
+		var far := index + 1
+		for k in range(cells.size() - 1, index, -1):
+			if _wet_length(at, cell_center(cells[k])) == 0.0:
+				far = k
+				break
+		at = cell_center(cells[far])
+		index = far
+		result.append(at)
+	return result
+
+
+## Quanto da reta de "a" a "b" passa sobre a água, em casas (aproximado).
+func _wet_length(a: Vector2, b: Vector2) -> float:
+	var steps := maxi(1, ceili(a.distance_to(b) / (TRAIL_STEP * 0.5)))
+	var wet := 0
+	for i in steps + 1:
+		if _is_water_at(cell_of(a.lerp(b, float(i) / steps))):
+			wet += 1
+	return wet * a.distance_to(b) / steps
+
+
+## Lago, poça ou mar numa das 8 casas em volta (ou na própria): a trilha não
+## raspa a margem, senão sobra uma casa de ponte sobre a água ao lado dela.
+func _lake_touches(cell: Vector2i) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var c := cell + Vector2i(dx, dy)
+			var thing := _is_water(c, region_of(c), region_biome(region_of(c)))
+			if thing == Thing.LAGO or thing == Thing.CHARCO or thing == Thing.MAR:
+				return true
+	return false
 
 
 func _is_water_at(cell: Vector2i) -> bool:
