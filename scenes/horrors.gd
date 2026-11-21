@@ -207,6 +207,14 @@ func horror_caught(spot: Vector2, _lost_something: bool) -> void:
 	Speech.say("Você acorda em outro lugar, sem lembrança do que aconteceu.")
 
 
+## Os horrores conhecidos agora (id -> { pos casas, mode }), para a vista 3D.
+func shown_horrors() -> Dictionary:
+	var out := {}
+	for id: int in _known:
+		out[id] = {"pos": _known[id]["shown"], "mode": int(_known[id]["mode"])}
+	return out
+
+
 ## Levada pelo Calado: a criatura não anda até reaparecer.
 func is_caught() -> bool:
 	return _caught

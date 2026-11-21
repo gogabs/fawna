@@ -67,7 +67,7 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null) -> void:
 	_world = world
 	_audio = audio
 	_harvest = harvest
@@ -98,6 +98,11 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		_obras.name = "Obras3D"
 		add_child(_obras)
 		_obras.setup(world, builds, players, my_id, _shapes, _material)
+	if birds != null or horrors != null:
+		var wildlife := WildlifeView3D.new()
+		wildlife.name = "Bichos3D"
+		add_child(wildlife)
+		wildlife.setup(birds, horrors, _shapes)
 
 
 ## Chamado a cada movimento: onde a criatura está. O giro vem do ouvinte,

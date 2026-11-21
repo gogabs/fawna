@@ -2524,7 +2524,7 @@ func _setup_view3d() -> void:
 	view3d = WorldView3D.new()
 	view3d.name = "View3D"
 	add_child(view3d)
-	view3d.setup(world, audio, harvest, builds, players, my_id)
+	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors)
 	view.visible = false
 
 
