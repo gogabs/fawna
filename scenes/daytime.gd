@@ -10,8 +10,8 @@ extends Node
 ##   - grilos ao fundo, cada vez mais, do entardecer até a noite plena
 ##     (menos no mar e no frio), e sapinhos na lagoa e no brejo;
 ##   - um aviso falado a cada mudança de período (ver DayCycle.PERIODS);
-##   - a tecla T diz o período, a estação e o texto dele; o segundo toque do C
-##     diz o momento do dia e onde se está em relação ao anel;
+##   - o segundo toque do C (circular) diz o momento do dia, onde se está em
+##     relação ao anel e a estação;
 ##   - o anel: faixa de sombra de dia e de luz de noite que anda norte e sul
 ##     com as estações, avisada ao entrar e ao sair dela;
 ##   - estações (36 dias do jogo cada): a noite encolhe na Coroada e estica
@@ -123,16 +123,11 @@ func darkness() -> float:
 	return DayCycle.darkness(t)
 
 
-## T: período, estação e o texto do período.
-func describe() -> String:
-	return DayCycle.describe(t, world_day(), _ring_strength >= 0.5)
-
-
-## Segundo toque do C: o momento do dia e o anel onde a criatura está.
+## Segundo toque do C: o momento do dia, o anel onde a criatura está e a estação.
 func sky_text() -> String:
 	var y: float = _my_y()
 	var d := world_day()
-	return DayCycle.sky_text(t, DayCycle.ring_strength(y, d), DayCycle.ring_offset(y, d))
+	return DayCycle.sky_text(t, DayCycle.ring_strength(y, d), DayCycle.ring_offset(y, d), DayCycle.season_of(d))
 
 
 func _my_y() -> float:
@@ -176,7 +171,7 @@ func jump_to(key: String) -> String:
 	if hour < 0.0:
 		return ""
 	set_hour(hour)
-	return "%s: %s" % [DayCycle.moment_label(key), describe()]
+	return "%s: %s." % [DayCycle.moment_label(key), DayCycle.PERIODS[DayCycle.period_of(t)][0]]
 
 
 ## Só no servidor: vai para o início de uma estação; devolve o texto do que fez.
@@ -233,10 +228,10 @@ func _track_season() -> void:
 		return
 	_season = season
 	if _playing:
-		Speech.say(DayCycle.SEASONS[season][2], false)
+		Speech.say(DayCycle.season_announcement(season), false)
 
 
-## Avisa quando o período muda. Na entrada, não diz nada: a tecla T responde.
+## Avisa quando o período muda. Na entrada, não diz nada: o C responde.
 func _track_phase() -> void:
 	var period := DayCycle.period_of(t)
 	if period == _phase:

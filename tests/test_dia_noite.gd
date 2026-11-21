@@ -64,13 +64,11 @@ func _test_describe() -> void:
 	_check(names[DayCycle.period_of(_at(23.0))] == "Noite", "23h é noite")
 	_check(names[DayCycle.period_of(_at(12.0))] == "Meio-dia", "12h é meio-dia")
 	_check(is_equal_approx(DayCycle.seconds_to_next_period(_at(23.0), 1800.0), 75.0), "da 23h à meia-noite é uma hora")
-	var text := DayCycle.describe(_at(14.5), 36.0)
-	_check(text.begins_with("Tarde, na estação Coroada. ") and not text.contains("minuto"), "descreve a tarde com a estação: " + text)
 	var digits := RegEx.create_from_string("[0-9]")
 	for i in DayCycle.PERIODS.size():
 		_check(DayCycle.period_of(_at(DayCycle.period_start(i))) == i, "o período %d começa na hora dele" % i)
 		_check(digits.search(DayCycle.announcement(i)) == null and digits.search(DayCycle.announcement(i, true)) == null, "o aviso do período %d não traz hora numérica" % i)
-		_check(digits.search(DayCycle.describe(_at(DayCycle.period_start(i)), 10.0)) == null, "o T não traz número")
+		_check(digits.search(DayCycle.sky_text(_at(DayCycle.period_start(i)), 0.0, 5000.0, 0)) == null, "o C não traz número")
 		if i != 6:  # o anoitecer tem uma frase só, para a faixa e para fora dela
 			_check(DayCycle.announcement(i) != DayCycle.announcement(i, true), "o período %d tem texto próprio dentro da faixa do anel" % i)
 		for word in ["pássaro", "grilo", "coruja"]:
@@ -128,13 +126,18 @@ func _test_seasons() -> void:
 
 
 func _test_sky_text() -> void:
-	_check(DayCycle.sky_text(_at(15.0), 1.0, 0.0) == "É a tarde, sob a sombra do anel.", "sob a sombra")
-	_check(DayCycle.sky_text(_at(23.0), 1.0, 0.0) == "É a noite, sob a luz do anel.", "sob a luz")
-	_check(DayCycle.sky_text(_at(15.0), 0.0, -600.0).contains("logo ao norte"), "a faixa perto, ao norte")
-	_check(DayCycle.sky_text(_at(23.0), 0.0, 600.0).contains("logo ao sul"), "a faixa perto, ao sul")
-	_check(DayCycle.sky_text(_at(15.0), 0.0, 2000.0).contains("pálido"), "o anel longe, de dia")
-	_check(DayCycle.sky_text(_at(23.0), 0.0, 2000.0).contains("ao longe"), "o anel longe, de noite")
-	_check(DayCycle.sky_text(_at(6.0), 0.0, 2000.0).begins_with("É o amanhecer"), "o artigo certo")
+	_check(DayCycle.sky_text(_at(15.0), 1.0, 0.0, 2) == "É a tarde, sob a sombra do anel. Estação da Longa Escuridão.", "o C diz a estação no fim")
+	for season in 4:
+		_check(DayCycle.season_announcement(season).begins_with("Estação ") and DayCycle.sky_text(_at(15.0), 0.0, 5000.0, season).ends_with("Estação %s." % DayCycle.SEASONS[season][1]), "estação %d no C e no aviso" % season)
+	_check(DayCycle.season_announcement(2) == "Estação da Longa Escuridão. As noites se alongam e o frio dói nos ossos.", "aviso da Longa Escuridão")
+	_check(DayCycle.season_announcement(0) == "Estação Coroada. O anel alcança seu ápice, e as noites se encurtam.", "aviso da Coroada")
+	_check(DayCycle.sky_text(_at(15.0), 1.0, 0.0, 2).begins_with("É a tarde, sob a sombra do anel."), "sob a sombra")
+	_check(DayCycle.sky_text(_at(23.0), 1.0, 0.0, 2).begins_with("É a noite, sob a luz do anel."), "sob a luz")
+	_check(DayCycle.sky_text(_at(15.0), 0.0, -600.0, 2).contains("logo ao norte"), "a faixa perto, ao norte")
+	_check(DayCycle.sky_text(_at(23.0), 0.0, 600.0, 2).contains("logo ao sul"), "a faixa perto, ao sul")
+	_check(DayCycle.sky_text(_at(15.0), 0.0, 2000.0, 2).contains("pálido"), "o anel longe, de dia")
+	_check(DayCycle.sky_text(_at(23.0), 0.0, 2000.0, 2).contains("ao longe"), "o anel longe, de noite")
+	_check(DayCycle.sky_text(_at(6.0), 0.0, 2000.0, 2).begins_with("É o amanhecer"), "o artigo certo")
 	_check(DayCycle.ring_edge_text(false, true).contains("sombra") and DayCycle.ring_edge_text(true, true).contains("luz"), "avisos de entrada na faixa")
 
 
