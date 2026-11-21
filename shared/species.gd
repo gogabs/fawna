@@ -79,7 +79,7 @@ const DATA := {
 		"description": "Pelo cor de cinza e, por baixo dele, uma brasa que nunca apaga por inteiro, viva nos olhos. Gosta do que queima e do que se esconde, e deixa um cheiro leve de fumaça por onde passa."},
 	"onca": {"name": "Retinto", "animal": "onça", "article": "um", "tags": ["garras", "guerreiro", "salto"],
 		"description": "Pelagem negra como breu, onde só se vê o brilho dos olhos e das garras. Anda sem peso, ataca sem aviso e raramente precisa de mais do que tem nas próprias mãos."},
-	"javali": {"name": "Tisnado", "animal": "javali", "article": "um", "tags": ["guerreiro", "forrageador", "fucar"],
+	"javali": {"name": "Raizeiro", "animal": "javali", "article": "um", "tags": ["guerreiro", "forrageador", "fucar"],
 		"description": "Pele escura como carvão e presas curtas, sujas de terra. Fuça o chão como quem sabe que a terra guarda coisas, e reconhece pelo cheiro o que serve de comida e o que não serve."},
 }
 
