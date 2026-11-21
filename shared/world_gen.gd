@@ -41,6 +41,9 @@ const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
 ## serpentear.
 const TRAIL_BRIDGE_SEARCH := 12.0  # casas: até onde procurar uma travessia reta
 const TRAIL_BRIDGE_EASE := 8  # pontos da linha (4 casas) soltos de cada lado da ponte
+const TRAIL_BRIDGE_GAP := 6.0  # casas de terra entre duas águas que a mesma ponte atravessa
+const TRAIL_BRIDGE_SPECK := 2.5  # casas: água menor que isso não ganha travessia
+const TRAIL_DETOUR_MARGIN := 14  # casas em volta do trecho em que se procura a volta por terra
 const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
 const TRAIL_EDGE := 2
@@ -251,6 +254,7 @@ var _chunks := {}  # Vector2i (pedaço) -> [Thing de cada casa, Biome de cada ca
 var _climate_noise := FastNoiseLite.new()  # clima, medido em regiões
 var _regions := {}  # Vector2i (região) -> Biome
 var _features := {}  # Vector2i (região) -> Feature
+var _landmarks := {}  # Vector2i (região) -> ponto de encontro
 var _trail_lines := {}  # [região, vizinha] -> PackedVector2Array
 ## Casas ocupadas por construções (marco, fogueira): não deixam passar.
 ## Quem mantém é Builds; aqui só a colisão consulta. Vector2i -> id da obra.
@@ -473,13 +477,51 @@ func biome_at(cell: Vector2i) -> Biome:
 
 ## Ponto de encontro da região: onde as trilhas se cruzam. Na região
 ## (0, 0), é o centro do mundo; nas outras, um ponto perto do centro da região.
+## Nunca fica na água: se o sorteio cair num lago ou rio, o ponto vai para a
+## terra firme mais próxima, para as trilhas não terminarem em cima de uma ponte.
 func region_landmark(region: Vector2i) -> Vector2:
+	if _landmarks.has(region):
+		return _landmarks[region]
+	var point := _raw_landmark(region)
+	if region != Vector2i.ZERO and region_biome(region) != Biome.MAR and not _dry_around(point):
+		point = _nearest_dry_point(point)
+	_landmarks[region] = point
+	return point
+
+
+func _raw_landmark(region: Vector2i) -> Vector2:
 	var middle := Vector2(region) * REGION_SIZE + Vector2(0.5, 0.5)
 	if region == Vector2i.ZERO:
 		return center_point()
 	var spread := REGION_SIZE * 0.25
 	var offset := Vector2(_random([region.x, region.y, "px"]) - 0.5, _random([region.x, region.y, "py"]) - 0.5)
 	return middle + offset * 2.0 * spread
+
+
+## Terra firme no ponto e numa casa em volta (cabe a trilha sem molhar).
+func _dry_around(point: Vector2) -> bool:
+	for offset: Vector2 in [Vector2.ZERO, Vector2(2, 0), Vector2(-2, 0), Vector2(0, 2), Vector2(0, -2)]:
+		if _is_water_at(cell_of(point + offset)):
+			return false
+	return true
+
+
+func _nearest_dry_point(point: Vector2) -> Vector2:
+	for radius in range(1, 61):
+		var best := Vector2.INF
+		var best_distance := INF
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if maxi(absi(dx), absi(dy)) != radius:
+					continue
+				var candidate := Vector2(floorf(point.x) + dx + 0.5, floorf(point.y) + dy + 0.5)
+				var distance := candidate.distance_to(point)
+				if distance < best_distance and _dry_around(candidate):
+					best = candidate
+					best_distance = distance
+		if best != Vector2.INF:
+			return best
+	return point
 
 
 ## Regiões ligadas por trilha a esta (as 4 vizinhas). É a base para achar
@@ -889,8 +931,14 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 				i = last + 1 + skip
 				continue
 		var bridge := _straight_crossing(points[i - 1], points[last + 1])
+		if bridge.is_empty() and points[i - 1].distance_to(points[last + 1]) > TRAIL_BRIDGE_SPECK:
+			# Lago de borda torta: a trilha contorna pela terra até uma ponte reta.
+			bridge = _detour_crossing(points[i - 1], points[last + 1])
 		if bridge.is_empty():
-			bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
+			# Um respingo de água de uma ou duas casas: a trilha passa reto, é
+			# só uma casa de ponte. Se for maior, cai no L (raro).
+			if points[i - 1].distance_to(points[last + 1]) > TRAIL_BRIDGE_SPECK:
+				bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
 			line.append_array(bridge)
 			i = last + 1
 			continue
@@ -926,24 +974,28 @@ func _straight_crossing(from: Vector2, to: Vector2) -> PackedVector2Array:
 		var scan_hi := (maxf(from.x, to.x) if horizontal else maxf(from.y, to.y)) + TRAIL_BRIDGE_SEARCH
 		var across := lo
 		while across <= hi:
-			# Água contínua mais perto do meio do trecho, nesta fileira.
+			# Água mais perto do meio do trecho, nesta fileira. Águas separadas por
+			# uma faixa curta de terra contam como uma só: a ponte passa direto.
 			var wet_start := NAN
 			var wet_end := NAN
 			var best_gap := INF
 			var run_start := NAN
+			var run_end := NAN
 			var along := scan_lo
-			while along <= scan_hi + TRAIL_STEP:
+			var target := middle.x if horizontal else middle.y
+			while along <= scan_hi + TRAIL_BRIDGE_GAP + TRAIL_STEP:
 				var q := Vector2(along, across) if horizontal else Vector2(across, along)
 				var wet := along <= scan_hi and _is_water_at(cell_of(q))
-				if wet and is_nan(run_start):
-					run_start = along
-				elif not wet and not is_nan(run_start):
-					var centre := (run_start + along) * 0.5
-					var target := middle.x if horizontal else middle.y
+				if wet:
+					if is_nan(run_start):
+						run_start = along
+					run_end = along
+				elif not is_nan(run_start) and (along - run_end > TRAIL_BRIDGE_GAP or along > scan_hi):
+					var centre := (run_start + run_end) * 0.5
 					if absf(centre - target) < best_gap:
 						best_gap = absf(centre - target)
 						wet_start = run_start
-						wet_end = along
+						wet_end = run_end + TRAIL_STEP
 					run_start = NAN
 				along += TRAIL_STEP
 			if not is_nan(wet_start):
@@ -984,6 +1036,116 @@ func _crossing_to_landmark(from: Vector2, landmark: Vector2) -> PackedVector2Arr
 			pos += step * TRAIL_STEP
 			walked += TRAIL_STEP
 	return best
+
+
+## Lago em que nenhuma reta sai direto de uma margem e chega na outra: acha, na
+## terra em volta, a ponte reta (fileira ou coluna) que dá o menor caminho total
+## de "from" até "to", contornando a água pela terra. Devolve os pontos entre
+## os dois (volta em terra, as duas pontas da ponte, volta em terra), ou nada.
+func _detour_crossing(from: Vector2, to: Vector2) -> PackedVector2Array:
+	var lo := Vector2i(floori(minf(from.x, to.x)), floori(minf(from.y, to.y))) - Vector2i.ONE * TRAIL_DETOUR_MARGIN
+	var hi := Vector2i(floori(maxf(from.x, to.x)), floori(maxf(from.y, to.y))) + Vector2i.ONE * TRAIL_DETOUR_MARGIN
+	var water := {}
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			water[Vector2i(x, y)] = _is_water_at(Vector2i(x, y))
+	var start := cell_of(from)
+	var goal := cell_of(to)
+	var from_map := _flood_dry(start, water)
+	var to_map := _flood_dry(goal, water)
+	var best_score := INF
+	var best_a := Vector2i.ZERO
+	var best_b := Vector2i.ZERO
+	for horizontal in [true, false]:
+		var outer_lo := lo.y if horizontal else lo.x
+		var outer_hi := hi.y if horizontal else hi.x
+		var inner_lo := lo.x if horizontal else lo.y
+		var inner_hi := hi.x if horizontal else hi.y
+		for outer in range(outer_lo, outer_hi + 1):
+			var run_start := -999999
+			for inner in range(inner_lo, inner_hi + 2):
+				var cell := Vector2i(inner, outer) if horizontal else Vector2i(outer, inner)
+				var is_wet: bool = inner <= inner_hi and water[cell]
+				if is_wet:
+					if run_start == -999999:
+						run_start = inner
+					continue
+				if run_start == -999999:
+					continue
+				var before := Vector2i(run_start - 1, outer) if horizontal else Vector2i(outer, run_start - 1)
+				var after := Vector2i(inner, outer) if horizontal else Vector2i(outer, inner)
+				run_start = -999999
+				if not water.has(before) or water[before] or inner > inner_hi:
+					continue
+				for pair: Array in [[before, after], [after, before]]:
+					var near: Vector2i = pair[0]
+					var far: Vector2i = pair[1]
+					if from_map.has(near) and to_map.has(far):
+						var score: float = from_map[near][1] + to_map[far][1] + near.distance_to(far)
+						if score < best_score:
+							best_score = score
+							best_a = near
+							best_b = far
+	if best_score == INF:
+		return PackedVector2Array()
+	var result := _simplify_path(from, _chain(from_map, best_a, true))
+	if result.is_empty() or result[result.size() - 1] != cell_center(best_a):
+		result.append(cell_center(best_a))
+	var back := _simplify_path(cell_center(best_b), _chain(to_map, best_b, false))
+	result.append(cell_center(best_b))
+	if back.size() > 1:
+		back.resize(back.size() - 1)  # a última é a casa de "to", que a linha já tem
+		result.append_array(back)
+	return result
+
+
+## Terra firme alcançável a partir de "start" (8 vizinhos), dentro de "water":
+## Vector2i -> [casa anterior, passos].
+func _flood_dry(start: Vector2i, water: Dictionary) -> Dictionary:
+	var seen := {start: [start, 0.0]}
+	var queue: Array[Vector2i] = [start]
+	var head := 0
+	while head < queue.size():
+		var cell := queue[head]
+		head += 1
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var next := cell + Vector2i(dx, dy)
+				if (dx == 0 and dy == 0) or seen.has(next) or not water.has(next) or water[next]:
+					continue
+				seen[next] = [cell, (seen[cell][1] as float) + Vector2(dx, dy).length()]
+				queue.append(next)
+	return seen
+
+
+## Casas do caminho de "cell" de volta até a origem do mapa, na ordem de ida
+## (se "reverse") ou de volta.
+func _chain(map: Dictionary, cell: Vector2i, reverse: bool) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = [cell]
+	while map[cell][0] != cell:
+		cell = map[cell][0]
+		cells.append(cell)
+	if reverse:
+		cells.reverse()
+	return cells
+
+
+## Alisa o caminho em casas: do ponto "origin", pula direto para a casa mais
+## longe que ainda se alcança em linha reta sem molhar.
+func _simplify_path(origin: Vector2, cells: Array[Vector2i],) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var at := origin
+	var index := 0
+	while index < cells.size() - 1:
+		var far := index + 1
+		for k in range(cells.size() - 1, index, -1):
+			if _wet_length(at, cell_center(cells[k])) == 0.0:
+				far = k
+				break
+		at = cell_center(cells[far])
+		index = far
+		result.append(at)
+	return result
 
 
 ## Ponte ortogonal entre a última margem seca "from" e a próxima "to" (ou o

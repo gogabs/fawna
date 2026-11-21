@@ -168,10 +168,14 @@ func _test_straight_bridges() -> void:
 					var a: Vector2 = line[i]
 					var b: Vector2 = line[i + 1]
 					# Sobre a água a ponte é um trecho reto e ortogonal
-					# (norte-sul ou leste-oeste), nunca na diagonal.
-					if a.distance_to(b) > WorldGen.TRAIL_STEP * 1.5 and (world._is_water_at(WorldGen.cell_of(a)) or world._is_water_at(WorldGen.cell_of(b)) or world._is_water_at(WorldGen.cell_of(a.lerp(b, 0.5)))):
+					# (norte-sul ou leste-oeste), nunca na diagonal nem em L: nenhum
+					# ponto da linha fica em cima da água. Só respingos de uma ou
+					# duas casas passam direto.
+					if a.distance_to(b) > WorldGen.TRAIL_BRIDGE_SPECK and world._wet_length(a, b) > 0.0:
 						_check(is_equal_approx(a.x, b.x) or is_equal_approx(a.y, b.y), "ponte na diagonal de %s a %s" % [a, b])
 						orthogonal += 1
+					if i > 0 and world._is_water_at(WorldGen.cell_of(a)):
+						_check(false, "quina de ponte em cima da água em %s" % a)
 					if a.distance_to(b) > WorldGen.TRAIL_STEP * 1.5:
 						bridges += 1
 					# Seguir a linha da trilha nunca esbarra em nada.
