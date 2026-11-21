@@ -59,7 +59,7 @@ const TAGS := {
 	"disparada": {"name": "Disparada", "active": true, "effects": {},
 		"text": "Corre o dobro por uns 3 s, mas faz muito barulho e fica cansado depois."},
 	"fucar": {"name": "Fuçar", "active": true, "effects": {},
-		"text": "Escava a terra à frente e acha argila ou sílex escondidos por perto (e raízes e sementes, quando existirem), mas demora uns 5 s parado e faz barulho."},
+		"text": "Escava a terra à frente e acha argila, sílex ou raízes escondidos por perto (e sementes, quando existirem), mas demora uns 5 s parado e faz barulho."},
 	"pesca": {"name": "Pesca com as patas", "active": true, "effects": {},
 		"text": "Pesca sem precisar de ferramenta, só com as patas, mas demora e faz barulho na água. Vale quando houver pesca no jogo."},
 	"arar": {"name": "Arar", "active": true, "effects": {},

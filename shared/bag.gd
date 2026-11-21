@@ -62,6 +62,10 @@ const WEIGHTS := {
 	"resina": 1,
 	"faca": 2,
 	"tocha": 2,
+	"raiz": 1,
+	"raiz_assada": 1,
+	"castanha": 1,
+	"estragada": 1,
 }
 const DEFAULT_WEIGHT := 1
 
@@ -74,6 +78,10 @@ const CATEGORIES := {
 	"lanca": "arma",
 	"clava": "arma",
 	"frutas": "comida",
+	"raiz": "comida",
+	"raiz_assada": "comida",
+	"castanha": "comida",
+	"estragada": "comida",
 }
 const DEFAULT_CATEGORY := "material"
 
@@ -87,7 +95,7 @@ const WIELDABLE := {
 	"machado": "J para golpear.",
 	"lanca": "J para golpear.",
 	"clava": "J para golpear.",
-	"enxada": "J para capinar a grama de uma obra.",
+	"enxada": "J para capinar a grama de uma obra, ou para cavar a terra atrás de raízes.",
 	"faca": "J no tronco de uma árvore, poucas vezes, para tirar resina.",
 	"tocha": "Vai na mão não dominante. Para acendê-la, use Equipamento perto de uma fogueira acesa; longe de uma, risque faca ou sílex numa pedra pequena com Espaço.",
 }

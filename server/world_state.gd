@@ -42,6 +42,14 @@ var equipment := {}
 var species := {}
 ## nome da criatura -> { "food", "warmth" }: fome e calor, de 0 a 100 (ver Body).
 var body := {}
+## nome da criatura -> { comida: [[quantidade, dias que faltam], ...] }: os
+## lotes de cada comida na bolsa, para o estrago (ver Body.reconcile).
+var lots := {}
+## casa da árvore -> ano (DayCycle) em que as castanhas dela foram catadas.
+var nuts := {}
+## casa -> ms da última raiz cavada ali com a enxada.
+var _rooted := {}
+var _food_rng := RandomNumberGenerator.new()
 ## id -> segundos seguidos com alguma reserva em zero (para desfalecer; não se salva).
 var faint_clock := {}
 ## id -> segundos que ainda faltam para secar depois de cruzar um vau.
@@ -335,8 +343,37 @@ func body_of(id: int) -> Dictionary:
 	return body[player_name]
 
 
-## Come 1 item de comida da bolsa. Devolve { ok, reason, item } com reason
-## "desconhecido", "nao_e_comida", "sem_item" ou "cheio" (barriga cheia).
+## A estação de agora (0 Coroada, 1 Declínio, 2 Longa Escuridão, 3 Ressurgência).
+func season() -> int:
+	return DayCycle.season_of(DayCycle.world_day(day_n, day_t))
+
+
+## O ano do mundo (conta as castanhas: uma vez por ano em cada árvore).
+func year() -> int:
+	return int(DayCycle.world_day(day_n, day_t) / DayCycle.YEAR_DAYS)
+
+
+## Os lotes de comida da criatura (o mesmo dicionário guardado).
+func lots_of(id: int) -> Dictionary:
+	if not players.has(id):
+		return {}
+	var player_name: String = players[id]["name"]
+	if not lots.has(player_name):
+		lots[player_name] = {}
+	return lots[player_name]
+
+
+## Passa o tempo na comida da bolsa de quem está no mundo ("days" de jogo, já
+## com o frio). Devolve id -> { item: quantidade estragada } de quem perdeu algo.
+func age_food(id: int, days: float) -> Dictionary:
+	var entry := body_of(id)
+	Body.settle_raw(entry, days)
+	return Body.age(lots_of(id), inventory_of(id), days)
+
+
+## Come 1 item de comida da bolsa (do lote mais velho). Devolve { ok, reason,
+## item, event } com reason "desconhecido", "nao_e_comida", "sem_item" ou
+## "cheio" (barriga cheia); event "comeu" ou "enjoou" (raiz crua demais).
 func eat(id: int, item: String) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
@@ -348,11 +385,85 @@ func eat(id: int, item: String) -> Dictionary:
 	var entry := body_of(id)
 	if Body.is_full(entry, item):
 		return {"ok": false, "reason": "cheio", "item": item}
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	Body.take_oldest(food_lots, item)
 	inv[item] = int(inv[item]) - 1
 	if int(inv[item]) <= 0:
 		inv.erase(item)
-	Body.eat(entry, item)
-	return {"ok": true, "item": item}
+	return {"ok": true, "item": item, "event": Body.eat(entry, item)}
+
+
+## Assa na fogueira acesa ao alcance (Body.ROASTS) até "amount" itens crus.
+## "fires": posições das fogueiras acesas. Devolve { ok, reason, item, into,
+## amount } com reason "desconhecido", "nao_assa", "sem_item" ou "sem_fogo".
+func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Body.ROASTS.has(item):
+		return {"ok": false, "reason": "nao_assa", "item": item}
+	var inv := inventory_of(id)
+	var have := int(inv.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var pos: Vector2 = players[id]["pos"]
+	var near := false
+	for fire: Vector2 in fires:
+		if fire.distance_to(pos) <= Body.ROAST_REACH:
+			near = true
+			break
+	if not near:
+		return {"ok": false, "reason": "sem_fogo", "item": item}
+	var count := clampi(amount, 1, have)
+	var into: String = Body.ROASTS[item]
+	inv[item] = have - count
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	inv[into] = int(inv.get(into, 0)) + count
+	Body.reconcile(lots_of(id), inv)
+	return {"ok": true, "item": item, "into": into, "amount": count}
+
+
+## J com a enxada na terra à frente: cava atrás de raízes (Body.ROOT_BIOMES).
+## Devolve { ok, reason, amount, kept, left_over, pile_cell } com reason
+## "desconhecido", "sem_enxada", "terreno" (não é terra de raiz), "cavado"
+## (cavou aqui há pouco), "nada" (não achou desta vez).
+func dig_roots(id: int, cell: Vector2i, now_ms := -1) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if wielding(id) != "enxada":
+		return {"ok": false, "reason": "sem_enxada"}
+	var pos: Vector2 = players[id]["pos"]
+	if pos.distance_to(WorldGen.cell_center(cell)) > REACH + 0.6:
+		return {"ok": false, "reason": "longe"}
+	if now_ms < 0:
+		now_ms = Time.get_ticks_msec()
+	if not world.is_free(WorldGen.cell_center(cell)) or not builds.at(cell).is_empty() \
+			or world.thing_at(cell) != WorldGen.Thing.NADA or not Body.ROOT_BIOMES.has(world.biome_at(cell)):
+		return {"ok": false, "reason": "terreno"}
+	if now_ms - int(_rooted.get(cell, -100000000)) < int(Body.ROOT_RETRY * 1000.0):
+		return {"ok": false, "reason": "cavado"}
+	Body.exert(body_of(id))
+	var chance := Body.ROOT_CHANCE * (Body.ROOT_WINTER_FACTOR if season() == 2 else 1.0)
+	if _food_rng.randf() >= chance:
+		return {"ok": false, "reason": "nada"}
+	_rooted[cell] = now_ms
+	return _give(id, {"raiz": _food_rng.randi_range(1, 2)})
+
+
+## Põe itens na bolsa; o que não couber fica no chão, onde a criatura está.
+func _give(id: int, got: Dictionary) -> Dictionary:
+	var inv := inventory_of(id)
+	var pos: Vector2 = players[id]["pos"]
+	var split := Bag.split_to_fit(inv, wielding(id), got, offhand_of(id), species_of(id))
+	for key: String in split[0]:
+		inv[key] = int(inv.get(key, 0)) + int(split[0][key])
+	if not split[1].is_empty():
+		ground.add_items(WorldGen.cell_of(pos), split[1])
+	var amount := 0
+	for key: String in got:
+		amount += int(got[key])
+	return {"ok": true, "amount": amount, "kept": split[0], "left_over": split[1], "pile_cell": WorldGen.cell_of(pos)}
 
 
 ## Para onde o jogador olha (0 norte, 1 nordeste...; ver Compass).
@@ -664,7 +775,16 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var carrying := wielding(id)
 	# Árvore de pé: o Espaço recolhe a resina seca ou diz como ela está.
 	var resin_haul := {}
-	if thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0:
+	# Árvore de pé no Declínio: primeiro as castanhas do chão, uma vez por ano.
+	var standing_tree := thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0
+	if standing_tree and season() == Body.NUT_SEASON and Body.nut_tree(cell) and int(nuts.get(cell, -1)) != year():
+		if Bag.free_space(inv, carrying, offhand_of(id), species_of(id)) <= 0:
+			return {"ok": false, "reason": "cheio", "item": "castanha"}
+		nuts[cell] = year()
+		var nut_result := _give(id, {"castanha": Body.NUT_AMOUNT})
+		nut_result.merge({"reason": "", "item": "castanha", "parts": {}, "extras": {}})
+		return nut_result
+	if standing_tree:
 		var tapped := resin.collect(cell)
 		if not tapped["ok"]:
 			return {"ok": false, "reason": "arvore", "item": tapped["text"]}
@@ -677,6 +797,13 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
+	# Na Longa Escuridão o arbusto não tem frutas: dá só gravetos, como os outros.
+	if str(result["item"]) == "frutas" and season() == 2:
+		item = "lenha"
+		var bush: Dictionary = Harvest.SOURCES[WorldGen.Thing.ARBUSTO]
+		result["item"] = item
+		result["amount"] = int(bush["amount"])
+		result["parts"] = harvest._roll_parts(cell, item, int(bush["amount"]))
 	var parts: Dictionary = result.get("parts", {})
 	var got: Dictionary = (parts if not parts.is_empty() else {item: int(result["amount"])}).duplicate()
 	var extras: Dictionary = result.get("extras", {})
@@ -1103,6 +1230,8 @@ func to_save() -> Dictionary:
 		"species": species,
 		"torch_until": torch_until,
 		"body": body,
+		"lots": lots,
+		"nuts": _cells_to_save(nuts),
 		"day_t": day_t,
 		"day_n": day_n,
 		"last_pos": positions,
@@ -1146,6 +1275,26 @@ static func from_save(data: Dictionary) -> WorldState:
 					"food": clampf(float(entry.get("food", Body.START)), 0.0, Body.MAX),
 					"warmth": clampf(float(entry.get("warmth", Body.START)), 0.0, Body.MAX),
 				}
+	var saved_lots = data.get("lots", {})
+	if typeof(saved_lots) == TYPE_DICTIONARY:
+		for player_name in saved_lots:
+			var per_item = saved_lots[player_name]
+			if typeof(per_item) != TYPE_DICTIONARY:
+				continue
+			var clean := {}
+			for item in per_item:
+				var list := []
+				if typeof(per_item[item]) == TYPE_ARRAY:
+					for lot in per_item[item]:
+						if typeof(lot) == TYPE_ARRAY and lot.size() == 2:
+							list.append([int(lot[0]), float(lot[1])])
+				clean[str(item)] = list
+			state.lots[player_name] = clean
+	var saved_nuts = data.get("nuts", [])
+	if typeof(saved_nuts) == TYPE_ARRAY:
+		for row in saved_nuts:
+			if typeof(row) == TYPE_ARRAY and row.size() == 3:
+				state.nuts[Vector2i(int(row[0]), int(row[1]))] = int(row[2])
 	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
 	state.day_n = maxi(int(data.get("day_n", state.day_n)), 0)
 	var positions = data.get("last_pos", {})
@@ -1172,6 +1321,13 @@ static func from_save(data: Dictionary) -> WorldState:
 	if typeof(built) == TYPE_DICTIONARY:
 		state.builds.load_save(built)
 	return state
+
+
+static func _cells_to_save(cells: Dictionary) -> Array:
+	var out := []
+	for cell: Vector2i in cells:
+		out.append([cell.x, cell.y, cells[cell]])
+	return out
 
 
 func _spawn_point() -> Vector2:

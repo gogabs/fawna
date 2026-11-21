@@ -28,13 +28,16 @@ const PING_GAP := 0.35  # fome e calor mudando juntos: um toque depois do outro
 var _step := 0.0
 var _since_send := {}  # peer -> segundos desde o último envio
 var _sent_levels := {}  # peer -> marcas enviadas (Body.level_of e Body.bar_step de cada reserva)
+var _sent_soon := {}  # peer -> comida para passar já enviada (Body.spoiling_soon)
 
 # Cliente
 var food := Body.START
 var warmth := Body.START
 var _known := false  # já chegou a primeira notícia do servidor
 var _levels := [0, 0]
-var _bar_steps := [0, 0]  # posição de cada reserva na barra sonora (Body.bar_step)
+var _bar_steps := [0, 0]
+## Comida da bolsa para passar (item -> quantidade), para a Bolsa dizer.
+var spoiling := {}  # posição de cada reserva na barra sonora (Body.bar_step)
 var _bars: BodyBars
 var _sound_wait := [0.0, 0.0]
 var _out := false  # desfalecida: não anda até acordar
@@ -89,7 +92,9 @@ func _server_step(seconds: float) -> void:
 	var state: WorldState = get_parent().state
 	for peer: int in state.players.keys():
 		var entry := state.body_of(peer)
-		var levels := Body.step(entry, seconds, context_of(peer))
+		var ctx := context_of(peer)
+		var levels := Body.step(entry, seconds, ctx)
+		_age_food(peer, seconds, ctx)
 		if state.wet_left.has(peer):
 			state.wet_left[peer] = float(state.wet_left[peer]) - seconds
 			if float(state.wet_left[peer]) <= 0.0:
@@ -103,6 +108,22 @@ func _server_step(seconds: float) -> void:
 		_since_send[peer] = float(_since_send.get(peer, 0.0)) + seconds
 		if marks != _sent_levels.get(peer, []) or float(_since_send[peer]) >= SEND_SECONDS:
 			send_to(peer)
+
+
+## O tempo passa na comida da bolsa: o que estraga vira comida estragada.
+func _age_food(peer: int, seconds: float, ctx: Dictionary) -> void:
+	var game := get_parent()
+	var state: WorldState = game.state
+	var days := seconds / float(ctx["day_seconds"]) * Body.spoil_factor(int(ctx["season"]), int(ctx["biome"]))
+	var spoiled := state.age_food(peer, days)
+	if not spoiled.is_empty():
+		game._dirty = true
+		game.inventory_changed.rpc_id(peer, state.inventory_of(peer), "", "")
+		food_spoiled.rpc_id(peer, spoiled)
+	var soon := Body.spoiling_soon(state.lots_of(peer))
+	if soon != _sent_soon.get(peer, {}):
+		_sent_soon[peer] = soon
+		spoiling_state.rpc_id(peer, soon)
 
 
 ## Manda as reservas a quem é dono delas.
@@ -125,6 +146,7 @@ func _marks_of(entry: Dictionary) -> Array:
 
 func forget_peer(peer: int) -> void:
 	_since_send.erase(peer)
+	_sent_soon.erase(peer)
 	_sent_levels.erase(peer)
 
 
@@ -165,8 +187,44 @@ func request_eat(item: String) -> void:
 		return
 	game._dirty = true
 	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
-	ate.rpc_id(id, item)
+	ate.rpc_id(id, item, str(result["event"]))
 	send_to(id)
+
+
+## Bolsa > raiz > Assar: na fogueira acesa ao lado.
+@rpc("any_peer", "call_local", "reliable")
+func request_roast(item: String, amount: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var result: Dictionary = game.state.roast(id, item, amount, game.horrors._lit_fires(game.state.builds))
+	if not result["ok"]:
+		if game.state.players.has(id):
+			roast_refused.rpc_id(id, str(result["reason"]))
+		return
+	game._dirty = true
+	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	roasted.rpc_id(id, str(result["into"]), int(result["amount"]))
+
+
+## J com a enxada na terra à frente, fora de obra: cava atrás de raízes.
+@rpc("any_peer", "call_local", "reliable")
+func request_dig(cell: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var result: Dictionary = game.state.dig_roots(id, cell)
+	if not game.state.players.has(id):
+		return
+	if result["ok"]:
+		game._dirty = true
+		var left_over: Dictionary = result["left_over"]
+		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "desenterrou", "raiz", int(result["amount"]), {}, {}, result["kept"], left_over)
+		if not left_over.is_empty():
+			game.ground_changed.rpc(result["pile_cell"], game.state.ground.items_at(result["pile_cell"]), "sobrou", id, left_over)
+	dug.rpc_id(id, str(result.get("reason", "")))
 
 
 # --- Cliente -------------------------------------------------------------------
@@ -201,9 +259,54 @@ func body_state(new_food: float, new_warmth: float) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func ate(item: String) -> void:
+func ate(item: String, event := "comeu") -> void:
 	_play(BodySounds.eat(), BODY_DB)
-	Speech.say("Você come %s." % Body.FOODS.get(item, {}).get("eat", Economy.names_of(item)[0]), false)
+	var text := "Você come %s." % Body.FOODS.get(item, {}).get("eat", Economy.names_of(item)[0])
+	if event == "enjoou":
+		text += " O estômago revira: crua demais. Melhor assar na fogueira."
+	Speech.say(text, false)
+
+
+## Comida da bolsa estragou: diz o quê, de uma vez.
+@rpc("authority", "call_local", "reliable")
+func food_spoiled(items: Dictionary) -> void:
+	var total := 0
+	for item: String in items:
+		total += int(items[item])
+	Speech.say("%s %s." % [Economy.items_text(items).left(1).to_upper() + Economy.items_text(items).substr(1), "estragou" if total == 1 else "estragaram"], false)
+
+
+@rpc("authority", "call_local", "reliable")
+func spoiling_state(soon: Dictionary) -> void:
+	spoiling = soon
+
+
+@rpc("authority", "call_local", "reliable")
+func roasted(into: String, amount: int) -> void:
+	_play(BodySounds.roast(), BODY_DB)
+	Speech.say("Você assa na fogueira e fica com %s." % Economy.item_text(into, amount), false)
+
+
+@rpc("authority", "call_local", "reliable")
+func roast_refused(reason: String) -> void:
+	match reason:
+		"sem_fogo":
+			Speech.say("Para assar, chegue perto de uma fogueira acesa.")
+		"sem_item":
+			Speech.say("Acabou.")
+		_:
+			Speech.say("Isso não se assa.")
+
+
+## Resposta da enxada na terra: o som da terra sempre; fala só quando há o que dizer.
+@rpc("authority", "call_local", "reliable")
+func dug(reason: String) -> void:
+	_play(BodySounds.dig(), BODY_DB + 4.0)
+	match reason:
+		"terreno":
+			Speech.say("Esta terra não dá raízes.")
+		"cavado":
+			Speech.say("Você já revirou esta terra há pouco.")
 
 
 @rpc("authority", "call_local", "reliable")

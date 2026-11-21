@@ -193,6 +193,53 @@ static func _make_eat(variant: int) -> AudioStreamWAV:
 	return SoundBank._to_wav(samples)
 
 
+## Enxada na terra: um golpe surdo e a terra se soltando.
+static func dig() -> AudioStreamWAV:
+	return _pick("dig", _make_dig)
+
+
+static func _make_dig(variant: int) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9600 + variant
+	var seconds := 0.6
+	var count := int(seconds * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var noise := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		noise = lerpf(noise, rng.randf_range(-1.0, 1.0), 0.12)
+		var thud := sin(TAU * (90.0 + 10.0 * variant) * t) * exp(-t * 25.0)
+		var crumble := noise * exp(-t * 6.0) * (0.6 + 0.4 * sin(TAU * 23.0 * t))
+		samples[i] = (thud * 0.5 + crumble * 0.5) * 0.6
+	return SoundBank._to_wav(samples)
+
+
+## Assar: o chiado da raiz nas brasas.
+static func roast() -> AudioStreamWAV:
+	return _pick("roast", _make_roast)
+
+
+static func _make_roast(variant: int) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9700 + variant
+	var seconds := 1.6
+	var count := int(seconds * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var last := 0.0
+	for i in count:
+		var x := float(i) / count
+		var white := rng.randf_range(-1.0, 1.0)
+		var hiss := white - last  # chiado agudo
+		last = white
+		var env := minf(x * 8.0, 1.0) * (1.0 - x)
+		samples[i] = hiss * env * 0.12
+		if rng.randf() < 0.002:
+			samples[i] += rng.randf_range(-0.4, 0.4)  # estalos
+	return SoundBank._to_wav(samples)
+
+
 ## Desfalecer: um zumbido grave que se fecha e um baque surdo.
 static func faint() -> AudioStreamWAV:
 	return _pick("faint", _make_faint)
