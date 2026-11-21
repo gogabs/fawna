@@ -241,7 +241,6 @@ const TREE_CROWN := {
 const TREE_CROWN_DEFAULT := Color("1f3324")
 const TRUNK_COLOR := Color("3a2c22")
 const SHRUB_COLOR := Color("2f4a2c")
-const FRUIT_SHRUB_COLOR := Color("57303d")
 const BAMBOO_COLOR := Color("5f7d3c")
 const STONE_COLOR := Color("69686a")
 const CLAY_COLOR := Color("8f5844")
@@ -306,8 +305,8 @@ func _add_things(parent: Node3D, first: Vector2i) -> void:
 					_put(lists, "cone", base, Vector3(1.3 * s, 3.4 * s, 1.3 * s), turn, 3.3 * s, crown * shade)
 				WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 					var s := 0.8 + 0.5 * r1
-					var color := FRUIT_SHRUB_COLOR if thing == WorldGen.Thing.ARBUSTO_FRUTAS else SHRUB_COLOR
-					_put(lists, "blob", base, Vector3(1.0 * s, 0.7 * s, 1.0 * s), turn, 0.3 * s, color * shade)
+					# Arbusto é arbusto: o de frutas não pode se distinguir (decisão do Gabs).
+					_put(lists, "blob", base, Vector3(1.0 * s, 0.7 * s, 1.0 * s), turn, 0.3 * s, SHRUB_COLOR * shade)
 				WorldGen.Thing.BAMBU:
 					for k in 3:
 						var offset := Vector3((_rand(cell, 10 + k) - 0.5) * 1.0, 0.0, (_rand(cell, 20 + k) - 0.5) * 1.0)
