@@ -47,8 +47,6 @@ const TAGS := {
 		"text": "Ataca sem precisar de arma, com as garras."},
 	"forrageador": {"name": "Forrageador", "effects": {},
 		"text": "Distingue as plantas pelo faro: frutos, leguminosas, raízes e outras. Por enquanto não há plantas que façam sentido."},
-	"sete_vidas": {"name": "Sete vidas", "effects": {"lives": 7, "speed_after_loss": 0.9},
-		"text": "Tem sete vidas, bem mais que as outras espécies, mas cada vida perdida a deixa 10% mais lenta por uns minutos."},
 	# Ativas (ainda sem lógica no jogo; cada uma entra em PR próprio).
 	"salto": {"name": "Salto", "active": true, "effects": {},
 		"text": "Pulo curto, com espera entre usos, e o pouso faz barulho."},
@@ -63,10 +61,6 @@ const TAGS := {
 	"arar": {"name": "Arar", "active": true, "effects": {},
 		"text": "Limpa a grama, os arbustos e os bambus da casa à frente sem enxada nem machado, e depois o preparo de terra agrícola, mas demora uns 5 s por casa e faz barulho."},
 }
-
-## Vidas de quem não tem a tag "sete vidas". Provisório: ainda não há vida no
-## jogo, só o número de referência.
-const DEFAULT_LIVES := 3
 
 const ORDER: Array[String] = ["urso", "boi", "cervo", "lebre", "lobo", "raposa", "onca", "javali"]
 
@@ -83,7 +77,7 @@ const DATA := {
 		"description": "Híbrido de humano e lobo, de pelagem cinzenta e olhar fixo."},
 	"raposa": {"name": "Raposa de cinza", "article": "uma", "tags": ["furtividade", "fogo", "salto"],
 		"description": "Híbrida de humana e raposa, de pelo cor de cinza e uma brasa viva no olhar."},
-	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["sete_vidas", "garras", "guerreiro", "salto"],
+	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["garras", "guerreiro", "salto"],
 		"description": "Híbrida de humana e onça, de pelagem negra e passos que quase não pesam."},
 	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "forrageador", "fucar"],
 		"description": "Híbrido de humano e javali, de pele escura como carvão e presas curtas."},
@@ -155,13 +149,6 @@ static func unique_tags(id: String) -> Array:
 			result.append(tag)
 	return result
 
-
-## Vidas da espécie (ainda sem vida no jogo; DEFAULT_LIVES é provisório).
-static func lives(id: String) -> int:
-	for tag: String in tags_of(id):
-		if TAGS[tag]["effects"].has("lives"):
-			return int(TAGS[tag]["effects"]["lives"])
-	return DEFAULT_LIVES
 
 
 ## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".

@@ -24,7 +24,7 @@ func _check(condition: bool, message: String) -> void:
 
 func _test_data() -> void:
 	_check(Species.ORDER.size() == 8, "oito espécies")
-	_check(Species.TAGS.size() == 17, "dezessete tags")
+	_check(Species.TAGS.size() == 16, "dezesseis tags")
 	for id in Species.ORDER:
 		_check(Species.DATA.has(id), "dados de " + id)
 		_check(not Species.description(id).is_empty(), "descrição de " + id)
@@ -40,17 +40,16 @@ func _test_data() -> void:
 		var data: Dictionary = Species.TAGS[tag]
 		_check(not str(data["text"]).is_empty(), "tag %s tem texto" % tag)
 		for key: String in data["effects"]:
-			if key not in ["overload", "lives", "speed_after_loss", "caminheiro_regions", "noise"]:  # a sobrecarga resistente é pela metade, de propósito
+			if key not in ["overload", "caminheiro_regions", "noise"]:  # a sobrecarga resistente é pela metade, de propósito
 				_check(absf(float(data["effects"][key]) - 1.0) <= 0.31, "efeito pequeno em " + tag)
 	_check(is_equal_approx(Species.effect("urso", "capacity"), 1.2 * 0.9), "efeitos se multiplicam")
 	_check(Species.effect("urso", "torch") == 1.0, "efeito que ninguém mexe vale 1")
 	_check(Species.effect("", "speed") == 1.0, "sem espécie vale 1")
 	_check(Species.with_name("Lia", "onca") == "Lia, uma Onça-negra", "nome com espécie e artigo")
-	_check(Species.unique_tags("onca") == ["sete_vidas", "garras"], "únicas da onça")
+	_check(Species.unique_tags("onca") == ["garras"], "única da onça")
 	_check(Species.unique_tags("raposa") == ["furtividade", "fogo"], "únicas da raposa")
 	_check(Species.unique_tags("javali") == ["forrageador", "fucar"], "únicas do javali")
 	_check(Species.unique_tags("cervo") == ["veloz", "disparada"], "únicas do cervo")
-	_check(Species.lives("onca") == 7 and Species.lives("urso") == Species.DEFAULT_LIVES, "vidas")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
 	_check(Species.tag_names("lebre") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
 
