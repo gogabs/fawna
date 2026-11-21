@@ -178,26 +178,28 @@ static func crackle(variant: int) -> AudioStream:
 
 
 static func crackle_samples(variant: int) -> PackedFloat32Array:
-	var count := int(0.22 * RATE)
+	var count := int(0.3 * RATE)
 	var buf := PackedFloat32Array()
 	buf.resize(count)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5100 + variant
 	var clicks := rng.randi_range(3, 5)
 	for k in clicks:
-		var first := int(rng.randf_range(0.0, 0.16) * RATE)
-		var amp := rng.randf_range(0.35, 0.8)
-		var decay := rng.randf_range(450.0, 900.0)
-		var last := 0.0
-		for i in int(0.05 * RATE):
+		# Cada estalo é um "tec" de gelo: um tom curto no meio do espectro
+		# (350 a 800 Hz, como a respiração), que atravessa o abafamento do
+		# Calado, com um toque de ruído na batida.
+		var first := int(rng.randf_range(0.0, 0.2) * RATE)
+		var amp := rng.randf_range(0.4, 0.9)
+		var freq := rng.randf_range(380.0, 760.0)
+		var decay := rng.randf_range(110.0, 230.0)
+		for i in int(0.06 * RATE):
 			var n := first + i
 			if n >= count:
 				break
 			var t := float(i) / RATE
-			var noise := rng.randf_range(-1.0, 1.0)
-			var bright := noise - last  # passa-alta: só o agudo
-			last = noise
-			buf[n] += bright * exp(-t * decay) * amp * 0.5
+			var tone := sin(TAU * freq * t) + 0.45 * sin(TAU * freq * 1.7 * t)
+			var snap := rng.randf_range(-1.0, 1.0) * exp(-t * 900.0) * 0.6
+			buf[n] += (tone * exp(-t * decay) + snap) * amp * 0.45
 	return buf
 
 

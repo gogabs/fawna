@@ -291,7 +291,26 @@ func _test_strike_and_stress() -> void:
 		gave = runner.update(now, run_players, []).any(func(m): return m[1] == "gaveup")
 		now += 250
 	_check(gave, "correr dele, andando sempre, o faz desistir")
-	_check(now / 1000.0 >= Horrors.STRESS_MAX / Horrors.STRESS_PER_SECOND - 1.0 and now / 1000.0 <= Horrors.STRESS_MAX / Horrors.STRESS_PER_SECOND + 5.0, "leva uns 40 s de fuga (levou %.0f)" % (now / 1000.0))
+	# E também com ele a 20 casas, onde o Calado nasce (o Lunar o mantém lá).
+	var far_runner := Horrors.new(world)
+	var far_players := {1: _player(spot)}
+	var far_id := far_runner.summon(1, far_players, 20.0)
+	var far_chaser: Dictionary = far_runner.horrors[far_id]
+	var far_now := 0
+	var far_gave := false
+	var far_walker := spot
+	while far_now < 120000 and not far_gave and far_runner.horrors.has(far_id):
+		far_walker += Vector2(0.45, 0.0)
+		far_players[1]["pos"] = far_walker
+		far_chaser["pos"] = far_walker + Vector2(-20.0, 0.0)
+		far_gave = far_runner.update(far_now, far_players, []).any(func(m): return m[1] == "gaveup")
+		far_now += 250
+	_check(far_gave, "correndo com ele a 20 casas, ele também desiste (o Lunar mantém essa distância)")
+	var near_expected := Horrors.STRESS_MAX / (Horrors.STRESS_PER_CASA * 8.0)
+	_check(absf(now / 1000.0 - near_expected) <= 3.0, "com ele a 8 casas leva uns %.0f s (levou %.0f)" % [near_expected, now / 1000.0])
+	var far_expected := Horrors.STRESS_MAX / (Horrors.STRESS_PER_CASA * 20.0)
+	_check(absf(far_now / 1000.0 - far_expected) <= 3.0, "com ele a 20 casas leva uns %.0f s (levou %.0f)" % [far_expected, far_now / 1000.0])
+	_check(far_now < now, "quanto mais longe ele está, mais rápido ele desiste")
 
 
 func _test_fire_repels() -> void:

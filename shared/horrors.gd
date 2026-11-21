@@ -29,9 +29,12 @@ const FACING_COS := 0.866
 # joga. Cheia, ele desiste. Encará-lo não faz nada.
 const STRESS_MAX := 100.0
 const STRESS_PER_HIT := 20.0  # cada golpe de arma que acerta
-const STRESS_PER_SECOND := 2.5  # correr dele (andando, com ele a até RUN_RADIUS)
-const RUN_RADIUS := 15.0
-const STRESS_DECAY := 2.0  # por segundo, se a criatura está longe (mais que RUN_RADIUS + 6)
+# Correr dele (andando, com ele em perseguição) estressa por segundo
+# STRESS_PER_CASA vezes a distância até ele, até RUN_DISTANCE_CAP casas: quanto
+# mais longe ele está, mais vale correr; perto, é o golpe que ganha tempo.
+const STRESS_PER_CASA := 0.15
+const RUN_DISTANCE_CAP := 30.0
+const STRESS_DECAY := 2.0  # por segundo, se a criatura fica parada longe dele (mais de 25 casas)
 const STRIKE_REACH := 4.5  # até onde o golpe o alcança (a lança e as garras vão mais longe)
 const STRIKE_REACH_LONG := 5.5
 const KNOCKBACK := 5.0  # casas que o golpe o empurra
@@ -278,9 +281,9 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 	# Correr dele enche a barra de estresse; longe, ela esvazia.
 	var moved := target.distance_to(horror["last_target"]) > 0.02
 	horror["last_target"] = target
-	if distance <= RUN_RADIUS and moved:
-		horror["stress"] = float(horror["stress"]) + STRESS_PER_SECOND * delta
-	elif distance > RUN_RADIUS + 6.0:
+	if moved:
+		horror["stress"] = float(horror["stress"]) + STRESS_PER_CASA * minf(distance, RUN_DISTANCE_CAP) * delta
+	elif distance > 25.0:
 		horror["stress"] = maxf(0.0, float(horror["stress"]) - STRESS_DECAY * delta)
 	if float(horror["stress"]) >= STRESS_MAX:
 		_give_up(horror, out)

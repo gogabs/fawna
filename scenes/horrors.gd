@@ -316,7 +316,8 @@ func _update_crackle(nearest: Dictionary, delta: float) -> void:
 	var interval := 0.9 if distance > CRACKLE_MID else (0.45 if distance > CRACKLE_NEAR else 0.18)
 	_crackle_wait = interval * randf_range(0.7, 1.3)
 	var game := get_parent()
-	game.audio.play_at_point(nearest["shown"], HorrorSounds.crackle(randi()), 0.0, true, true)
+	# O abafamento do próprio Calado tira volume de tudo: o estalo compensa.
+	game.audio.play_at_point(nearest["shown"], HorrorSounds.crackle(randi()), -HUSHED_DB * _presence, true, true)
 
 
 func _nearest() -> Dictionary:
