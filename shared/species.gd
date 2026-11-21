@@ -19,10 +19,9 @@ extends RefCounted
 ##   torch: duração da tocha            calado_hearing: alcance com que se
 ##   calado_noise: o Calado percebe de mais longe (ou mais perto)       ouve o Calado
 ##   calado_delay: tempo que o Calado leva até chegar
-## Por enquanto os efeitos ainda NÃO valem no jogo (EFFECTS_ACTIVE): as tags
-## aparecem no menu de personagem, e cada efeito entra em PR separado
-## (velocidade e carga mexem na Bag e no servidor, o Calado em horrors, etc.).
-const EFFECTS_ACTIVE := false
+## Tags que já valem no jogo (LIVE_TAGS); as outras aparecem no menu de
+## personagem, mas o efeito delas entra em PRs seguintes.
+const LIVE_TAGS: Array[String] = ["pesado", "leve", "resistente", "guerreiro", "fogo"]
 ##
 ## A escolha é feita uma vez por nome de personagem e fica gravada no servidor.
 
@@ -135,6 +134,11 @@ static func tag_label(tag: String) -> String:
 	return "%s (ativa)" % TAGS[tag]["name"] if is_active(tag) else str(TAGS[tag]["name"])
 
 
+## A tag já vale no jogo?
+static func is_live(tag: String) -> bool:
+	return LIVE_TAGS.has(tag)
+
+
 static func is_active(tag: String) -> bool:
 	return bool(TAGS[tag].get("active", false))
 
@@ -164,6 +168,17 @@ static func unique_tags(id: String) -> Array:
 ## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".
 static func tag_text(tag: String) -> String:
 	return "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+
+
+## Quem tem a tag pode ter essa espécie? Pergunta direta, sem varrer a lista.
+static func has_tag(id: String, tag: String) -> bool:
+	return tags_of(id).has(tag)
+
+
+## O mestre do fogo não cruza água: nem os vaus rasos, que os outros atravessam
+## (as pontes servem). Devolve false se esta espécie não pisa na casa.
+static func may_step(id: String, world: WorldGen, pos: Vector2) -> bool:
+	return not (has_tag(id, "fogo") and world.thing_at(WorldGen.cell_of(pos)) == WorldGen.Thing.VAU)
 
 
 ## Multiplicador de um efeito, somando as tags da espécie (1.0 se nenhuma mexe).

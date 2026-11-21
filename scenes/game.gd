@@ -597,7 +597,7 @@ func torch_striking(what: String, detail: String) -> void:
 	if what == "comecou":
 		_striking = true
 		Speech.say("Risque com Espaço, num ritmo constante, sem parar. %s" % (
-			"Faca na pedra." if detail == "faca" else "Sílex na pedra."))
+			{"faca": "Faca na pedra.", "pedra": "Pedra na pedra, no jeito do mestre do fogo."}.get(detail, "Sílex na pedra.")))
 		return
 	_striking = false
 	if detail == "sem_material":
@@ -973,11 +973,11 @@ func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int
 		return
 	match event:
 		"largou":
-			Speech.say("Você largou %s no chão. %s." % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand)])
+			Speech.say("Você largou %s no chão. %s." % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand, _my_species())])
 		"pegou":
 			_play(Sounds.pickup(Economy.base_of(moved.keys()[0])))
 			var rest := "" if items.is_empty() else " Ficou %s no chão: a carga não aguenta." % Economy.items_text(items)
-			Speech.say("Você pegou %s. %s.%s" % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand), rest])
+			Speech.say("Você pegou %s. %s.%s" % [Economy.items_text(moved), Bag.load_label(inventory, wielded, offhand, _my_species()), rest])
 		"sobrou":
 			pass  # quem coletou já ouviu o que ficou no chão (inventory_changed)
 
@@ -1375,7 +1375,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"golpear":
 			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
-			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.MAX_LOAD])
+			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -1480,7 +1480,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"estoque_cheio":
 			Speech.say("%s está cheio: não cabe mais %s." % [detail.split("|")[1], Bag.spoken_name(detail.split("|")[0])])
 		"estoque_carga":
-			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Guarde ou jogue algo antes de pegar mais." % [Bag.load_of(inventory, wielded, offhand), Bag.MAX_LOAD])
+			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Guarde ou jogue algo antes de pegar mais." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
 		"arma_faltam":
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
@@ -1631,6 +1631,17 @@ func _back_to_menu(message := "") -> void:
 # --- Lado do jogador ---------------------------------------------------------
 
 ## Para onde as teclas mandam andar agora (em casas por segundo, no mundo).
+## A espécie desta criatura ("" até escolher).
+func _my_species() -> String:
+	return str(players.get(my_id, {}).get("species", ""))
+
+
+## Quanto da velocidade de andar vale agora: sobrecarga e tags da espécie.
+func _speed_scale() -> float:
+	var species := _my_species()
+	return Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed")
+
+
 func _wanted_motion() -> Vector2:
 	if horrors.is_caught():
 		return Vector2.ZERO
@@ -1639,7 +1650,7 @@ func _wanted_motion() -> Vector2:
 		if to_target.length() < 0.1:
 			_auto_target = null
 			return Vector2.ZERO
-		return to_target.normalized() * minf(WALK_SPEED * Bag.speed_factor(inventory, wielded, offhand), to_target.length() * 10.0)
+		return to_target.normalized() * minf(WALK_SPEED * _speed_scale(), to_target.length() * 10.0)
 	var ahead := Input.get_axis("andar_tras", "andar_frente")
 	var side := Input.get_axis("passo_esquerda", "passo_direita")
 	if ahead == 0.0 and side == 0.0:
@@ -1649,7 +1660,7 @@ func _wanted_motion() -> Vector2:
 			+ Compass.right(_heading) * side * SIDE_FACTOR
 	if motion.length() > 1.0:
 		motion = motion.normalized()
-	return motion * WALK_SPEED * Bag.speed_factor(inventory, wielded, offhand)
+	return motion * WALK_SPEED * _speed_scale()
 
 
 ## Se a criatura ficou dentro de algo sólido (uma obra que chegou enquanto ela
@@ -1663,17 +1674,22 @@ func _unstick() -> void:
 
 ## Anda com colisão: se bater de frente, tenta deslizar ao longo do
 ## obstáculo; se não der para andar nada, esbarra.
+## O ponto está livre e a espécie desta criatura pisa nele (o mestre do fogo não cruza vau).
+func _can_stand(pos: Vector2) -> bool:
+	return world.is_free(pos) and Species.may_step(_my_species(), world, pos)
+
+
 func _walk(motion: Vector2) -> void:
 	if motion == Vector2.ZERO:
 		return
 	var target := _pos + motion
-	if world.is_free(target):
+	if _can_stand(target):
 		_set_pos(target)
 		return
 	_unstick()
 	var slid := Vector2.ZERO
 	for part in [Vector2(motion.x, 0.0), Vector2(0.0, motion.y)]:
-		if part != Vector2.ZERO and world.is_free(_pos + part):
+		if part != Vector2.ZERO and _can_stand(_pos + part):
 			_set_pos(_pos + part)
 			slid += part
 	# Quase de frente contra o obstáculo, o deslize é só um raspão: conta como
@@ -2060,7 +2076,7 @@ func _swing() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena é 24; acima disso você anda mais devagar, até o limite de 36. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: ouça de onde vem a respiração dele e gire até ficar de frente para ela, que então se cala; ou corra. Encarado, ele para e acaba indo embora; só a chama de uma fogueira acesa o afasta. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -2243,7 +2259,7 @@ func _menu_root() -> Array:
 	return [
 		{"label": "Personagem", "open": _character_items},
 		{"label": "Caminheiro", "open": _caminheiro_items},
-		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, carga plena %d" % Bag.CAPACITY,
+		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, carga plena %d" % Bag.capacity_for(_my_species()),
 			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
@@ -2288,7 +2304,7 @@ func _tag_items(id: String) -> Array:
 	var items := []
 	for tag: String in Species.tags_of(id):
 		var text := Species.tag_text(tag)
-		if not Species.EFFECTS_ACTIVE:
+		if not Species.is_live(tag):
 			text += " Ainda sem efeito no jogo."
 		items.append({"label": Species.tag_label(tag), "info": text})
 	return items
@@ -2313,8 +2329,8 @@ func _bag_items() -> Array:
 		else:
 			items.append({"label": label, "open": _bag_sizes.bind(item)})
 	if not items.is_empty():
-		items.append({"label": Bag.load_label(inventory, wielded, offhand),
-			"info": "%s. Cabem mais %d de peso, mas acima de %d você anda mais devagar, até metade da velocidade com %d." % [Bag.load_label(inventory, wielded, offhand), Bag.free_space(inventory, wielded, offhand), Bag.CAPACITY, Bag.MAX_LOAD]})
+		items.append({"label": Bag.load_label(inventory, wielded, offhand, _my_species()),
+			"info": "%s. Cabem mais %d de peso, mas acima de %d você anda mais devagar, até %d%% da velocidade com %d." % [Bag.load_label(inventory, wielded, offhand, _my_species()), Bag.free_space(inventory, wielded, offhand, _my_species()), Bag.capacity_for(_my_species()), roundi(100.0 * (1.0 - (1.0 - Bag.MIN_SPEED_FACTOR) * Species.effect(_my_species(), "overload"))), Bag.max_load_for(_my_species())]})
 	return items
 
 
@@ -2767,7 +2783,7 @@ func _storage_root(build_id: int) -> Array:
 		{"label": "Pegar do estoque", "open": _storage_take_items.bind(build_id)},
 		{"label": Builds.stock_label(build, key), "info": "%s guarda %s%s. %s. %s" % [
 			title, Crafting.STORAGE[build["kind"]]["label"], ", um armário para cada dono" if Builds.personal(build) else "",
-			Builds.stock_label(build, key), Bag.load_label(inventory, wielded)]},
+			Builds.stock_label(build, key), Bag.load_label(inventory, wielded, "", _my_species())]},
 	]
 
 

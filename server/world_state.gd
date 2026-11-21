@@ -163,6 +163,11 @@ func offhand_of(id: int) -> String:
 	return offhand.get(players[id]["name"], "")
 
 
+## Quanto a tocha desta criatura queima (o mestre do fogo, mais).
+func torch_seconds(id: int) -> float:
+	return TORCH_SECONDS * Species.effect(species_of(id), "torch")
+
+
 ## Segundos que a tocha acesa na mão ainda queima (0 = apagada ou sem tocha).
 func torch_left(id: int, at := -1.0) -> float:
 	if not players.has(id):
@@ -205,8 +210,8 @@ func light_torch(id: int) -> Dictionary:
 	var pos: Vector2 = players[id]["pos"]
 	for build: Dictionary in builds.all():
 		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
-			torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + TORCH_SECONDS
-			return {"ok": true, "seconds": TORCH_SECONDS}
+			torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + torch_seconds(id)
+			return {"ok": true, "seconds": torch_seconds(id)}
 	var method := ignition_method(id)
 	if method.is_empty():
 		return {"ok": false, "reason": "sem_material"}
@@ -216,13 +221,17 @@ func light_torch(id: int) -> Dictionary:
 
 
 ## Como esta criatura acenderia a tocha sem fogueira: "faca" (faca + pedra
-## pequena, não gasta nada), "silex" (sílex + pedra pequena, gasta o sílex) ou "".
+## pequena, não gasta nada), "silex" (sílex + pedra pequena, gasta o sílex), "pedra" (só a pedra pequena,
+## para o mestre do fogo) ou "".
 func ignition_method(id: int) -> String:
 	var bag := inventory_of(id)
 	if int(bag.get("pedra_pequena", 0)) <= 0:
 		return ""
 	if int(bag.get("faca", 0)) > 0:
 		return "faca"
+	# O mestre do fogo acende só com a pedra, sem faca nem sílex.
+	if Species.TAGS.has("fogo") and Species.tags_of(species_of(id)).has("fogo"):
+		return "pedra"
 	if int(bag.get("silex", 0)) > 0:
 		return "silex"
 	return ""
@@ -248,7 +257,8 @@ func strike_spark(id: int, at_ms := -1) -> Dictionary:
 	if not bool(entry["first"]) and waited < STRIKE_MIN_INTERVAL:
 		return {"event": "nada"}
 	var bag := inventory_of(id)
-	if int(bag.get("pedra_pequena", 0)) <= 0 or int(bag.get("faca" if str(entry["method"]) == "faca" else "silex", 0)) <= 0:
+	var tool_item: String = {"faca": "faca", "silex": "silex"}.get(str(entry["method"]), "")
+	if int(bag.get("pedra_pequena", 0)) <= 0 or (not tool_item.is_empty() and int(bag.get(tool_item, 0)) <= 0):
 		striking.erase(id)
 		return {"event": "cancelada", "why": "sem_material"}
 	entry["last_ms"] = now
@@ -261,8 +271,8 @@ func strike_spark(id: int, at_ms := -1) -> Dictionary:
 		bag["silex"] = int(bag.get("silex", 0)) - 1
 		if int(bag["silex"]) <= 0:
 			bag.erase("silex")
-	torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + TORCH_SECONDS
-	return {"event": "acendeu", "seconds": TORCH_SECONDS}
+	torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + torch_seconds(id)
+	return {"event": "acendeu", "seconds": torch_seconds(id)}
 
 
 ## Cancela quem parou de riscar por tempo demais. Devolve os ids cancelados.
@@ -385,8 +395,10 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	if now_ms < 0:
 		now_ms = Time.get_ticks_msec()
 	var seconds := clampf((now_ms - int(_last_move.get(id, now_ms - 1000))) / 1000.0, 0.0, 1.0)
-	var allowed := MAX_SPEED * seconds + MOVE_SLACK
-	if not pos.is_finite() or from.distance_to(pos) > allowed or not world.is_free(pos):
+	# Espécies mais rápidas (cervo: leve e veloz) andam mais longe por segundo.
+	var allowed := MAX_SPEED * maxf(1.0, Species.effect(species_of(id), "speed")) * seconds + MOVE_SLACK
+	if not pos.is_finite() or from.distance_to(pos) > allowed or not world.is_free(pos) \
+			or not Species.may_step(species_of(id), world, pos):
 		return {"ok": false, "pos": from}
 	_last_move[id] = now_ms
 	players[id]["pos"] = pos
@@ -425,7 +437,7 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 			return {"ok": false, "reason": "arvore", "item": tapped["text"]}
 		resin_haul = tapped["yield"]
 		item = "resina"
-	if Bag.free_space(inv, carrying, offhand_of(id)) <= 0:
+	if Bag.free_space(inv, carrying, offhand_of(id), species_of(id)) <= 0:
 		if not resin_haul.is_empty():
 			resin.undo_collect(cell)
 		return {"ok": false, "reason": "cheio", "item": item}
@@ -438,7 +450,7 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	for extra: String in extras:
 		got[extra] = int(got.get(extra, 0)) + int(extras[extra])
 	# O que não cabe na carga fica no chão, onde a criatura está.
-	var split := Bag.split_to_fit(inv, carrying, got, offhand_of(id))
+	var split := Bag.split_to_fit(inv, carrying, got, offhand_of(id), species_of(id))
 	for key: String in split[0]:
 		inv[key] = int(inv.get(key, 0)) + int(split[0][key])
 	if not split[1].is_empty():
@@ -485,7 +497,7 @@ func pick_up(id: int, cell: Vector2i, only := "") -> Dictionary:
 	if pile.is_empty():
 		return {"ok": false, "reason": "nada"}
 	var inv := inventory_of(id)
-	var split := Bag.split_to_fit(inv, wielding(id), pile, offhand_of(id))
+	var split := Bag.split_to_fit(inv, wielding(id), pile, offhand_of(id), species_of(id))
 	if split[0].is_empty():
 		return {"ok": false, "reason": "cheio"}
 	var now := Time.get_ticks_msec()
@@ -514,7 +526,7 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	# O terreno de uma obra tem as suas próprias fases (preparo).
 	if not builds.at(cell).is_empty():
 		return {"ok": false, "reason": "nada", "hits_left": 0, "felled": false}
-	return harvest.strike(cell)
+	return harvest.strike(cell, -1.0, Species.effect(species_of(id), "axe"))
 
 
 ## Um golpe de faca no tronco de uma árvore ao alcance, para tirar resina.
@@ -779,7 +791,7 @@ func fetch_from_build(id: int, build_id: int, item: String, amount: int) -> Dict
 	var check := _storage_check(id, build_id)
 	if not check.is_empty():
 		return check
-	return builds.fetch(build_id, inventory_of(id), wielding(id), item, amount, owner_key(id))
+	return builds.fetch(build_id, inventory_of(id), wielding(id), item, amount, owner_key(id), species_of(id))
 
 
 ## Vazio se a criatura pode mexer no estoque agora; senão, a recusa.
