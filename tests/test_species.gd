@@ -45,7 +45,7 @@ func _test_data() -> void:
 	_check(is_equal_approx(Species.effect("urso", "capacity"), 1.2 * 0.9), "efeitos se multiplicam")
 	_check(Species.effect("urso", "torch") == 1.0, "efeito que ninguém mexe vale 1")
 	_check(Species.effect("", "speed") == 1.0, "sem espécie vale 1")
-	_check(Species.with_name("Lia", "onca") == "Lia, um Umbroso", "nome com espécie")
+	_check(Species.with_name("Lia", "onca") == "Lia, um Retinto", "nome com espécie")
 	_check(Species.unique_tags("onca") == ["garras"], "única da onça")
 	_check(Species.unique_tags("raposa") == ["furtividade", "fogo"], "únicas da raposa")
 	_check(Species.unique_tags("javali") == ["forrageador", "fucar"], "únicas do javali")
