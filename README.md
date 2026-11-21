@@ -38,7 +38,11 @@ godot --path . -- --host --name=Gabs
 godot --path . -- --join=10.0.0.5 --name=Lua
 ```
 
-Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `--seed=N` e `--auto=N,L,ARREDORES,RADAR,SAIR` (comandos automáticos, usados nos testes).
+Opções: `--server`, `--host`, `--debug` (liga o menu de depuração, veja abaixo), `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `--seed=N` e `--auto=N,L,ARREDORES,RADAR,SAIR` (comandos automáticos, usados nos testes).
+
+### Depuração (só para testes)
+
+O menu das setas ganha **Depuração** quando o servidor a liga: num servidor dedicado de testes com `--debug` (use outra porta que a do servidor principal, ex. `--server --debug --port=7351`; qualquer jogador que entrar nele usa) e em jogo hospedado pelo menu ou com `--host` (só quem hospeda usa, mesmo com convidados). Sem isso o menu não aparece e o servidor recusa os pedidos. Tem: dar pacotes de recursos (materiais de obra, raros, frutas, ferramentas ou tudo), esvaziar a bolsa, limite de carga alto (1000, sem sobrecarga), hora do dia (momentos como noite, coro do amanhecer ou meio-dia; o mundo vai sempre para a frente), estação (começo de cada uma), teleporte (40 casas para cada lado, miolo da faixa do anel ou longe dela, povoados e fogueiras), Calado (chamar atrás de você, dispensar, ligar/desligar as aparições sozinhas) e a posição atual. Comando de teste: `--auto=DBG_ação_argumento`.
 
 ## Controles
 

@@ -101,6 +101,7 @@ var _connect_waited := 0.0
 var my_id := 0
 var _server_version := ""  # vem do servidor ao entrar; vazio: servidor antigo, que não manda
 var players := {}  # id -> { "name", "pos": Vector2 }
+var _debug := false  # o servidor liga a depuração para este jogador (ver DebugTools)
 var inventory := {}  # a bolsa: item -> quantidade (ver Bag)
 var wielded := ""  # o que a criatura tem nas mãos ("" = mãos livres)
 var offhand := ""  # a segunda peça de equipamento, na mão não dominante (a tocha)
@@ -347,6 +348,7 @@ func request_join(player_name: String, password: String) -> void:
 	var accepted_name: String = state.players[id]["name"]
 	print("[servidor] %s (peer %d) entrou em %s" % [accepted_name, id, pos])
 	server_version.rpc_id(id, Updater.current_version())
+	debug_status.rpc_id(id, DebugTools.allowed(Net.debug_available(), Net.mode == Net.Mode.HOST, id), Bag.capacity)
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	daytime.sync_to(id)
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
@@ -1350,7 +1352,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"golpear":
 			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
 		"cheio":
-			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.MAX_LOAD])
+			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load])
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -1455,7 +1457,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"estoque_cheio":
 			Speech.say("%s está cheio: não cabe mais %s." % [detail.split("|")[1], Bag.spoken_name(detail.split("|")[0])])
 		"estoque_carga":
-			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Guarde ou jogue algo antes de pegar mais." % [Bag.load_of(inventory, wielded, offhand), Bag.MAX_LOAD])
+			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Guarde ou jogue algo antes de pegar mais." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load])
 		"arma_faltam":
 			var parts := detail.split("|")
 			Speech.say("Para %s %s." % [Crafting.weapon_name(parts[0]), parts[1] if parts.size() > 1 else ""])
@@ -1533,6 +1535,90 @@ func move_corrected(pos: Vector2) -> void:
 		return
 	_set_pos(pos)
 	_last_sent = pos
+
+
+# --- Depuração (só em testes; ver DebugTools) --------------------------------
+
+## Servidor -> jogador: pode usar o menu de depuração? Também passa a carga.
+@rpc("authority", "call_local", "reliable")
+func debug_status(enabled: bool, capacity: int) -> void:
+	_debug = enabled
+	Bag.apply_limit(capacity)
+	_sync_menu.call_deferred()
+
+
+## Servidor -> todos: a carga mudou (a bolsa de cada um mostra o limite novo).
+@rpc("authority", "call_local", "reliable")
+func debug_capacity(capacity: int) -> void:
+	Bag.apply_limit(capacity)
+	_sync_menu.call_deferred()
+
+
+## Servidor -> quem pediu: o que a depuração fez (ou por que não fez).
+@rpc("authority", "call_local", "reliable")
+func debug_result(text: String) -> void:
+	if world != null:
+		Speech.say(text)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_debug(action: String, arg: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender_id()
+	if not state.players.has(id):
+		return
+	if not DebugTools.allowed(Net.debug_available(), Net.mode == Net.Mode.HOST, id):
+		debug_result.rpc_id(id, "A depuração está desligada neste servidor.")
+		return
+	debug_result.rpc_id(id, _run_debug(id, action, arg))
+
+
+func _run_debug(id: int, action: String, arg: String) -> String:
+	var inv := state.inventory_of(id)
+	match action:
+		"dar":
+			if DebugTools.kit_items(arg).is_empty():
+				return "Pacote desconhecido."
+			var given := DebugTools.give(inv, arg)
+			_dirty = true
+			inventory_changed.rpc_id(id, inv, "", "")
+			return "Recebeu %s." % Economy.items_text(given)
+		"esvaziar":
+			DebugTools.empty_bag(inv, state.wielding(id))
+			_dirty = true
+			inventory_changed.rpc_id(id, inv, "", "")
+			return "Bolsa esvaziada."
+		"carga":
+			Bag.apply_limit(DebugTools.HIGH_CAPACITY if arg == "alta" else Bag.CAPACITY)
+			debug_capacity.rpc(Bag.capacity)
+			return "Limite de carga %s: %d." % ["alto" if arg == "alta" else "normal", Bag.max_load]
+		"ir":
+			var point = DebugTools.parse_point(arg)
+			if point == null:
+				return "Ponto inválido."
+			var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
+			var spot := DebugTools.free_spot(state.world, point, blocked)
+			state.teleport(id, spot)
+			move_corrected.rpc_id(id, spot)
+			player_moved.rpc(id, spot)
+			return "Teleportado."
+		"hora":
+			var said: String = daytime.jump_to(arg)
+			return said if not said.is_empty() else "Momento desconhecido."
+		"estacao":
+			var said_season: String = daytime.jump_to_season(int(arg)) if arg.is_valid_int() else ""
+			return said_season if not said_season.is_empty() else "Estação desconhecida."
+		"chamar":
+			var found: int = horrors.summon(id, float(arg) if arg.is_valid_float() else Horrors.SPAWN_DISTANCE)
+			return "O Calado está atrás de você." if found >= 0 else "Já há um Calado atrás de você."
+		"dispensar":
+			var count: int = horrors.debug_dismiss()
+			return "%d Calado%s dispensado%s." % [count, "" if count == 1 else "s", "" if count == 1 else "s"] if count > 0 else "Nenhum Calado no mundo."
+		"sozinho":
+			horrors.debug_set_spawning(arg == "ligar")
+			return "O Calado %s sozinho." % ("volta a aparecer" if arg == "ligar" else "não aparece mais")
+	return "Ação desconhecida."
 
 
 # --- Mundo salvo (servidor) --------------------------------------------------
@@ -2217,10 +2303,90 @@ func _setup_caminheiro() -> void:
 func _menu_root() -> Array:
 	return [
 		{"label": "Caminheiro", "open": _caminheiro_items},
-		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, carga plena %d" % Bag.CAPACITY,
+		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, carga plena %d" % Bag.capacity,
 			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
+	] + ([{"label": "Depuração", "open": _debug_items}] if _debug else [])
+
+
+## Menu de depuração (só aparece se o servidor liga; ver DebugTools). Tudo
+## passa pelo servidor, que responde com a fala do que fez.
+func _debug_items() -> Array:
+	var kits := []
+	for kit: String in DebugTools.KIT_ORDER:
+		kits.append({"label": DebugTools.kit_label(kit), "run": _debug_ask.bind("dar", kit)})
+	var high := Bag.capacity > Bag.CAPACITY
+	return [
+		{"label": "Dar recursos", "open": func(): return kits},
+		{"label": "Esvaziar a bolsa", "run": _debug_ask.bind("esvaziar", "")},
+		{"label": "Limite de carga: %s, ligar o %s" % [("alto" if high else "normal"), ("normal" if high else "alto")],
+			"run": _debug_ask.bind("carga", "normal" if high else "alta")},
+		{"label": "Hora do dia", "open": _debug_time_items},
+		{"label": "Estação", "open": _debug_season_items},
+		{"label": "Teleporte", "open": _debug_teleports},
+		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
+	]
+
+
+func _debug_position() -> String:
+	return "x %.0f, y %.0f, região %d, %d" % [_pos.x, _pos.y, _region.x, _region.y]
+
+
+func _debug_ask(action: String, arg: String) -> String:
+	request_debug.rpc_id(1, action, arg)
+	return ""
+
+
+## Os momentos do dia (DayCycle.MOMENTS): o mundo vai para eles, sempre para
+## frente no tempo.
+func _debug_time_items() -> Array:
+	var items := []
+	for moment: Array in DayCycle.MOMENTS:
+		items.append({"label": str(moment[1]), "run": _debug_ask.bind("hora", str(moment[0]))})
+	return items
+
+
+## O começo de cada estação, mantendo a hora.
+func _debug_season_items() -> Array:
+	var items := []
+	for season in 4:
+		items.append({"label": str(DayCycle.SEASONS[season][0]), "run": _debug_ask.bind("estacao", str(season))})
+	return items
+
+
+func _debug_teleports() -> Array:
+	var items := []
+	# O miolo da faixa do anel (luz de noite, sombra de dia) e o meio do vão entre faixas.
+	var day: float = daytime.world_day()
+	var ring_y := DayCycle.ring_center(day) / WorldGen.METERS_PER_CELL
+	var gap_y := (DayCycle.ring_center(day) + DayCycle.RING_SPACING * 0.5) / WorldGen.METERS_PER_CELL
+	items.append({"label": "Miolo da faixa do anel", "run": _debug_ask.bind("ir", "%f,%f" % [_pos.x, ring_y])})
+	items.append({"label": "Longe do anel, entre faixas", "run": _debug_ask.bind("ir", "%f,%f" % [_pos.x, gap_y])})
+	for entry: Array in [["Norte", Vector2(0, -1)], ["Sul", Vector2(0, 1)], ["Leste", Vector2(1, 0)], ["Oeste", Vector2(-1, 0)]]:
+		var point: Vector2 = _pos + (entry[1] as Vector2) * DebugTools.JUMP
+		items.append({"label": "%s, %d casas" % [entry[0], int(DebugTools.JUMP)],
+			"run": _debug_ask.bind("ir", "%f,%f" % [point.x, point.y])})
+	var marcos := builds.settlements()
+	marcos.sort_custom(func(a, b): return _pos.distance_squared_to(WorldGen.cell_center(a["cell"])) < _pos.distance_squared_to(WorldGen.cell_center(b["cell"])))
+	for build: Dictionary in marcos:
+		var at := WorldGen.cell_center(build["cell"])
+		items.append({"label": "Povoado %s" % build["name"], "run": _debug_ask.bind("ir", "%f,%f" % [at.x, at.y])})
+	for build: Dictionary in builds.all():
+		if build["kind"] == "fogueira":
+			var at := WorldGen.cell_center(build["cell"])
+			items.append({"label": "Fogueira, %s" % Compass.meters(_pos.distance_to(at)), "run": _debug_ask.bind("ir", "%f,%f" % [at.x, at.y])})
+	return items
+
+
+func _debug_horror_items() -> Array:
+	return [
+		{"label": "Chamar agora, a 12 casas", "run": _debug_ask.bind("chamar", "12")},
+		{"label": "Chamar longe, a 20 casas", "run": _debug_ask.bind("chamar", "20")},
+		{"label": "Dispensar todos", "run": _debug_ask.bind("dispensar", "")},
+		{"label": "Desligar as aparições sozinhas", "run": _debug_ask.bind("sozinho", "desligar")},
+		{"label": "Ligar as aparições sozinhas", "run": _debug_ask.bind("sozinho", "ligar")},
 	]
 
 
@@ -2239,7 +2405,7 @@ func _bag_items() -> Array:
 			items.append({"label": label, "open": _bag_sizes.bind(item)})
 	if not items.is_empty():
 		items.append({"label": Bag.load_label(inventory, wielded, offhand),
-			"info": "%s. Cabem mais %d de peso, mas acima de %d você anda mais devagar, até metade da velocidade com %d." % [Bag.load_label(inventory, wielded, offhand), Bag.free_space(inventory, wielded, offhand), Bag.CAPACITY, Bag.MAX_LOAD]})
+			"info": "%s. Cabem mais %d de peso, mas acima de %d você anda mais devagar, até metade da velocidade com %d." % [Bag.load_label(inventory, wielded, offhand), Bag.free_space(inventory, wielded, offhand), Bag.capacity, Bag.max_load]})
 	return items
 
 
@@ -3007,6 +3173,10 @@ func _run_auto_commands() -> void:
 			state.players[my_id]["pos"] = _pos
 			_cell = WorldGen.cell_of(_pos)
 			_region = world.region_of(_cell)
+			continue
+		if command.begins_with("DBG_"):  # testes: DBG_acao_argumento pede uma ação de depuração (ver request_debug)
+			var parts := command.split("_", true, 2)
+			request_debug.rpc_id(1, parts[1], parts[2] if parts.size() > 2 else "")
 			continue
 		match command:
 			"N", "S", "L", "O":  # anda 1 casa nessa direção do mapa
