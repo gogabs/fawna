@@ -237,9 +237,10 @@ static func is_night_period(period: int) -> bool:
 	return period == 0 or period == 7
 
 
-## O aviso falado quando o período muda; "in_ring" quando se está na faixa.
+## O aviso falado quando o período muda: só a frase, sem o nome do período;
+## "in_ring" quando se está na faixa.
 static func announcement(period: int, in_ring := false) -> String:
-	return "%s. %s" % [PERIODS[period][0], PERIODS[period][3] if in_ring else PERIODS[period][2]]
+	return PERIODS[period][3] if in_ring else PERIODS[period][2]
 
 
 ## Segundos de verdade até o próximo período.
