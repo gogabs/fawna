@@ -72,7 +72,9 @@ static func is_item(item: String) -> bool:
 ## [singular, plural] de qualquer item: "pedra_grande" -> ["pedra grande", "pedras grandes"].
 static func names_of(item: String) -> Array:
 	var base := base_of(item)
-	var names: Array = ITEM_NAMES.get(base, [base, base])
+	# Ferramentas e armas ("lanca", "faca"...) têm o nome em Bag.NAMES: sem
+	# isso a fala dizia o id cru, "1 lanca".
+	var names: Array = ITEM_NAMES.get(base, Bag.NAMES.get(base, [base, base]))
 	var size := size_of(item)
 	if size.is_empty():
 		return names

@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_equip_refusals()
 	_test_save_round_trip()
 	_test_grouped_labels()
+	_test_tool_names_in_speech()
 	_test_menu_info_and_empty()
 	_test_menu_sync_focus_up()
 	if _failures == 0:
@@ -76,6 +77,11 @@ func _test_grouped_labels() -> void:
 	_check(Bag.entry_label("machado", 1) == "Machado, 1", "rótulo agrupado: Machado, 1")
 	var entries := Bag.entries({"machado": 1, "zzz": 0, "abacate": 3})
 	_check(entries.size() == 2 and entries[0][0] == "abacate", "itens com zero somem e a ordem é alfabética")
+
+
+func _test_tool_names_in_speech() -> void:
+	_check(Economy.items_text({"lanca": 1}) == "1 lança de bambu", "a lança tem nome com cedilha na fala (%s)" % Economy.items_text({"lanca": 1}))
+	_check(Economy.item_text("faca", 2) == "2 facas brutas de sílex", "as ferramentas usam o nome falado, não o id")
 
 
 func _test_menu_info_and_empty() -> void:
