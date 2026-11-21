@@ -151,21 +151,26 @@ static func ring_strength(y: float, d: float) -> float:
 	return 1.0 - x * x * (3.0 - 2.0 * x)
 
 
-## Estações: [nome, o que vem depois de "Estação " no C e na depuração, frase do aviso].
+## Estações: [nome, nome com artigo (o C diz "Dia 12 do Declínio"), frase do aviso].
 ## 0 Coroada (faixa no extremo norte, noites curtas), 1 Declínio (desce para o sul),
 ## 2 Longa Escuridão (extremo sul, noites longas), 3 Ressurgência (volta ao norte).
 ## Cada uma centrada no seu ponto do ano.
 const SEASONS := [
-	["Coroada", "Coroada", "O anel alcança seu ápice, e as noites se encurtam."],
+	["Coroada", "da Coroada", "O anel alcança seu ápice, e as noites se encurtam."],
 	["Declínio", "do Declínio", "O anel declina para o sul, e luz e sombra mudam de lugar."],
 	["Longa Escuridão", "da Longa Escuridão", "As noites se alongam e o frio dói nos ossos."],
 	["Ressurgência", "da Ressurgência", "O anel retorna ao norte, trazendo com ele a vitalidade do mundo."],
 ]
 
 
-## O aviso falado na virada da estação: "Estação do Declínio. O anel declina...".
+## O aviso falado na virada da estação: só a frase, sem o nome.
 static func season_announcement(season: int) -> String:
-	return "Estação %s. %s" % [SEASONS[season][1], SEASONS[season][2]]
+	return SEASONS[season][2]
+
+
+## Qual dia da estação é hoje, de 1 a 36.
+static func season_day(d: float) -> int:
+	return int(floor(fposmod(d - SEASON_DAYS * 0.5, YEAR_DAYS) - SEASON_DAYS * season_of(d))) + 1
 
 
 static func season_of(d: float) -> int:
@@ -253,9 +258,11 @@ static func seconds_to_next_period(t: float, day_seconds: float) -> float:
 	return (next - hour) / 24.0 * day_seconds
 
 
-## A segunda fala do C: o momento do dia, o anel onde se está e a estação.
+## A segunda fala do C: o momento do dia, o anel onde se está e o dia da estação
+## ("Dia 12 do Declínio.").
 ## "strength" é ring_strength e "offset" é ring_offset, no y da criatura.
-static func sky_text(t: float, strength: float, offset: float, season: int) -> String:
+static func sky_text(t: float, strength: float, offset: float, d: float) -> String:
+	var season := season_of(d)
 	var period := period_of(t)
 	var night := is_night_period(period)
 	var text: String = PERIODS[period][1]
@@ -266,7 +273,7 @@ static func sky_text(t: float, strength: float, offset: float, season: int) -> S
 		text += (", e a luz do anel passa logo %s." if night else ", e a sombra do anel passa logo %s.") % side
 	else:
 		text += ", e o anel brilha, frio, ao longe." if night else ", e o anel corta o céu, pálido."
-	return "%s Estação %s." % [text, SEASONS[season][1]]
+	return "%s Dia %d %s." % [text, season_day(d), SEASONS[season][1]]
 
 
 ## O aviso de entrar ou sair da faixa do anel.

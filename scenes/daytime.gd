@@ -129,7 +129,7 @@ func darkness() -> float:
 func sky_text() -> String:
 	var y: float = _my_y()
 	var d := world_day()
-	return DayCycle.sky_text(t, DayCycle.ring_strength(y, d), DayCycle.ring_offset(y, d), DayCycle.season_of(d))
+	return DayCycle.sky_text(t, DayCycle.ring_strength(y, d), DayCycle.ring_offset(y, d), d)
 
 
 func _my_y() -> float:
@@ -181,7 +181,7 @@ func jump_to_season(season: int) -> String:
 	if season < 0 or season > 3:
 		return ""
 	set_season(season)
-	return "Início da estação %s." % DayCycle.SEASONS[season][1]
+	return "Início: %s." % DayCycle.SEASONS[season][0]
 
 
 ## Só no servidor: manda a hora para quem acabou de entrar.
