@@ -131,6 +131,11 @@ func move_listener(pos: Vector2) -> void:
 		_refresh_piles()
 
 
+## Para onde o ouvinte está virado agora (radianos), girando suave.
+func facing_yaw() -> float:
+	return _camera.rotation.y if _camera != null else 0.0
+
+
 ## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
 func set_heading(heading: int, smooth := true) -> void:
 	if _camera == null:

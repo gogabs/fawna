@@ -23,6 +23,8 @@ O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, ma
 - **Navegação:** só pelas setas, sem Tab. Horizontal (padrão): ← / → escolhem, ↑ confirma, ↓ volta. Vertical: ↑ / ↓ escolhem, → confirma, ← volta. Vale para o menu principal, as Opções, o menu flutuante e o Caminheiro.
 - **Sair.**
 
+Os gráficos 3D (`client/world_view_3d.gd`) mostram o mundo em primeira pessoa: chão por bioma, trilhas, pontes, água e neblina. "Desligar os gráficos" nas Opções corta tudo isso. Para tirar uma foto da tela nos testes: `--auto=TP_x_y,FOTO_nome,SAIR` salva `user://nome.png`.
+
 Para hospedar, rode o servidor dedicado ou `--host` pela linha de comando (abaixo).
 
 ### Pela linha de comando

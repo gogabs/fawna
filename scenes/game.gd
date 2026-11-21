@@ -87,6 +87,7 @@ const MENU_ACTIONS := {
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
 @onready var audio: SpatialAudio = $SpatialAudio
+var view3d: WorldView3D  # o mundo em 3D; nulo sem tela (servidor ou gráficos desligados)
 @onready var birds: Node = $Birds
 @onready var horrors: Node = $Horrors
 @onready var daytime: Node = $Daytime
@@ -284,6 +285,10 @@ func my_position() -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if view3d != null and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
+		view.visible = not view.visible  # vista 2D de depuração
+		get_viewport().set_input_as_handled()
+		return
 	if world != null and event.is_action_pressed("ouvir_arredores") and not event.is_echo():
 		_say_radar()
 		get_viewport().set_input_as_handled()
@@ -1072,6 +1077,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	view.heading = _heading
 	audio.setup(world, harvest)
 	audio.set_heading(_heading, false)
+	_setup_view3d()
 	birds.start_client(audio)
 	horrors.start_client(audio)
 	daytime.start_client()
@@ -2032,6 +2038,8 @@ func _set_pos(new_pos: Vector2) -> void:
 	_pos = new_pos
 	players[my_id]["pos"] = new_pos
 	audio.move_listener(new_pos)
+	if view3d != null:
+		view3d.follow(new_pos)
 	view.queue_redraw()
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
@@ -2495,6 +2503,20 @@ func _near_lake(cell: Vector2i) -> bool:
 
 func _update_listener() -> void:
 	audio.move_listener(_pos)
+	if view3d != null:
+		view3d.follow(_pos)
+
+
+## O 3D só existe com tela e com os gráficos ligados. A vista 2D antiga fica
+## escondida, só como depuração (F3 mostra); sai quando o 3D estiver estável.
+func _setup_view3d() -> void:
+	if not Net.has_local_player() or DisplayServer.get_name() == "headless" or Net.graphics_off:
+		return
+	view3d = WorldView3D.new()
+	view3d.name = "View3D"
+	add_child(view3d)
+	view3d.setup(world, audio)
+	view.visible = false
 
 
 func _sender_id() -> int:
@@ -3450,6 +3472,13 @@ func _run_auto_commands() -> void:
 			state.players[my_id]["pos"] = _pos
 			_cell = WorldGen.cell_of(_pos)
 			_region = world.region_of(_cell)
+			continue
+		if command.begins_with("FOTO_") and view3d != null:  # testes: FOTO_nome salva a tela 3D em user://nome.png
+			view3d.build_all()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://%s.png" % command.get_slice("_", 1))
+			print("FOTO %s: %s, %d pedaços 3D, %d fps" % [command.get_slice("_", 1), Narrator.where_am_i(world, _pos, _heading), view3d.chunk_count(), Engine.get_frames_per_second()])
 			continue
 		if command.begins_with("DBG_"):  # testes: DBG_acao_argumento pede uma ação de depuração (ver request_debug)
 			var parts := command.split("_", true, 2)
