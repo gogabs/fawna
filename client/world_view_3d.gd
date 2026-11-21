@@ -13,6 +13,7 @@ extends Node3D
 ## por quadro, para andar não gerar engasgo.
 
 const CHUNK := WorldGen.CHUNK
+const TEXTURE_METERS := 3.0  # tamanho de um ladrilho da textura do chão
 const METERS := WorldGen.METERS_PER_CELL
 ## Quantos pedaços em volta (além do da criatura) ficam montados. O alcance
 ## visível é um pouco menor que isso, e a neblina esconde a borda.
@@ -68,6 +69,7 @@ var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para 
 var _camera: Camera3D
 var _chunks := {}  # Vector2i (pedaço) -> MeshInstance3D
 var _material: StandardMaterial3D
+var _materials := {}  # forma -> material com a textura dela
 var _water_material: StandardMaterial3D
 var _noise := FastNoiseLite.new()
 var _shapes := {}  # forma (String) -> Mesh, criadas uma vez e repartidas entre os pedaços
@@ -83,10 +85,15 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_harvest = harvest
 	_noise.seed = 1234
 	_noise.frequency = 0.9
-	_material = StandardMaterial3D.new()
-	_material.vertex_color_use_as_albedo = true
-	_material.roughness = 1.0
+	var textures := WorldTextures.make_all()
+	_material = _textured(textures["ground"])
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var bark := _textured(textures["bark"])
+	var leaf := _textured(textures["leaf"])
+	var stone := _textured(textures["stone"])
+	# Cada forma ganha a textura que combina: casca nos troncos, hastes e peças
+	# retas, folhagem nas copas, pedra nas pedras e arbustos.
+	_materials = {"trunk": bark, "stalk": bark, "box": bark, "cone": leaf, "blob": stone}
 	_water_material = StandardMaterial3D.new()
 	_water_material.vertex_color_use_as_albedo = true
 	_water_material.roughness = 0.15
@@ -107,7 +114,7 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		_obras = BuildsView3D.new()
 		_obras.name = "Obras3D"
 		add_child(_obras)
-		_obras.setup(world, builds, players, my_id, _shapes, _material)
+		_obras.setup(world, builds, players, my_id, _shapes, _materials)
 	if birds != null or horrors != null:
 		var wildlife := WildlifeView3D.new()
 		wildlife.name = "Bichos3D"
@@ -350,14 +357,18 @@ class _Surface:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
 
 	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, normal: Vector3) -> void:
 		var v := vertices.size()
 		vertices.append_array(PackedVector3Array([a, b, c, d]))
-		for k in 4:
+		for point: Vector3 in [a, b, c, d]:
 			colors.append(color)
 			normals.append(normal)
+			# Textura em coordenadas do mundo (um ladrilho a cada TEXTURE_METERS), para
+			# não haver emenda entre casas nem entre pedaços.
+			uvs.append(Vector2(point.x, point.z) / TEXTURE_METERS if normal.y > 0.5 else Vector2(point.x + point.z, point.y) / TEXTURE_METERS)
 		# O mesmo giro serve para chão (cima) e margens: a luz de duas faces
 		# não importa, o material não tem culling.
 		indices.append_array(PackedInt32Array([v, v + 1, v + 2, v, v + 2, v + 3]))
@@ -370,6 +381,7 @@ class _Surface:
 		arrays[Mesh.ARRAY_VERTEX] = vertices
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
 		arrays[Mesh.ARRAY_INDEX] = indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
@@ -519,11 +531,12 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 	var holder_parent := Node3D.new()
 	holder_parent.name = "Coisas"
 	parent.add_child(holder_parent)
-	flush(lists, _shapes, _material, holder_parent)
+	flush(lists, _shapes, _materials, holder_parent)
 
 
 ## Cria um MultiMesh por forma com as peças guardadas e os põe em "parent".
-static func flush(lists: Dictionary, shapes: Dictionary, material: Material, parent: Node3D) -> void:
+## "materials": um material por forma (Dictionary) ou um só para todas.
+static func flush(lists: Dictionary, shapes: Dictionary, materials: Variant, parent: Node3D) -> void:
 	for shape: String in lists:
 		var items: Array = lists[shape]
 		if items.is_empty():
@@ -538,9 +551,20 @@ static func flush(lists: Dictionary, shapes: Dictionary, material: Material, par
 			multi.set_instance_color(i, items[i][1])
 		var holder := MultiMeshInstance3D.new()
 		holder.multimesh = multi
-		holder.material_override = material
+		holder.material_override = materials[shape] if materials is Dictionary else materials
 		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(holder)
+
+
+## Material de cores nos vértices com uma textura em tons de cinza por baixo.
+static func _textured(texture: Texture2D) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.albedo_texture = texture
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	material.texture_repeat = true
+	material.roughness = 1.0
+	return material
 
 
 ## Guarda uma peça: escala, giro, altura do centro e cor.
