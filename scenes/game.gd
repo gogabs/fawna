@@ -91,6 +91,7 @@ const MENU_ACTIONS := {
 var view3d: WorldView3D  # o mundo em 3D; nulo sem tela (servidor ou gráficos desligados)
 @onready var birds: Node = $Birds
 @onready var horrors: Node = $Horrors
+@onready var horses: Node = $Horses
 @onready var daytime: Node = $Daytime
 @onready var survival: Node = $Survival
 
@@ -410,6 +411,7 @@ func request_ability() -> void:
 		return
 	if float(result.get("noise", 0.0)) > 0.0:
 		horrors.hear_noise(id, float(result["noise"]))
+	horses.hear_noise(state.players[id]["pos"])
 	var data := {}
 	match str(result["event"]):
 		"salto":
@@ -807,6 +809,7 @@ func request_horror_strike() -> void:
 	if not state.players.has(id):
 		return
 	var held := state.wielding(id)
+	horses.hear_noise(state.players[id]["pos"])
 	horrors.strike(id, held, held.is_empty() and Species.has_tag(state.species_of(id), "garras"))
 
 
@@ -1099,6 +1102,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	audio.set_heading(_heading, false)
 	_setup_view3d()
 	birds.start_client(audio)
+	horses.start_client(audio, world)
 	horrors.start_client(audio)
 	daytime.start_client()
 	_setup_caminheiro()
@@ -1868,6 +1872,7 @@ func _load_or_create_world() -> void:
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
 	birds.start_server(state.world)
+	horses.start_server(state.world)
 	horrors.start_server(state.world)
 	daytime.start_server(state)
 	print("[servidor] mundo único no ar, versão %s, porta %d, semente %d" % [Updater.current_version(), Net.port, state.world.world_seed])
@@ -1895,6 +1900,7 @@ func _on_peer_disconnected(id: int) -> void:
 	print("[servidor] %s (peer %d) saiu" % [state.players[id]["name"], id])
 	state.remove_player(id)
 	birds.forget_peer(id)
+	horses.forget_peer(id)
 	horrors.forget_peer(id)
 	survival.forget_peer(id)
 	player_left.rpc(id)
@@ -2575,7 +2581,7 @@ func _setup_view3d() -> void:
 	view3d = WorldView3D.new()
 	view3d.name = "View3D"
 	add_child(view3d)
-	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime)
+	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime, horses)
 	view.visible = false
 
 
@@ -3611,6 +3617,8 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"CAVALOS":
+				print("[teste] cavalos por perto: %d" % horses.horse_count())
 			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás
 				print("[teste] calado chamado: %d" % horrors.summon(my_id, 12.0))
 			"IR_MEIO_DIA", "IR_ENTARDECER", "IR_GRILOS", "IR_NOITE", "IR_MEIA_NOITE", "IR_CORO", "IR_DIA":  # testes, só quem hospeda: vai para um momento (DayCycle.MOMENTS)
