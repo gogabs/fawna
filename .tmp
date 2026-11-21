@@ -1,8 +1,20 @@
 {
 	"builds": {
+		"cleared": [],
 		"list": [],
-		"next_id": 1
+		"next_id": 1,
+		"seen": {
+			"Criatura": 1795237992.31464
+		}
 	},
+	"credentials": {
+		"Criatura": {
+			"hash": "a9e4ad1f14fc1586e51024099c887e8d67cf5f2987965d13ab0399cd564ac43e",
+			"salt": "e8f743cb4efca3ecb92d47eab33eaa8e"
+		}
+	},
+	"day_n": 6,
+	"day_t": 0.334698219567902,
 	"equipment": {
 		"Criatura": ""
 	},
@@ -13,11 +25,17 @@
 			"machado": 1
 		}
 	},
+	"last_pos": {
+		"Criatura": [
+			0.5,
+			0.5
+		]
+	},
 	"offhand": {
 
 	},
 	"resin": [],
-	"seed": 2206412553,
+	"seed": 817686235,
 	"species": {
 
 	},

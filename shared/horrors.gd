@@ -3,13 +3,15 @@ extends RefCounted
 ## Os horrores do mundo. A simulação roda só no servidor; os clientes só
 ## recebem onde cada um está e cuidam do som.
 ##
-## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Surge
+## Por enquanto há um só: o Calado. Ele não faz som, ele apaga o som. Só rola
+## de noite (DayCycle.is_night): com a primeira luz do amanhecer ele recua e
+## some, e de dia ninguém o atrai. Surge
 ## atrás de quem fica exposto em qualquer bioma (menos o mar), em trilha ou não, longe do fogo,
 ## e vem devagar pelas costas. Os pássaros fogem e se calam por onde ele
 ## passa. Quem vira de frente para ele o faz parar; encarado por um tempo,
 ## ele recua. Só a chama de uma fogueira acesa o espanta (um dia, a tocha); trilha e companhia não protegem.
 ## Quem ele alcança é levado ao ponto seguro mais próximo (fogueira acesa,
-## povoado ou a Origem) e perde o que carregava na bolsa de recursos; o
+## povoado; sem nenhum por perto, o cruzamento de trilhas mais próximo) e perde o que carregava na bolsa de recursos; o
 ## equipamento fica. Armas não o afetam (as tochas virão depois).
 
 enum Mode { STALK, HELD, RETREAT }
@@ -26,7 +28,6 @@ const FACING_COS := 0.866
 const STARE_SECONDS := 6.0  # encarado por esse tempo (somado), ele recua
 const TORCH_SAFE := 5.0  # tocha acesa na mão: espanta a até 7,5 m
 const FIRE_SAFE := 8.0  # fogueira acesa a até 12 m do alvo (ou dele) o espanta
-const ORIGIN_SAFE := 6.0  # onde se reaparece depois de levado: ele não nasce ali
 const GIVE_UP_DISTANCE := 45.0
 const RESTALK_MAX := 70.0  # mais longe que isso (um salto), ele desiste de vez
 const GONE_DISTANCE := 30.0  # recuando, some quando fica longe assim de todos
@@ -40,6 +41,11 @@ const COOLDOWN := [240.0, 480.0]
 const PRESENCE_FAR := 18.0
 const PRESENCE_NEAR := 4.0
 ## Pássaros: a essa distância dele não cantam; mais perto, fogem.
+## Luz do anel (só de noite, dentro da faixa): ele demora mais para aparecer,
+## vem mais devagar e precisa chegar mais perto para alcançar. Nunca o impede.
+const RING_APPEAR_SLOW := 0.5
+const RING_SPEED_SLOW := 0.3
+const RING_CATCH_SHRINK := 0.4
 const HUSH_RADIUS := 16.0
 const SCARE_RADIUS := 9.0
 
@@ -54,6 +60,9 @@ var _exposure := {}  # peer -> segundos exposto
 var _need := {}  # peer -> segundos de exposição até ele aparecer
 var _rest_until := {}  # peer -> ms: antes disso ele não volta
 var _rng := RandomNumberGenerator.new()
+var _night := true  # do último passo
+var _lights := {}  # peer -> 0 a 1: quanto a luz do anel pega o jogador
+var _rate := 1.0  # ritmo da aparição, com a estação (ver DayCycle.calado_rate)
 
 
 func _init(the_world: WorldGen) -> void:
@@ -66,8 +75,16 @@ func _init(the_world: WorldGen) -> void:
 ## Devolve mensagens para os clientes: [peer, tipo, argumentos], com tipo
 ## "at" ([id, posição, modo]), "gone" ([id]) ou "caught" ([id]): este último
 ## só vai ao alvo, que foi alcançado (o Calado some e descansa).
-func update(now_ms: int, players: Dictionary, fires: Array) -> Array:
+func update(now_ms: int, players: Dictionary, fires: Array, night := true, lights := {}, rate := 1.0) -> Array:
 	var out := []
+	_night = night
+	_lights = lights
+	_rate = rate
+	if not night:
+		# Clareou: o que ainda caçava recua, como se a luz o espantasse.
+		for horror in horrors.values():
+			if horror["mode"] != Mode.RETREAT:
+				horror["mode"] = Mode.RETREAT
 	var delta := 0.0 if _last_ms < 0 else clampf((now_ms - _last_ms) / 1000.0, 0.0, 1.0)
 	_last_ms = now_ms
 	for id in horrors.keys():
@@ -116,7 +133,7 @@ func _rear_direction(heading: int) -> Vector2:
 ## exposto, então o Calado pode chegar mais cedo. Não vale durante o sossego
 ## depois de uma visita, nem com um já atrás dele.
 func hear_noise(peer: int, seconds: float) -> void:
-	if not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
+	if not _night or not hunting(peer).is_empty() or Time.get_ticks_msec() < int(_rest_until.get(peer, 0)):
 		return
 	if not _need.has(peer):
 		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
@@ -167,10 +184,11 @@ static func fire_near(point: Vector2, fires: Array) -> bool:
 	return false
 
 
-## O ponto seguro mais próximo de "from": a Origem ou algum dos "shelters"
-## (pontos, em casas, de fogueiras acesas e povoados).
-static func nearest_shelter(from: Vector2, shelters: Array) -> Vector2:
-	var best := WorldGen.origin_point()
+## O ponto seguro mais próximo de "from": algum dos "shelters" (pontos, em
+## casas, de fogueiras acesas e povoados) ou, quando não há nenhum mais perto
+## que o cruzamento de trilhas da região de "from", esse cruzamento.
+static func nearest_shelter(world: WorldGen, from: Vector2, shelters: Array) -> Vector2:
+	var best := world.region_landmark(world.region_of(WorldGen.cell_of(from)))
 	for point: Vector2 in shelters:
 		if point.distance_to(from) < best.distance_to(from):
 			best = point
@@ -231,9 +249,10 @@ func _update_horror(horror: Dictionary, delta: float, now_ms: int, players: Dict
 		horror["mode"] = Mode.HELD
 		return
 	horror["mode"] = Mode.STALK
-	var step := minf(STALK_SPEED * delta, distance)
+	var light := float(_lights.get(peer, 0.0))
+	var step := minf(STALK_SPEED * (1.0 - RING_SPEED_SLOW * light) * delta, distance)
 	horror["pos"] = pos + (target - pos).normalized() * step
-	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE:
+	if (horror["pos"] as Vector2).distance_to(target) <= CATCH_RANGE * (1.0 - RING_CATCH_SHRINK * light):
 		out.append([peer, "caught", [horror["id"]]])
 		_remove(horror, now_ms, out)
 
@@ -251,12 +270,12 @@ func _remove(horror: Dictionary, now_ms: int, out: Array) -> void:
 func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary, fires: Array) -> void:
 	if not hunting(peer).is_empty():
 		return
-	if not _exposed(peer, players, fires) or now_ms < int(_rest_until.get(peer, 0)):
+	if not _night or not _exposed(peer, players, fires) or now_ms < int(_rest_until.get(peer, 0)):
 		_exposure[peer] = maxf(float(_exposure.get(peer, 0.0)) - delta * 2.0, 0.0)
 		return
 	if not _need.has(peer):
 		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
-	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta
+	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta * _rate * (1.0 - RING_APPEAR_SLOW * float(_lights.get(peer, 0.0)))
 	if float(_exposure[peer]) >= float(_need[peer]):
 		summon(peer, players)
 
@@ -265,8 +284,6 @@ func _exposed(peer: int, players: Dictionary, fires: Array) -> bool:
 	var pos: Vector2 = players[peer]["pos"]
 	var cell := WorldGen.cell_of(pos)
 	if world.biome_at(cell) == WorldGen.Biome.MAR:
-		return false
-	if pos.distance_to(WorldGen.origin_point()) < ORIGIN_SAFE:
 		return false
 	return not fire_near(pos, fires)
 

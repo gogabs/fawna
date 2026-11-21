@@ -38,12 +38,12 @@ func _check(condition: bool, message: String) -> void:
 
 
 ## Mundo com um povoado de verdade: marco com nome e uma fogueira prontos na
-## região da Origem.
+## região do centro.
 func _settled(state: WorldState = null) -> Dictionary:
 	if state == null:
 		state = WorldState.new(173)
 	var builds := state.builds
-	var origin_cell := WorldGen.cell_of(WorldGen.origin_point())
+	var origin_cell := WorldGen.cell_of(WorldGen.center_point())
 	var region := state.world.region_of(origin_cell)
 	var spots := []
 	for r in range(5, 14):
@@ -124,7 +124,7 @@ func _test_planner() -> void:
 func _test_refusals() -> void:
 	var state := WorldState.new(173)
 	var builds := state.builds
-	var origin_cell := WorldGen.cell_of(WorldGen.origin_point())
+	var origin_cell := WorldGen.cell_of(WorldGen.center_point())
 	var region := state.world.region_of(origin_cell)
 	var anchor := _best_anchor(builds, region)  # sem povoado ainda: as âncoras existem, a obra não
 	var rect := SitePlanner.rect_for(anchor["corner"], anchor["dir"], 4)

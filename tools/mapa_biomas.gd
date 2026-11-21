@@ -1,13 +1,13 @@
 extends SceneTree
 ## Mostra, em texto, como ficam os biomas de uma semente: um mapa de letras
-## (uma por região, a Origem no meio) e a proporção de cada bioma.
+## (uma por região, o centro do mundo no meio) e a proporção de cada bioma.
 ## Rodar: godot --headless --path . --script res://tools/mapa_biomas.gd -- 42 20
 ## (semente e quantas regiões para cada lado; padrão 42 e 16).
 
 const LETTERS := {
 	WorldGen.Biome.BOSQUE: "B", WorldGen.Biome.PRADARIA: ".", WorldGen.Biome.LAGOA: "o",
 	WorldGen.Biome.MAR: "~", WorldGen.Biome.FLORESTA_GELADA: "F", WorldGen.Biome.DESERTO_GELADO: "_",
-	WorldGen.Biome.BAMBUZAL: "|", WorldGen.Biome.BREJO: "%",
+	WorldGen.Biome.BAMBUZAL: "|", WorldGen.Biome.BREJO: "%", WorldGen.Biome.MONTANHA: "^",
 }
 
 
@@ -20,7 +20,7 @@ func _init() -> void:
 	var same := 0
 	var pairs := 0
 	var clearings := 0
-	print("Semente %d. B bosque, c clareira, | bambuzal, . pradaria, o lagoa, %% brejo, F floresta gelada, _ deserto gelado, ~ mar, @ Origem" % world_seed)
+	print("Semente %d. B bosque, c clareira, | bambuzal, . pradaria, o lagoa, %% brejo, F floresta gelada, _ deserto gelado, ~ mar, @ centro" % world_seed)
 	for y in range(-reach, reach + 1):
 		var row := ""
 		for x in range(-reach, reach + 1):

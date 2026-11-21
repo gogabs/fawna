@@ -96,7 +96,7 @@ func _first_cell_of(state: WorldState, thing: int) -> Vector2i:
 			for dy in range(-r, r + 1):
 				if maxi(absi(dx), absi(dy)) != r:
 					continue
-				var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(dx, dy)
+				var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(dx, dy)
 				if state.world.thing_at(cell) == thing:
 					return cell
 	return WorldGen.NO_CELL
@@ -105,7 +105,7 @@ func _first_cell_of(state: WorldState, thing: int) -> Vector2i:
 func _test_collect_overflow() -> void:
 	var state := _state_with_player()
 	var cell := _first_cell_of(state, WorldGen.Thing.PEDRAS)
-	_check(cell != WorldGen.NO_CELL, "o teste acha pedras perto da Origem")
+	_check(cell != WorldGen.NO_CELL, "o teste acha pedras perto do centro")
 	var inv := state.inventory_of(2)
 	inv["pedra_grande"] = 2  # peso 12 de 24, com o machado (3) = 15
 	state.players[2]["pos"] = WorldGen.cell_center(cell) + Vector2(0.0, 1.0)
@@ -114,7 +114,7 @@ func _test_collect_overflow() -> void:
 	var result := state.collect(2, cell)
 	_check(result["ok"], "coleta aceita com espaço")
 	var after := Bag.load_of(inv, state.wielding(2))
-	_check(after <= Bag.CAPACITY, "a carga nunca passa do limite (%d)" % after)
+	_check(after <= Bag.MAX_LOAD, "a carga nunca passa do limite (%d)" % after)
 	var kept_weight := Bag.weight_of_items(result["kept"])
 	var over_weight := Bag.weight_of_items(result["left_over"])
 	_check(after - before == kept_weight, "só o que coube entra na bolsa")

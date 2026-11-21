@@ -52,9 +52,9 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
 | Ajuda (lista de comandos) | H |
-| Radar: alvo do Caminheiro com a distância e o recurso mais próximo do último tipo rastreado (sem nada rastreado, o recurso mais próximo de qualquer tipo) | Tab |
+| Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
-| Onde estou | C |
+| Onde estou; apertando de novo, o momento do dia, o anel e a estação (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
 
@@ -70,7 +70,7 @@ cada uma com uma característica só: bosque de micélio, pradaria de
 girassóis ou lagoa das vitórias-régias. O que há dentro delas é gerado aos
 pedaços, conforme alguém chega perto. Trilhas de terra ligam o ponto de
 encontro de cada região aos das vizinhas, com pontes onde cruzam a água; a
-Origem (nome provisório) é o ponto de encontro da primeira região. As trilhas são a base para o
+região do centro do mundo é onde nasce quem entra pela primeira vez. As trilhas são a base para o
 Caminheiro e para os caminhos dos NPCs. As falas dizem onde as coisas
 estão em relação a você: "árvore, à frente e à direita, 3 metros".
 
@@ -80,7 +80,7 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 ← e → passam pelas opções, ↑ confirma e ↓ volta (em Opções dá para trocar para Vertical: ↑ e ↓ passam, → confirma e ← volta). As opções são o
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
-O Caminheiro tem três submenus: **Locais** (a Origem e os povoados com nome),
+O Caminheiro tem três submenus: **Locais** (os povoados com nome),
 **Construções** (só as da região em que você está) e **Recursos** (Bambu, Lenha,
 Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
@@ -139,10 +139,10 @@ O Caminheiro é um pequeno cristal que brilha azul na direção que o coração
 manda: ele rastreia um lugar do mapa. Ao acender, traça a rota pelas
 trilhas e pontes (`shared/wayfinder.gd`); se você estiver fora de uma trilha,
 o primeiro trecho é o caminho mais rápido até a trilha mais próxima. Cada
-curva da rota é um beacon, que bate como um coração (um tambor bem abafado)
-vindo da direção a seguir, a 70 batidas por minuto. Ao chegar num
-beacon, um woosh voa na direção do próximo, e as batidas recomeçam de lá. Na
-Origem, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
+curva da rota é um beacon. O coração (um tambor bem abafado) bate a 70 batidas
+por minuto vindo da direção a seguir, que aponta um pouco à frente na rota e
+só gira aos poucos, como um carro fazendo a curva: nunca pula, nem ao trocar
+de beacon. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso
 apaga o cristal.
@@ -158,7 +158,7 @@ apaga o cristal.
    - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.
 
    O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, pedras em 10, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
-2. A Origem, no centro do mundo, é o ponto de partida. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
+2. Quem entra pela primeira vez nasce no cruzamento de trilhas do centro do mundo. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
 
@@ -174,7 +174,7 @@ Para instalar o Prism, baixe `prismatoid-gdextension` na [página de releases](h
 
 ## Áudio espacial
 
-Árvores, água, arbustos e a Origem tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
+Árvores, água, e arbustos tocam sons contínuos na posição deles, e os passos das outras criaturas soam de onde elas estão. Você ouve sempre virado para o norte: esquerda é oeste e atrás é sul.
 
 Com o [Nexus Resonance](https://github.com/undomick/godot-nexus-resonance) instalado, o som usa o HRTF binaural do Steam Audio, que deixa frente e trás claros **com fone de ouvido**. Sem ele, o jogo usa o áudio 3D do Godot (esquerda, direita e distância). O console avisa qual está em uso (`[audio] HRTF ...`).
 
@@ -217,13 +217,19 @@ Os primeiros seres vivos além das criaturas. Cada pássaro é uma entidade com 
 
 Os cantos são gerados por código (`client/bird_songs.gd`), discretos e meio inumanos. Gravações em `assets/sounds/passaros/` entram no lugar deles: `<espécie>_<voz>_<frase>` para os cantos (cada pássaro nasce com uma das vozes da espécie), `<espécie>_alarme` para o susto e `asas_<n>` para o voo. Uma voz sem arquivos usa os cantos gerados. `tools/comparar_passaros/` tem a página usada para escolher os sons. `tests/test_birds.gd -- --exportar=PASTA` salva os cantos gerados em .wav para ouvir.
 
+## Senha do personagem
+
+Cada nome tem uma senha, definida em **Opções** (mínimo de 4 caracteres) e guardada em `user://config.cfg` no PC de cada jogador. Na primeira vez que um nome entra no servidor, a senha enviada fica registrada (o save do mundo guarda só um hash com sal, em `credentials`); depois só entra quem souber a senha, e o mesmo personagem não entra duas vezes. Os personagens que já existiam no mundo não têm senha: o primeiro a entrar com o nome define a senha. Para resetar uma senha, apague a entrada do nome em `credentials` no `mundo.json` com o servidor parado. A senha viaja sem criptografia (como o resto do tráfego do jogo); serve para ninguém usar o personagem do colega, não para proteger algo sensível. Linha de comando: `--senha=...` (o padrão em testes é `teste`).
+
 ## Testes
 
 ```sh
 godot --headless --path . --script res://tests/test_world.gd
 godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
+godot --headless --path . --script res://tests/test_credentials.gd
 godot --headless --path . --script res://tests/test_harvest.gd
+godot --headless --path . --script res://tests/test_dia_noite.gd
 ```
 
 Caminheiro (precisa rodar como cena):

@@ -10,7 +10,6 @@ const STRIKE_COOLDOWN_MS := 350  # golpes de machado mais rápidos que isso não
 const MAX_SPEED := 2.2  # casas por segundo (a criatura anda a 1,5)
 const MOVE_SLACK := 0.4  # folga para atrasos da rede
 const REACH := 1.6  # até onde dá para coletar ou golpear (do centro da criatura ao centro da casa)
-const ORIGIN_REACH := 1.2
 const MAX_STACK := 99  # só para armas fabricadas; a bolsa se limita pela carga (Bag.CAPACITY)
 const DROP_COOLDOWN_MS := 250  # largar e pegar do chão mais rápido que isso não conta
 const BUILD_COOLDOWN_MS := 300  # batidas numa obra mais rápidas que isso não contam
@@ -33,6 +32,8 @@ var builds: Builds
 var ground: Ground
 ## id do peer -> { "name": String, "pos": Vector2, "heading": int }
 var players := {}
+## nome da criatura -> última posição (Vector2) em que esteve; é onde ela nasce ao voltar.
+var last_pos := {}
 ## nome da criatura -> { item: quantidade }. Por nome, para sobreviver a reconexões.
 var inventories := {}
 ## nome da criatura -> item empunhado ("" = mãos livres). Ver Bag.
@@ -45,6 +46,11 @@ var offhand := {}
 var torch_until := {}
 ## id -> { method, needed, count, last_ms, first }: quem está riscando a tocha.
 var striking := {}
+## A hora do mundo (fração do dia, 0 = meia-noite; ver DayCycle). Quem anda com o
+## relógio é o nó Daytime, no servidor; aqui ela só fica guardada e salva.
+var day_t := DayCycle.hour_to_t(DayCycle.START_HOUR)
+## Quantos dias inteiros já passaram (conta as estações e a posição do anel).
+var day_n := DayCycle.START_DAY
 var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
@@ -62,17 +68,43 @@ func _init(world_seed: int) -> void:
 	ground = Ground.new()
 
 
+## Senhas dos personagens (ver Credentials).
+var credentials := Credentials.new()
+
+
+## Confere a senha de quem quer entrar. "" = pode entrar; senão o motivo:
+## "curta", "errada", "devagar" (ver Credentials.check) ou "ja_conectado"
+## (o personagem já está no mundo). Na primeira vez de um nome, a senha fica
+## registrada; "criada" também deixa entrar (vem em created).
+func login(player_name: String, password: String) -> Dictionary:
+	var clean_name := player_name.strip_edges().left(24)
+	if clean_name.is_empty():
+		return {"ok": false, "reason": "sem_nome"}
+	for id in players:
+		if players[id]["name"] == clean_name:
+			return {"ok": false, "reason": "ja_conectado"}
+	var result := credentials.check(clean_name, password)
+	if result == "ok" or result == "criada":
+		return {"ok": true, "created": result == "criada"}
+	return {"ok": false, "reason": result}
+
+
 func add_player(id: int, player_name: String) -> Vector2:
 	var clean_name := player_name.strip_edges().left(24)
 	if clean_name.is_empty():
 		clean_name = "Criatura %d" % (players.size() + 1)
 	var pos := _spawn_point()
+	if last_pos.has(clean_name):
+		# Volta para onde saiu; se o lugar não for mais livre, o ponto livre mais perto.
+		var saved: Vector2 = last_pos[clean_name]
+		pos = saved if world.is_free(saved) else world.nearest_free(saved)
 	players[id] = {"name": clean_name, "pos": pos, "heading": 0, "species": species.get(clean_name, "")}
 	if not inventories.has(clean_name):
 		inventories[clean_name] = {}
 	if not equipment.has(clean_name):
 		equipment[clean_name] = ""
 	Bag.give_starter(inventories[clean_name], equipment[clean_name])
+	builds.touch(owner_key_of_name(clean_name))
 	return pos
 
 
@@ -94,6 +126,9 @@ func species_of(id: int) -> String:
 
 
 func remove_player(id: int) -> void:
+	if players.has(id):
+		last_pos[players[id]["name"]] = players[id]["pos"]
+	builds.touch(owner_key(id))
 	players.erase(id)
 	_last_collect.erase(id)
 	_last_move.erase(id)
@@ -530,6 +565,46 @@ func prep_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
 	return result
 
 
+## Um golpe de machado numa obra ao alcance, para desmontá-la (Builds.strike_wreck).
+## Quem chama é o J com o machado; aqui se confere o machado nas mãos, a casa
+## (Builds.wreck_cells) e o alcance. Quando o golpe completa a conta, a obra
+## some: o material que volta e o estoque caem no chão, dentro do terreno.
+## Devolve { ok, reason } nas recusas ("ferramenta", "longe", "devagar", "casa",
+## "povoado", "acesa", "nao_dono") ou { ok, event, hits_left, total, first, cell } e, se
+## foi a última, também { kind, title, piles, back }.
+func wreck_build(id: int, build_id: int, cell: Vector2i) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if wielding(id) != "machado":
+		return {"ok": false, "reason": "ferramenta"}
+	if not Builds.wreck_cells(build).has(cell):
+		return {"ok": false, "reason": "casa"}
+	if players[id]["pos"].distance_to(WorldGen.cell_center(cell)) > REACH:
+		return {"ok": false, "reason": "longe"}
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
+		return {"ok": false, "reason": "devagar"}
+	_last_strike[id] = now
+	var result := builds.strike_wreck(build_id, -1.0, owner_key(id))
+	if not result["ok"]:
+		return result
+	result["cell"] = cell
+	if result["event"] == "derrubada":
+		var gone := builds.demolish(build_id)
+		var piles := {}
+		for pile_cell: Vector2i in gone["piles"]:
+			ground.add_items(pile_cell, gone["piles"][pile_cell])
+			piles[pile_cell] = ground.items_at(pile_cell)
+		result["kind"] = gone["kind"]
+		result["title"] = gone["title"]
+		result["back"] = gone["back"]
+		result["piles"] = piles
+	return result
+
+
 ## O que uma árvore, bambu ou arbusto arrancado deixa no chão: o mesmo que
 ## daria ao ser colhido (Harvest.SOURCES), já com os tamanhos sorteados.
 ## Precisa ser chamado antes de a casa ser limpa.
@@ -645,6 +720,35 @@ func _owner_check(id: int, build_id: int) -> Dictionary:
 	return {}
 
 
+## Propor derrubar uma construção, no marco do povoado (Builds.propose_wreck).
+## Devolve o resultado dele, ou { ok: false, reason: "longe" | "desconhecido" }.
+func propose_wreck(id: int, marco_id: int, target_id: int) -> Dictionary:
+	var check := _marco_check(id, marco_id)
+	if not check.is_empty():
+		return check
+	return builds.propose_wreck(marco_id, owner_key(id), target_id)
+
+
+## Votar numa proposta, no marco (Builds.vote_wreck).
+func vote_wreck(id: int, marco_id: int, target_id: int, yes: bool) -> Dictionary:
+	var check := _marco_check(id, marco_id)
+	if not check.is_empty():
+		return check
+	return builds.vote_wreck(marco_id, owner_key(id), target_id, yes)
+
+
+## Vazio se a criatura está ao alcance do marco; senão, a recusa.
+func _marco_check(id: int, marco_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var marco := builds.get_build(marco_id)
+	if marco.is_empty():
+		return {"ok": false, "reason": "desconhecida"}
+	if Builds.reach_distance(marco, players[id]["pos"]) > BUILD_REACH:
+		return {"ok": false, "reason": "longe"}
+	return {}
+
+
 ## Ser dono do abrigo onde se está. Devolve o resultado de Builds.claim, ou
 ## { ok: false, reason: "fora" } se a criatura não está lá dentro.
 func claim_build(id: int, build_id: int) -> Dictionary:
@@ -729,6 +833,13 @@ func snapshot() -> Dictionary:
 
 
 func to_save() -> Dictionary:
+	# Quem está online conta com a posição de agora (o servidor pode cair sem ninguém sair).
+	var positions := {}
+	for player_name: String in last_pos:
+		positions[player_name] = [last_pos[player_name].x, last_pos[player_name].y]
+	for id in players:
+		var pos: Vector2 = players[id]["pos"]
+		positions[players[id]["name"]] = [pos.x, pos.y]
 	return {
 		"version": 1,
 		"seed": world.world_seed,
@@ -737,6 +848,10 @@ func to_save() -> Dictionary:
 		"offhand": offhand,
 		"species": species,
 		"torch_until": torch_until,
+		"day_t": day_t,
+		"day_n": day_n,
+		"last_pos": positions,
+		"credentials": credentials.to_save(),
 		"harvest": harvest.to_save(),
 		"resin": resin.to_save(),
 		"builds": builds.to_save(),
@@ -767,6 +882,19 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
+	state.day_n = maxi(int(data.get("day_n", state.day_n)), 0)
+	var positions = data.get("last_pos", {})
+	if typeof(positions) == TYPE_DICTIONARY:
+		for player_name in positions:
+			var xy = positions[player_name]
+			if typeof(xy) == TYPE_ARRAY and xy.size() == 2:
+				var pos := Vector2(float(xy[0]), float(xy[1]))
+				if pos.is_finite():
+					state.last_pos[player_name] = pos
+	var saved_credentials = data.get("credentials", {})
+	if typeof(saved_credentials) == TYPE_DICTIONARY:
+		state.credentials.load_save(saved_credentials)
 	var harvested = data.get("harvest", [])
 	if typeof(harvested) == TYPE_ARRAY:
 		state.harvest.load_save(harvested)
@@ -783,7 +911,16 @@ static func from_save(data: Dictionary) -> WorldState:
 
 
 func _spawn_point() -> Vector2:
-	# Ao redor da Origem, que é sempre livre, começando ao sul dela: quem entra
-	# olhando para o norte já tem a Origem à frente.
-	var offsets := [Vector2(0, 1.5), Vector2(1.5, 0), Vector2(-1.5, 0), Vector2(0, -1.5)]
-	return WorldGen.origin_point() + offsets[players.size() % offsets.size()]
+	# Quem entra pela primeira vez nasce no cruzamento de trilhas da região
+	# (0, 0), o ponto de encontro do mundo: o chão livre mais próximo, saindo
+	# do centro em voltas, e cada jogador na sua vez de lugar.
+	var skip := players.size()
+	var centre := WorldGen.center_point()
+	for radius in range(0, 12):
+		for i in maxi(1, radius * 4):
+			var spot := centre + Vector2.from_angle(PI * 0.5 + TAU * i / float(maxi(1, radius * 4))) * float(radius) * 1.5
+			if world.is_free(spot):
+				if skip == 0:
+					return spot
+				skip -= 1
+	return centre
