@@ -68,7 +68,7 @@ const DATA := {
 	"urso": {"name": "Troncudo", "animal": "urso", "article": "um", "tags": ["pesado", "guerreiro", "pesca"],
 		"description": "Largo e lento, com os ombros cobertos por uma casca grossa de tronco, rugosa como carvalho velho. Anda com o peso de quem não tem pressa, e o cheiro de madeira e terra molhada vai atrás dele."},
 	"boi": {"name": "Ferrenho", "animal": "boi", "article": "um", "tags": ["pesado", "resistente", "arar"],
-		"description": "Pescoço grosso, chifres escuros como ferro velho e um olhar paciente que quase não pisca. Quando pega peso, leva até o fim, sem reclamar e sem pressa."},
+		"description": "Pescoço grosso, chifres escuros como ferro velho e um olhar paciente que quase não pisca. Tem a paciência da terra e a teimosia do ferro."},
 	"cervo": {"name": "Ramado", "animal": "cervo", "article": "um", "tags": ["leve", "veloz", "disparada"],
 		"description": "Esguio e alto, com uma galhada coberta de musgo que parece mais velha do que ele. Os passos mal tocam o chão, e ele corre como quem foge de algo que só ele ouve."},
 	"coelho": {"name": "Lunar", "animal": "coelho", "article": "um", "tags": ["leve", "audicao", "salto"],
