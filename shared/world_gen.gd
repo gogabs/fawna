@@ -42,7 +42,6 @@ const TRAIL_SWAY_EASE := 10.0  # casas, perto das pontas, em que a curva some
 const TRAIL_BRIDGE_SEARCH := 12.0  # casas: até onde procurar uma travessia reta
 const TRAIL_BRIDGE_EASE := 8  # pontos da linha (4 casas) soltos de cada lado da ponte
 const TRAIL_BRIDGE_GAP := 6.0  # casas de terra entre duas águas que a mesma ponte atravessa
-const TRAIL_BRIDGE_SPECK := 2.5  # casas: água menor que isso não ganha travessia
 const TRAIL_DETOUR_MARGIN := 14  # casas em volta do trecho em que se procura a volta por terra
 const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
@@ -931,14 +930,14 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 				i = last + 1 + skip
 				continue
 		var bridge := _straight_crossing(points[i - 1], points[last + 1])
-		if bridge.is_empty() and points[i - 1].distance_to(points[last + 1]) > TRAIL_BRIDGE_SPECK:
+		if bridge.is_empty():
 			# Lago de borda torta: a trilha contorna pela terra até uma ponte reta.
 			bridge = _detour_crossing(points[i - 1], points[last + 1])
+			if bridge.is_empty():
+				bridge = _detour_crossing(points[i - 1], points[last + 1], TRAIL_DETOUR_MARGIN * 3)
 		if bridge.is_empty():
-			# Um respingo de água de uma ou duas casas: a trilha passa reto, é
-			# só uma casa de ponte. Se for maior, cai no L (raro).
-			if points[i - 1].distance_to(points[last + 1]) > TRAIL_BRIDGE_SPECK:
-				bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
+			# Último recurso (nem o desvio achou caminho): L ortogonal.
+			bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
 			line.append_array(bridge)
 			i = last + 1
 			continue
@@ -1042,9 +1041,9 @@ func _crossing_to_landmark(from: Vector2, landmark: Vector2) -> PackedVector2Arr
 ## terra em volta, a ponte reta (fileira ou coluna) que dá o menor caminho total
 ## de "from" até "to", contornando a água pela terra. Devolve os pontos entre
 ## os dois (volta em terra, as duas pontas da ponte, volta em terra), ou nada.
-func _detour_crossing(from: Vector2, to: Vector2) -> PackedVector2Array:
-	var lo := Vector2i(floori(minf(from.x, to.x)), floori(minf(from.y, to.y))) - Vector2i.ONE * TRAIL_DETOUR_MARGIN
-	var hi := Vector2i(floori(maxf(from.x, to.x)), floori(maxf(from.y, to.y))) + Vector2i.ONE * TRAIL_DETOUR_MARGIN
+func _detour_crossing(from: Vector2, to: Vector2, margin := TRAIL_DETOUR_MARGIN) -> PackedVector2Array:
+	var lo := Vector2i(floori(minf(from.x, to.x)), floori(minf(from.y, to.y))) - Vector2i.ONE * margin
+	var hi := Vector2i(floori(maxf(from.x, to.x)), floori(maxf(from.y, to.y))) + Vector2i.ONE * margin
 	var water := {}
 	for y in range(lo.y, hi.y + 1):
 		for x in range(lo.x, hi.x + 1):
