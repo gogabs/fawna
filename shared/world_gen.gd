@@ -43,6 +43,7 @@ const TRAIL_BRIDGE_SEARCH := 12.0  # casas: até onde procurar uma travessia ret
 const TRAIL_BRIDGE_EASE := 8  # pontos da linha (4 casas) soltos de cada lado da ponte
 const TRAIL_BRIDGE_GAP := 6.0  # casas de terra entre duas águas que a mesma ponte atravessa
 const TRAIL_DETOUR_MARGIN := 14  # casas em volta do trecho em que se procura a volta por terra
+const TRAIL_BRIDGE_COST := 3.0  # casas de custo extra por ponte, para preferir poucas pontes
 const TRAIL_BEND_FREQUENCY := 0.012
 const TRAIL_CELL := 1  # na máscara de trilhas de um pedaço
 const TRAIL_EDGE := 2
@@ -933,12 +934,12 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 		if bridge.is_empty():
 			# Lago de borda torta: a trilha contorna pela terra até uma ponte reta.
 			bridge = _detour_crossing(points[i - 1], points[last + 1])
-			if bridge.is_empty():
-				bridge = _detour_crossing(points[i - 1], points[last + 1], TRAIL_DETOUR_MARGIN * 3)
+			# Procura cada vez mais longe; sem nenhuma travessia reta possível a
+			# linha segue direto (não há ponte em L).
+			for wider in [3, 8]:
+				if bridge.is_empty():
+					bridge = _detour_crossing(points[i - 1], points[last + 1], TRAIL_DETOUR_MARGIN * wider)
 		if bridge.is_empty():
-			# Último recurso (nem o desvio achou caminho): L ortogonal.
-			bridge = _orthogonal_bridge(points[i - 1], points[last + 1])
-			line.append_array(bridge)
 			i = last + 1
 			continue
 		# A trilha em terra se curva até a ponte: solta uns pontos antes e
@@ -1037,10 +1038,11 @@ func _crossing_to_landmark(from: Vector2, landmark: Vector2) -> PackedVector2Arr
 	return best
 
 
-## Lago em que nenhuma reta sai direto de uma margem e chega na outra: acha, na
-## terra em volta, a ponte reta (fileira ou coluna) que dá o menor caminho total
-## de "from" até "to", contornando a água pela terra. Devolve os pontos entre
-## os dois (volta em terra, as duas pontas da ponte, volta em terra), ou nada.
+## Lago em que nenhuma reta sai direto de uma margem e chega na outra (borda
+## torta, ilhotas, águas coladas): acha o menor caminho de "from" até "to" que
+## anda pela terra e atravessa a água só em pontes retas (leste-oeste ou
+## norte-sul), quantas forem precisas. Devolve os pontos entre os dois (volta em
+## terra e as duas pontas de cada ponte), ou nada se não houver caminho.
 func _detour_crossing(from: Vector2, to: Vector2, margin := TRAIL_DETOUR_MARGIN) -> PackedVector2Array:
 	var lo := Vector2i(floori(minf(from.x, to.x)), floori(minf(from.y, to.y))) - Vector2i.ONE * margin
 	var hi := Vector2i(floori(maxf(from.x, to.x)), floori(maxf(from.y, to.y))) + Vector2i.ONE * margin
@@ -1050,91 +1052,135 @@ func _detour_crossing(from: Vector2, to: Vector2, margin := TRAIL_DETOUR_MARGIN)
 			water[Vector2i(x, y)] = _is_water_at(Vector2i(x, y))
 	var start := cell_of(from)
 	var goal := cell_of(to)
-	var from_map := _flood_dry(start, water)
-	var to_map := _flood_dry(goal, water)
-	var best_score := INF
-	var best_a := Vector2i.ZERO
-	var best_b := Vector2i.ZERO
-	for horizontal in [true, false]:
-		var outer_lo := lo.y if horizontal else lo.x
-		var outer_hi := hi.y if horizontal else hi.x
-		var inner_lo := lo.x if horizontal else lo.y
-		var inner_hi := hi.x if horizontal else hi.y
-		for outer in range(outer_lo, outer_hi + 1):
-			var run_start := -999999
-			for inner in range(inner_lo, inner_hi + 2):
-				var cell := Vector2i(inner, outer) if horizontal else Vector2i(outer, inner)
-				var is_wet: bool = inner <= inner_hi and water[cell]
-				if is_wet:
-					if run_start == -999999:
-						run_start = inner
-					continue
-				if run_start == -999999:
-					continue
-				var before := Vector2i(run_start - 1, outer) if horizontal else Vector2i(outer, run_start - 1)
-				var after := Vector2i(inner, outer) if horizontal else Vector2i(outer, inner)
-				run_start = -999999
-				if not water.has(before) or water[before] or inner > inner_hi:
-					continue
-				for pair: Array in [[before, after], [after, before]]:
-					var near: Vector2i = pair[0]
-					var far: Vector2i = pair[1]
-					if from_map.has(near) and to_map.has(far):
-						var score: float = from_map[near][1] + to_map[far][1] + near.distance_to(far)
-						if score < best_score:
-							best_score = score
-							best_a = near
-							best_b = far
-	if best_score == INF:
+	if not water.has(start) or not water.has(goal) or water[start] or water[goal]:
 		return PackedVector2Array()
-	var result := _simplify_path(from, _chain(from_map, best_a, true))
-	if result.is_empty() or result[result.size() - 1] != cell_center(best_a):
-		result.append(cell_center(best_a))
-	var back := _simplify_path(cell_center(best_b), _chain(to_map, best_b, false))
-	result.append(cell_center(best_b))
-	if back.size() > 1:
-		back.resize(back.size() - 1)  # a última é a casa de "to", que a linha já tem
-		result.append_array(back)
+	# Dijkstra: andar em terra (8 vizinhos, sem cortar quina de água) ou saltar
+	# uma faixa de água em linha reta até a terra do outro lado (uma ponte).
+	var best := {start: 0.0}
+	var previous := {}  # casa -> [casa anterior, é ponte?]
+	var heap: Array = [[0.0, start]]
+	while not heap.is_empty():
+		var top: Array = _heap_pop(heap)
+		var cell: Vector2i = top[1]
+		var cost: float = top[0]
+		if cost > best[cell]:
+			continue
+		if cell == goal:
+			break
+		var moves := []
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if dx == 0 and dy == 0:
+					continue
+				var next := cell + Vector2i(dx, dy)
+				if not water.has(next) or water[next]:
+					continue
+				if dx != 0 and dy != 0 and (water.get(cell + Vector2i(dx, 0), true) or water.get(cell + Vector2i(0, dy), true)):
+					continue
+				moves.append([next, Vector2(dx, dy).length(), false])
+		for dir: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			var ahead := cell + dir
+			if not water.has(ahead) or not water[ahead]:
+				continue
+			var across := ahead
+			while water.has(across) and water[across]:
+				across += dir
+			if water.has(across):
+				moves.append([across, float((across - cell).length()) + TRAIL_BRIDGE_COST, true])
+		for move: Array in moves:
+			var new_cost: float = cost + move[1]
+			if not best.has(move[0]) or new_cost < best[move[0]]:
+				best[move[0]] = new_cost
+				previous[move[0]] = [cell, move[2]]
+				_heap_push(heap, [new_cost, move[0]])
+	if not previous.has(goal):
+		return PackedVector2Array()
+	# Do fim para o começo: casas de cada trecho em terra e as pontes.
+	var path: Array[Vector2i] = [goal]
+	var jumps: Array[bool] = []  # jumps[i]: o passo de path[i+1] para path[i] foi ponte
+	var at := goal
+	while at != start:
+		var step: Array = previous[at]
+		at = step[0]
+		path.append(at)
+		jumps.append(step[1])
+	path.reverse()
+	jumps.reverse()
+	var result := PackedVector2Array()
+	var run: Array[Vector2i] = [path[0]]
+	var origin := from
+	for i in jumps.size():
+		if jumps[i]:
+			# Termina o trecho em terra na ponta da ponte e atravessa.
+			result.append_array(_simplify_path(origin, run))
+			if result.is_empty() or result[result.size() - 1] != cell_center(path[i]):
+				result.append(cell_center(path[i]))
+			result.append(cell_center(path[i + 1]))
+			origin = cell_center(path[i + 1])
+			run = [path[i + 1]]
+		else:
+			run.append(path[i + 1])
+	# Último trecho em terra, alisado de "to" para trás, para sair de "to" de verdade.
+	var tail := PackedVector2Array()
+	if run.size() > 1:
+		var reversed_run: Array[Vector2i] = run.duplicate()
+		reversed_run.reverse()
+		tail = _simplify_path(to, reversed_run)
+		tail.reverse()
+		# tail termina na casa de "origin" (primeira casa de run); o que importa
+		# são os pontos entre ela e "to".
+		for k in range(1, tail.size()):
+			result.append(tail[k])
 	return result
 
 
-## Terra firme alcançável a partir de "start" (8 vizinhos), dentro de "water":
-## Vector2i -> [casa anterior, passos].
-func _flood_dry(start: Vector2i, water: Dictionary) -> Dictionary:
-	var seen := {start: [start, 0.0]}
-	var queue: Array[Vector2i] = [start]
-	var head := 0
-	while head < queue.size():
-		var cell := queue[head]
-		head += 1
-		for dy in range(-1, 2):
-			for dx in range(-1, 2):
-				var next := cell + Vector2i(dx, dy)
-				if (dx == 0 and dy == 0) or seen.has(next) or not water.has(next) or water[next]:
-					continue
-				seen[next] = [cell, (seen[cell][1] as float) + Vector2(dx, dy).length()]
-				queue.append(next)
-	return seen
+func _heap_push(heap: Array, item: Array) -> void:
+	heap.append(item)
+	var i := heap.size() - 1
+	while i > 0:
+		var parent := (i - 1) / 2
+		if (heap[parent][0] as float) <= (heap[i][0] as float):
+			break
+		var swap = heap[parent]
+		heap[parent] = heap[i]
+		heap[i] = swap
+		i = parent
 
 
-## Casas do caminho de "cell" de volta até a origem do mapa, na ordem de ida
-## (se "reverse") ou de volta.
-func _chain(map: Dictionary, cell: Vector2i, reverse: bool) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = [cell]
-	while map[cell][0] != cell:
-		cell = map[cell][0]
-		cells.append(cell)
-	if reverse:
-		cells.reverse()
-	return cells
+func _heap_pop(heap: Array) -> Array:
+	var top: Array = heap[0]
+	var last: Array = heap.pop_back()
+	if not heap.is_empty():
+		heap[0] = last
+		var i := 0
+		while true:
+			var left := i * 2 + 1
+			var right := left + 1
+			var smallest := i
+			if left < heap.size() and (heap[left][0] as float) < (heap[smallest][0] as float):
+				smallest = left
+			if right < heap.size() and (heap[right][0] as float) < (heap[smallest][0] as float):
+				smallest = right
+			if smallest == i:
+				break
+			var swap = heap[smallest]
+			heap[smallest] = heap[i]
+			heap[i] = swap
+			i = smallest
+	return top
 
 
 ## Alisa o caminho em casas: do ponto "origin", pula direto para a casa mais
 ## longe que ainda se alcança em linha reta sem molhar.
-func _simplify_path(origin: Vector2, cells: Array[Vector2i],) -> PackedVector2Array:
+func _simplify_path(origin: Vector2, cells: Array[Vector2i]) -> PackedVector2Array:
 	var result := PackedVector2Array()
 	var at := origin
 	var index := 0
+	# Se o ponto de partida está colado na água, sai primeiro para o centro da
+	# casa dele (que é terra firme) em vez de cortar a quina molhada.
+	if cells.size() > 1 and at != cell_center(cells[0]) and _wet_length(at, cell_center(cells[1])) > 0.0:
+		at = cell_center(cells[0])
+		result.append(at)
 	while index < cells.size() - 1:
 		var far := index + 1
 		for k in range(cells.size() - 1, index, -1):
@@ -1147,31 +1193,9 @@ func _simplify_path(origin: Vector2, cells: Array[Vector2i],) -> PackedVector2Ar
 	return result
 
 
-## Ponte ortogonal entre a última margem seca "from" e a próxima "to" (ou o
-## ponto de encontro, se ele estiver na água): um trecho leste-oeste e outro
-## norte-sul, em L, com a quina onde houver mais água. Devolve a quina a
-## acrescentar à linha entre as duas, ou nada se os dois já estão alinhados.
-func _orthogonal_bridge(from: Vector2, to: Vector2) -> PackedVector2Array:
-	if is_equal_approx(from.x, to.x) or is_equal_approx(from.y, to.y):
-		return PackedVector2Array()
-	var east_west_first := Vector2(to.x, from.y)
-	var north_south_first := Vector2(from.x, to.y)
-	var first := east_west_first
-	if absf(to.x - from.x) < absf(to.y - from.y):
-		first = north_south_first
-	# A quina que deixa mais da ponte sobre a água, e menos sobre a terra.
-	var wet_a := _wet_length(from, east_west_first) + _wet_length(east_west_first, to)
-	var wet_b := _wet_length(from, north_south_first) + _wet_length(north_south_first, to)
-	if wet_a > wet_b:
-		first = east_west_first
-	elif wet_b > wet_a:
-		first = north_south_first
-	return PackedVector2Array([first])
-
-
 ## Quanto da reta de "a" a "b" passa sobre a água, em casas (aproximado).
 func _wet_length(a: Vector2, b: Vector2) -> float:
-	var steps := maxi(1, ceili(a.distance_to(b) / TRAIL_STEP))
+	var steps := maxi(1, ceili(a.distance_to(b) / (TRAIL_STEP * 0.5)))
 	var wet := 0
 	for i in steps + 1:
 		if _is_water_at(cell_of(a.lerp(b, float(i) / steps))):
