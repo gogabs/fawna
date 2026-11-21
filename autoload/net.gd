@@ -110,6 +110,10 @@ const FPS_LIMIT_NO_GRAPHICS := 20
 
 func apply_fps_limit(in_game: bool) -> void:
 	_fps_target = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+	# No Godot 4.7 atribuir o valor que já está (o 60 do project.godot) não liga
+	# o teto: é preciso passar por 0 antes (medido no PC do Gabs: 60 sozinho
+	# dava 1.700 FPS; 0 e depois 60 dá 60).
+	Engine.max_fps = 0
 	Engine.max_fps = _fps_target
 
 
