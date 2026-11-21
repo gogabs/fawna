@@ -2351,12 +2351,16 @@ func _say_radar() -> void:
 	if _caminheiro.active:
 		parts.append("Caminheiro, rumo %s: %s." % [Narrator.contract("a", _caminheiro.place_name), Compass.describe(_tracked_destination - _pos, _heading)])
 	var found := []  # [distância, rótulo, deslocamento]
+	var seen_things := {}
 	for entry: Array in CAMINHEIRO_RESOURCES:
+		if seen_things.has(entry[1]):
+			continue  # Lenha e Frutas apontam para o mesmo arbusto: uma linha só
+		seen_things[entry[1]] = true
 		var cell := nearest_collectable(world, harvest, _pos, entry[1], RADAR_RADIUS)
 		if cell == WorldGen.NO_CELL or (_caminheiro.active and cell == _tracked_resource):
 			continue
 		var offset := WorldGen.cell_center(cell) - _pos
-		found.append([offset.length(), entry[0], offset])
+		found.append([offset.length(), "Arbusto" if entry[1].has(WorldGen.Thing.ARBUSTO) else entry[0], offset])
 	for build: Dictionary in builds.all():
 		var distance := Builds.reach_distance(build, _pos)
 		if distance > RADAR_RADIUS:
@@ -2619,7 +2623,8 @@ func _debug_horror_items() -> Array:
 	]
 
 
-## Menu de personagem: nome, espécie com descrição e traços. Sem espécie
+## Menu de personagem: nome, espécie e uma linha por tag, já com o efeito
+## ("Leve (passiva). Anda mais rápido..."), sem precisar abrir nada. Sem espécie
 ## ainda, oferece a escolha.
 func _character_items() -> Array:
 	var me: Dictionary = players.get(my_id, {})
@@ -2628,38 +2633,35 @@ func _character_items() -> Array:
 		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
 	if Species.is_species(species_id):
 		items.append({"label": "Espécie: %s" % Species.name_and_animal(species_id),
-			"info": "%s Tags: %s." % [Species.description(species_id), Species.tag_names(species_id)]})
-		items.append({"label": "Tags", "open": _tag_items.bind(species_id)})
+			"info": Species.description(species_id)})
+		items.append_array(_tag_items(species_id))
 	else:
 		items.append({"label": "Escolher espécie", "open": _species_choices})
 	return items
 
 
-## As espécies para escolher; cada uma abre a descrição, o traço e a confirmação.
+## As espécies para escolher: "Nome, animal, descrição"; cada uma abre as tags
+## e a confirmação.
 func _species_choices() -> Array:
 	var items := []
 	for id: String in Species.ORDER:
-		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.tag_names(id)],
+		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.description(id)],
 			"open": _species_confirm.bind(id)})
 	return items
 
 
 func _species_confirm(id: String) -> Array:
-	var items := [{"label": "Sobre", "info": Species.description(id)}]
-	items.append_array(_tag_items(id))
+	var items := _tag_items(id)
 	items.append({"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
 		"run": _choose_species.bind(id), "close": true})
 	return items
 
 
-## Uma opção por tag da espécie, com o que ela dá e o que custa.
+## Uma linha por tag da espécie, com o que ela dá e o que custa.
 func _tag_items(id: String) -> Array:
 	var items := []
 	for tag: String in Species.tags_of(id):
-		var text := Species.tag_text(tag)
-		if not Species.is_live(tag):
-			text += " Ainda sem efeito no jogo."
-		items.append({"label": Species.tag_label(tag), "info": text})
+		items.append({"label": Species.tag_text(tag)})
 	return items
 
 
@@ -2778,15 +2780,17 @@ func _stow() -> String:
 ## contam e como se fala do destino (com artigo, para "rumo ao bambu").
 const CAMINHEIRO_RESOURCES := [
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
-	["Lenha", [WorldGen.Thing.ARBUSTO], "a lenha"],
+	["Lenha", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "a lenha"],
 	["Madeira", [WorldGen.Thing.ARVORE], "a árvore"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
-	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
 	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
+	["Frutas", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
 	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
+## Lenha e Frutas aparecem separadas, mas levam ao mesmo arbusto: o jogo não
+## diz qual deles dá o quê (só ao coletar).
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
 ## na região de agora ou na vizinha, sem depender de limites de região.
