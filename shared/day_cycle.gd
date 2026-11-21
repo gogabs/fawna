@@ -180,18 +180,18 @@ static func calado_rate(d: float) -> float:
 # --- Períodos e textos -------------------------------------------------------------
 
 ## Os períodos que o jogador ouve: [nome, "é ..." (o que o C diz), texto normal,
-## texto dentro da faixa do anel]. Os de 1 a 6 são de dia (a faixa é de sombra);
+## texto dentro da faixa do anel (igual ao normal onde só há uma frase)]. Os de 1 a 6 são de dia (a faixa é de sombra);
 ## o 0 e o 7, de noite (a faixa é de luz). Não mexem na simulação, só dão cor ao
 ## aviso de cada virada e ao T.
 const PERIODS := [
-	["Noite profunda", "a noite profunda", "O silêncio pesa, e só o que não dorme se mexe. O anel é a única luz.", "O silêncio pesa, mas a luz do anel ainda alcança o chão. Algo anda lá fora."],
-	["Amanhecer", "o amanhecer", "A névoa sobe do chão, e uma luz fria toca o horizonte, sob o arco pálido do anel.", "A névoa sobe do chão, e a sombra do anel retarda a luz."],
-	["Manhã", "a manhã", "O ar esquenta e o mundo respira sem pressa. O anel é uma faixa clara no céu.", "O ar fica frio demais para a hora. A sombra do anel cobre estas terras."],
-	["Meio-dia", "o meio-dia", "O sol a pino encolhe as sombras, e o anel quase some no brilho.", "É meio-dia, mas a sombra do anel faz o dia parecer crepúsculo."],
-	["Tarde", "a tarde", "A luz desce amarelada e o vento troca de lado. O anel tinge-se de cobre.", "A tarde escurece sob a sombra do anel, e o vento corta."],
-	["Fim de tarde", "o fim de tarde", "As sombras se alongam e a luz esfria, dourada. O anel pega fogo com a última luz.", "O fim de tarde chega antes da hora, e a sombra do anel engole o resto de luz."],
-	["Anoitecer", "o anoitecer", "O sol some no horizonte, e a escuridão toma o chão. O anel acende, pálido.", "O anoitecer cai de uma vez sob a sombra do anel."],
-	["Noite", "a noite", "O mundo fecha os olhos, e o que ronda no escuro desperta. O anel risca o céu, frio.", "O anel derrama uma luz fria sobre o chão. A noite aqui respira um pouco mais."],
+	["Noite profunda", "a noite profunda", "O silêncio pesa, e só o que não dorme se mexe.", "A luz do anel banha quem vagueia pela noite profunda."],
+	["Amanhecer", "o amanhecer", "A névoa sobe do chão, e uma luz fria toca o horizonte, sob o arco pálido do anel.", "A luz tênue brilha no orvalho sob a sombra do anel."],
+	["Manhã", "a manhã", "A manhã esquenta devagar, e o mundo respira sem pressa.", "A manhã nasce fria sob a sombra do anel."],
+	["Meio-dia", "o meio-dia", "O sol a pino encolhe as sombras, e tudo parece quieto demais.", "A calmaria se instala no meio-dia crepuscular."],
+	["Tarde", "a tarde", "A tarde desce amarelada, e o vento troca de lado.", "Um vento cortante varre a terra na penumbra."],
+	["Fim de tarde", "o fim de tarde", "As sombras se alongam enquanto a tarde se vai sob a coroa dourada no céu.", "O fim de tarde chega antes da hora, e a sombra lentamente devora o que resta de luz."],
+	["Anoitecer", "o anoitecer", "O sol some no horizonte, e a escuridão toma o chão.", "O sol some no horizonte, e a escuridão toma o chão."],
+	["Noite", "a noite", "A noite fecha os olhos do mundo, e a escuridão parece respirar.", "A noite chega, e o anel derrama no chão uma luz fria que não conforta."],
 ]
 
 

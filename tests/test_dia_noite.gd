@@ -71,7 +71,8 @@ func _test_describe() -> void:
 		_check(DayCycle.period_of(_at(DayCycle.period_start(i))) == i, "o período %d começa na hora dele" % i)
 		_check(digits.search(DayCycle.announcement(i)) == null and digits.search(DayCycle.announcement(i, true)) == null, "o aviso do período %d não traz hora numérica" % i)
 		_check(digits.search(DayCycle.describe(_at(DayCycle.period_start(i)), 10.0)) == null, "o T não traz número")
-		_check(DayCycle.announcement(i) != DayCycle.announcement(i, true), "o período %d tem texto próprio dentro da faixa do anel" % i)
+		if i != 6:  # o anoitecer tem uma frase só, para a faixa e para fora dela
+			_check(DayCycle.announcement(i) != DayCycle.announcement(i, true), "o período %d tem texto próprio dentro da faixa do anel" % i)
 		for word in ["pássaro", "grilo", "coruja"]:
 			_check(not DayCycle.announcement(i).to_lower().contains(word) and not DayCycle.announcement(i, true).to_lower().contains(word), "o texto não cita %s" % word)
 
