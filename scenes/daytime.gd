@@ -37,6 +37,8 @@ var _state: WorldState  # só no servidor
 var _since_sync := 0.0
 var _phase := -1
 var _season := -1
+const CHANGE_DB := -4.0  # como o sopro de mudança de região
+const CHANGE_LEAD := 0.3
 var _crickets: AudioStreamPlayer
 var _frogs: AudioStreamPlayer
 var _frogs_on := false
@@ -83,6 +85,21 @@ func _make_player(player_name: String, stream: AudioStream) -> AudioStreamPlayer
 	player.volume_db = SILENT_DB
 	add_child(player)
 	return player
+
+
+## Toca a transição e, logo depois, fala a frase.
+func _announce(kind: String, text: String) -> void:
+	if DisplayServer.get_name() != "headless":
+		var player := AudioStreamPlayer.new()
+		player.stream = SoundBank.sky_change(kind)
+		player.volume_db = CHANGE_DB
+		add_child(player)
+		player.finished.connect(player.queue_free)
+		player.play()
+	if DisplayServer.get_name() == "headless":
+		Speech.say(text, false)
+	else:
+		get_tree().create_timer(CHANGE_LEAD).timeout.connect(func(): Speech.say(text, false))
 
 
 func world_day() -> float:
@@ -230,7 +247,7 @@ func _track_season() -> void:
 		return
 	_season = season
 	if _playing:
-		Speech.say(DayCycle.season_announcement(season), false)
+		_announce("estacao", DayCycle.season_announcement(season))
 
 
 ## Avisa quando o período muda. Na entrada, não diz nada: o C responde.
@@ -240,7 +257,7 @@ func _track_phase() -> void:
 		return
 	_phase = period
 	if _playing:  # só quem joga ouve o aviso
-		Speech.say(DayCycle.announcement(period, _ring_in), false)
+		_announce("claro" if period in [1, 2, 3, 4] else "escuro", DayCycle.announcement(period, _ring_in))
 
 
 ## A faixa do anel onde a criatura está; avisa ao entrar e ao sair dela (e nada

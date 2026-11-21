@@ -401,6 +401,65 @@ static func region_change() -> AudioStreamWAV:
 	return _cache["regiao"]
 
 
+## Mudança do céu (período do dia ou estação), tocada um instante antes da fala,
+## na família do sopro de mudança de região: um sopro de ar e duas notas ocas e
+## distantes, que mudam com o momento. "claro" (amanhecer a tarde): as notas
+## sobem, o ar é mais aberto. "escuro" (fim de tarde a madrugada): as notas
+## descem, o ar é mais abafado. "estacao": mais longa e grave, com um brilho
+## distante, como se o anel soasse.
+static func sky_change(kind: String) -> AudioStreamWAV:
+	var key := "ceu_" + kind
+	if _cache.has(key):
+		return _cache[key]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5101 + kind.length()
+	var seconds := 2.2 if kind == "estacao" else 1.3
+	var count := int(seconds * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var notes := [196.0, 293.66]  # claro: sobe uma quinta
+	var smooth := 0.97
+	var air_gain := 3.2
+	if kind == "escuro":
+		notes = [146.83, 98.0]  # desce uma quinta
+		smooth = 0.99
+		air_gain = 3.6
+	elif kind == "estacao":
+		notes = [98.0, 65.41]
+		smooth = 0.992
+		air_gain = 4.0
+	var gap := 0.5 if kind == "estacao" else 0.34
+	var air := 0.0
+	var air2 := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var swell := sin(PI * minf(t / seconds, 1.0)) ** 2.0
+		air = lerpf(rng.randf_range(-1.0, 1.0), air, smooth)
+		air2 = lerpf(air, air2, 0.9)
+		var value: float = air2 * swell * air_gain
+		for n in 2:
+			var local := maxf(t - gap * n, 0.0)
+			if local <= 0.0:
+				continue
+			var decay := 2.4 if kind == "estacao" else 3.4
+			var env: float = exp(-local * decay) * minf(local / 0.05, 1.0)
+			var tone := sin(TAU * notes[n] * local) + 0.25 * sin(TAU * notes[n] * 2.0 * local)
+			if kind == "claro":
+				tone += 0.18 * sin(TAU * notes[n] * 2.76 * local)  # um brilho de sininho
+			value += tone * env * (0.34 if n == 0 else 0.28)
+		if kind == "estacao":
+			var shimmer := sin(TAU * 784.0 * t + 2.0 * sin(TAU * 0.7 * t)) * (0.5 - 0.5 * cos(TAU * minf(t / seconds, 1.0)))
+			value += shimmer * 0.05 * (0.6 + 0.4 * sin(TAU * 5.0 * t))
+		samples[i] = value
+	var peak := 0.0
+	for v in samples:
+		peak = maxf(peak, absf(v))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.7
+	_cache[key] = _to_wav(samples)
+	return _cache[key]
+
+
 ## Item largado no chão: um baque surdo e curto, com um pouco de poeira.
 static func drop_item() -> AudioStreamWAV:
 	if not _cache.has("largar"):
