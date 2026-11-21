@@ -109,4 +109,4 @@ func _draw() -> void:
 		if id == _my_id:
 			draw_line(center, center + Compass.forward(heading) * TILE * 0.7, Color("e8792b"), 3.0)
 	if _flash > 0.0:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.85, 0.93, 1.0, 0.35 * _flash))
+		draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(0.85, 0.93, 1.0, 0.35 * _flash))
