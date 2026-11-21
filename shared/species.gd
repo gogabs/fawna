@@ -21,7 +21,7 @@ extends RefCounted
 ##   calado_delay: tempo que o Calado leva até chegar
 ## Tags que já valem no jogo (LIVE_TAGS); as outras aparecem no menu de
 ## personagem, mas o efeito delas entra em PRs seguintes.
-const LIVE_TAGS: Array[String] = ["pesado", "leve", "veloz", "furtividade", "resistente", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar"]
+const LIVE_TAGS: Array[String] = ["pesado", "leve", "veloz", "furtividade", "resistente", "audicao", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar"]
 ##
 ## A escolha é feita uma vez por nome de personagem e fica gravada no servidor.
 

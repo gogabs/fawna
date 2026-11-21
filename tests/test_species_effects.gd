@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_axe_power()
 	_test_speed_allowance()
 	_test_ford()
+	_test_muffle()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -166,3 +167,19 @@ func _test_ford() -> void:
 	var pos := WorldGen.cell_center(ford)
 	_check(Species.may_step("urso", world, pos), "urso atravessa o vau")
 	_check(not Species.may_step("raposa", world, pos), "mestre do fogo não pisa no vau")
+
+
+func _test_muffle() -> void:
+	var muffle := HearingMuffle.new()
+	muffle.hear("passos")
+	muffle.hear("passaros")
+	_check(muffle.amount() == 0.0, "passos e pássaros não abafam")
+	muffle.hear("obra")
+	var low := muffle.amount()
+	muffle.clear()
+	muffle.hear("arvore_caindo")
+	_check(low > 0.0 and muffle.amount() > low, "árvore caindo abafa mais que obra")
+	muffle.hear("uivo")
+	_check(muffle.left <= HearingMuffle.MAX_SECONDS, "o abafamento tem teto")
+	_check(HearingMuffle.cutoff_for(1.0) < HearingMuffle.cutoff_for(0.5) and HearingMuffle.cutoff_for(0.0) == HearingMuffle.OPEN_HZ, "quanto mais abafa, mais fecha o filtro")
+	muffle.free()
