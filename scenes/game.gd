@@ -58,7 +58,7 @@ const TREE_FALL_REACH := 3.0  # a queda de uma árvore se ouve a 3x HEARING_RADI
 const HARVEST_CHECK := 2.0  # segundos entre conferências do que rebrotou
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
-const WHERE_STEPS := 2  # falas do C: posição, céu
+const WHERE_STEPS := 3  # falas do C: posição, céu, corpo (fome e frio)
 const BED_VOLUME_DB := -22.0  # fundo do bioma
 ## Vento: forte nas trilhas e na beira da lagoa (lugares abertos), fraco no
 ## mato da pradaria e quase nada dentro do bosque.
@@ -92,6 +92,7 @@ var view3d: WorldView3D  # o mundo em 3D; nulo sem tela (servidor ou gráficos d
 @onready var birds: Node = $Birds
 @onready var horrors: Node = $Horrors
 @onready var daytime: Node = $Daytime
+@onready var survival: Node = $Survival
 
 var state: WorldState  # só no servidor
 var _dirty := false
@@ -186,6 +187,7 @@ func _exit_tree() -> void:
 	_save_world()
 	Sounds.clear()
 	BirdSongs.clear()
+	BodySounds.clear()
 
 
 func _process(delta: float) -> void:
@@ -269,16 +271,18 @@ func _process(delta: float) -> void:
 
 
 ## C é circular: o primeiro toque diz onde a criatura pisa e para onde olha; o
-## seguinte, o momento do dia e o anel; e assim por diante, sem relógio de espera
-## (daqui para frente cabe o clima como mais um passo).
+## seguinte, o momento do dia e o anel; o terceiro, a fome e o frio; e assim por
+## diante, sem relógio de espera (daqui para frente cabe o clima como mais um passo).
 func _say_where() -> void:
 	var step := _where_step % WHERE_STEPS
 	_where_step = step + 1
 	match step:
 		0:
 			Speech.say(Narrator.stepping_on(world, _pos, _heading))
-		_:
+		1:
 			Speech.say(daytime.sky_text())
+		_:
+			Speech.say(survival.status_text())
 
 
 ## Onde a criatura está (casas), para quem precisa saber de fora.
@@ -369,6 +373,7 @@ func request_join(player_name: String, password: String) -> void:
 	debug_status.rpc_id(id, DebugTools.allowed(Net.debug_available(), Net.mode == Net.Mode.HOST, id), Bag.capacity)
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	daytime.sync_to(id)
+	survival.send_to(id)
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), state.torch_left(id), "", "")
 	torches_changed.rpc_id(id, state.lit_torch_ids())
@@ -1829,6 +1834,21 @@ func _run_debug(id: int, action: String, arg: String) -> String:
 		"dispensar":
 			var count: int = horrors.debug_dismiss()
 			return "%d Calado%s dispensado%s." % [count, "" if count == 1 else "s", "" if count == 1 else "s"] if count > 0 else "Nenhum Calado no mundo."
+		"corpo":
+			var entry := state.body_of(id)
+			match arg:
+				"cheio":
+					entry["food"] = Body.MAX
+					entry["warmth"] = Body.MAX
+				"fome":
+					entry["food"] = 3.0
+				"frio":
+					entry["warmth"] = 3.0
+				_:
+					return "Opção desconhecida."
+			_dirty = true
+			survival.send_to(id)
+			return "Fome %d, calor %d." % [roundi(entry["food"]), roundi(entry["warmth"])]
 		"sozinho":
 			horrors.debug_set_spawning(arg == "ligar")
 			return "O Calado %s sozinho." % ("volta a aparecer" if arg == "ligar" else "não aparece mais")
@@ -1876,6 +1896,7 @@ func _on_peer_disconnected(id: int) -> void:
 	state.remove_player(id)
 	birds.forget_peer(id)
 	horrors.forget_peer(id)
+	survival.forget_peer(id)
 	player_left.rpc(id)
 
 
@@ -1914,7 +1935,7 @@ func _my_species() -> String:
 ## Quanto da velocidade de andar vale agora: sobrecarga e tags da espécie.
 func _speed_scale() -> float:
 	var species := _my_species()
-	var scale := Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed")
+	var scale := Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed") * float(survival.speed_factor())
 	var now := Time.get_ticks_msec()
 	if now < _dash_until:
 		scale *= _dash_boost
@@ -1924,7 +1945,7 @@ func _speed_scale() -> float:
 
 
 func _wanted_motion() -> Vector2:
-	if horrors.is_caught():
+	if horrors.is_caught() or survival.is_out():
 		return Vector2.ZERO
 	if _auto_target != null:
 		var to_target: Vector2 = _auto_target - _pos
@@ -2382,7 +2403,7 @@ func _use_ability() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa, e se aqueça perto de uma fogueira acesa ou dentro de um abrigo pronto; a tocha só freia o frio. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com muita fome ou frio você fica lento; sem nada, desfalece e acorda no ponto seguro mais próximo. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -2607,8 +2628,19 @@ func _debug_items() -> Array:
 		{"label": "Estação", "open": _debug_season_items},
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Fome e frio", "open": _debug_body_items},
 		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
+	]
+
+
+## Encher ou quase esvaziar as reservas, para testar sem esperar.
+func _debug_body_items() -> Array:
+	return [
+		{"label": "Fome e calor cheios", "run": _debug_ask.bind("corpo", "cheio")},
+		{"label": "Fome quase no fim", "run": _debug_ask.bind("corpo", "fome")},
+		{"label": "Calor quase no fim", "run": _debug_ask.bind("corpo", "frio")},
+		{"label": "Ouvir as reservas em números", "run": func(): return "Fome %d, calor %d." % [roundi(survival.food), roundi(survival.warmth)]},
 	]
 
 
@@ -2769,6 +2801,8 @@ func _bag_item_actions(item: String) -> Array:
 	var actions := []
 	if amount <= 0:
 		return actions  # o item acabou: o menu devolve o foco ao pai
+	if Body.is_food(item):
+		actions.append({"label": "Comer", "run": _eat.bind(item)})
 	if Bag.can_wield(item):
 		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
 	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
@@ -2784,6 +2818,12 @@ func _bag_item_actions(item: String) -> Array:
 func _sync_menu() -> void:
 	if _menu != null:
 		Speech.say(_menu.sync(), false)
+
+
+## Comer passa pelo servidor; a resposta (Survival.ate) é que fala e toca.
+func _eat(item: String) -> String:
+	survival.request_eat.rpc_id(1, item)
+	return ""
 
 
 ## Jogar passa pelo servidor; a resposta (ground_changed) é que fala e toca.
@@ -3641,6 +3681,8 @@ func _run_auto_commands() -> void:
 				for i in 12:
 					_interact()
 					await get_tree().create_timer(0.35).timeout
+			"COMER":  # testes: come uma fruta da bolsa
+				_eat("frutas")
 			"JOGAR":  # testes: larga uma pedra grande (do KIT) no chão
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":

@@ -40,6 +40,12 @@ var inventories := {}
 var equipment := {}
 ## nome do personagem -> id da espécie (ver Species); vazio até escolher.
 var species := {}
+## nome da criatura -> { "food", "warmth" }: fome e calor, de 0 a 100 (ver Body).
+var body := {}
+## id -> segundos seguidos com alguma reserva em zero (para desfalecer; não se salva).
+var faint_clock := {}
+## id -> segundos que ainda faltam para secar depois de cruzar um vau.
+var wet_left := {}
 ## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
 var offhand := {}
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
@@ -111,6 +117,8 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if not equipment.has(clean_name):
 		equipment[clean_name] = ""
 	Bag.give_starter(inventories[clean_name], equipment[clean_name])
+	if not body.has(clean_name):
+		body[clean_name] = Body.fresh()
 	builds.touch(owner_key_of_name(clean_name))
 	return pos
 
@@ -312,6 +320,39 @@ func remove_player(id: int) -> void:
 	_last_strike.erase(id)
 	_last_build.erase(id)
 	_last_drop.erase(id)
+	faint_clock.erase(id)
+	wet_left.erase(id)
+
+
+## Fome e calor da criatura ({} se ela não está no mundo). É o mesmo
+## dicionário guardado: mudá-lo muda o corpo dela.
+func body_of(id: int) -> Dictionary:
+	if not players.has(id):
+		return {}
+	var player_name: String = players[id]["name"]
+	if not body.has(player_name):
+		body[player_name] = Body.fresh()
+	return body[player_name]
+
+
+## Come 1 item de comida da bolsa. Devolve { ok, reason, item } com reason
+## "desconhecido", "nao_e_comida", "sem_item" ou "cheio" (barriga cheia).
+func eat(id: int, item: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Body.is_food(item):
+		return {"ok": false, "reason": "nao_e_comida", "item": item}
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var entry := body_of(id)
+	if Body.is_full(entry, item):
+		return {"ok": false, "reason": "cheio", "item": item}
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	Body.eat(entry, item)
+	return {"ok": true, "item": item}
 
 
 ## Para onde o jogador olha (0 norte, 1 nordeste...; ver Compass).
@@ -554,6 +595,21 @@ func strip_resources(id: int) -> Dictionary:
 	return lost
 
 
+## Quem desfalece de fome ou de frio perde metade de cada recurso da bolsa
+## (arredondado para baixo: quem tem 1 fica com ele); armas, ferramentas e o
+## que está nas mãos ficam. Devolve o que foi perdido (item -> quantidade).
+func strip_half_resources(id: int) -> Dictionary:
+	var lost := {}
+	var inv := inventory_of(id)
+	for item: String in inv.keys():
+		if Economy.is_item(item) and not Bag.WIELDABLE.has(item):
+			var half := int(inv[item]) / 2
+			if half > 0:
+				lost[item] = half
+				inv[item] = int(inv[item]) - half
+	return lost
+
+
 ## Leva o jogador a outro ponto sem a conferência de velocidade (ex.: o
 ## Calado o alcançou).
 func teleport(id: int, pos: Vector2) -> void:
@@ -700,6 +756,7 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_strike[id] = now
+	Body.exert(body_of(id))
 	# O terreno de uma obra tem as suas próprias fases (preparo).
 	if not builds.at(cell).is_empty():
 		return {"ok": false, "reason": "nada", "hits_left": 0, "felled": false}
@@ -884,13 +941,15 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	if float(now - int(_last_build.get(id, -BUILD_COOLDOWN_MS))) < build_cooldown_ms(id):
 		return {"ok": false, "reason": "devagar"}
 	_last_build[id] = now
+	Body.exert(body_of(id))
 	return builds.work(build_id, inventory_of(id), -1.0, pos)
 
 
 ## Intervalo mínimo entre batidas numa obra: quem trabalha mais devagar
 ## (efeito "work" da espécie) leva mais tempo por batida.
 func build_cooldown_ms(id: int) -> float:
-	return BUILD_COOLDOWN_MS / maxf(0.1, Species.effect(species_of(id), "work"))
+	var body_factor := Body.work_factor(body_of(id)) if players.has(id) else 1.0
+	return BUILD_COOLDOWN_MS / maxf(0.1, Species.effect(species_of(id), "work") * body_factor)
 
 
 ## A chave de dono de uma criatura (Builds.claim). Hoje é o nome; quando houver
@@ -1043,6 +1102,7 @@ func to_save() -> Dictionary:
 		"offhand": offhand,
 		"species": species,
 		"torch_until": torch_until,
+		"body": body,
 		"day_t": day_t,
 		"day_n": day_n,
 		"last_pos": positions,
@@ -1077,6 +1137,15 @@ static func from_save(data: Dictionary) -> WorldState:
 		state.offhand[player_name] = str(data["offhand"][player_name])
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	var saved_body = data.get("body", {})
+	if typeof(saved_body) == TYPE_DICTIONARY:
+		for player_name in saved_body:
+			var entry = saved_body[player_name]
+			if typeof(entry) == TYPE_DICTIONARY:
+				state.body[player_name] = {
+					"food": clampf(float(entry.get("food", Body.START)), 0.0, Body.MAX),
+					"warmth": clampf(float(entry.get("warmth", Body.START)), 0.0, Body.MAX),
+				}
 	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
 	state.day_n = maxi(int(data.get("day_n", state.day_n)), 0)
 	var positions = data.get("last_pos", {})
