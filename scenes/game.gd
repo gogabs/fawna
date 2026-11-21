@@ -22,6 +22,7 @@ const STEPS_PER_SECOND := 3.3
 const STEP_INTERVAL := 1.0 / STEPS_PER_SECOND
 ## O ritmo dos passos acompanha a velocidade, sem cair abaixo desta fração.
 const MIN_STEP_RATE := 0.3
+const MAX_STEP_RATE := 2.0  # espécies e a disparada andam mais rápido que o normal: os passos acompanham
 ## Ao começar a andar, o primeiro passo sai na hora, a menos que o último
 ## tenha sido há bem pouco (toques rápidos na tecla não viram rajada).
 const STEP_RESTART := 0.6 * STEP_INTERVAL
@@ -244,7 +245,7 @@ func _process(delta: float) -> void:
 	var motion := _wanted_motion()
 	_walk(motion * delta)
 	# O ritmo dos passos acompanha a velocidade: de costas, de lado ou sobrecarregado, mais lento.
-	_step_clock += delta * clampf(motion.length() / WALK_SPEED, MIN_STEP_RATE, 1.0)
+	_step_clock += delta * clampf(motion.length() / WALK_SPEED, MIN_STEP_RATE, MAX_STEP_RATE)
 	_tick_my_steps(_pos != before, delta)
 	_tick_other_steps(delta)
 	_update_torch_sounds()
@@ -1686,7 +1687,7 @@ func player_moved(id: int, pos: Vector2) -> void:
 	var now := Time.get_ticks_msec()
 	var dt := float(now - int(steps.get("last_ms", 0))) / 1000.0
 	if steps["idle"] < OTHER_WALK_GRACE and dt >= 0.03 and dt <= 0.5:
-		var rate := clampf(old_pos.distance_to(pos) / dt / WALK_SPEED, MIN_STEP_RATE, 1.0)
+		var rate := clampf(old_pos.distance_to(pos) / dt / WALK_SPEED, MIN_STEP_RATE, MAX_STEP_RATE)
 		steps["rate"] = lerpf(float(steps.get("rate", 1.0)), rate, 0.3)
 	steps["last_ms"] = now
 	if steps["idle"] >= OTHER_WALK_GRACE and steps["clock"] >= STEP_RESTART:
