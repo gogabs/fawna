@@ -36,7 +36,7 @@ const CLEAR_NAMES := {
 ## Como a fala diz o que acabou de ser arrancado.
 const CLEAR_THING_TEXT := {
 	WorldGen.Thing.ARVORE: "a árvore", WorldGen.Thing.BAMBU: "a touceira de bambu",
-	WorldGen.Thing.ARBUSTO: "o arbusto", WorldGen.Thing.ARBUSTO_FRUTAS: "o arbusto com frutas",
+	WorldGen.Thing.ARBUSTO: "o arbusto", WorldGen.Thing.ARBUSTO_FRUTAS: "o arbusto",
 }
 const QUADRANTS := {
 	"nordeste": Vector2i(1, -1), "noroeste": Vector2i(-1, -1),

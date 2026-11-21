@@ -62,8 +62,8 @@ const WATERSIDE_STONE_CHANCES := {"grande": 0.15, "media": 0.25, "pequena": 0.6}
 ## Como se fala de uma fonte já colhida que continua no lugar. Quem não está
 ## aqui some da fala até rebrotar.
 const TAKEN_NAMES := {
-	WorldGen.Thing.ARBUSTO: "arbusto",
-	WorldGen.Thing.ARBUSTO_FRUTAS: "arbusto",
+	WorldGen.Thing.ARBUSTO: "arbusto vazio",
+	WorldGen.Thing.ARBUSTO_FRUTAS: "arbusto vazio",
 }
 
 ## Se alguém está em cima de uma fonte que ia rebrotar, ela espera este tempo
@@ -104,8 +104,8 @@ static func now() -> float:
 	return Time.get_unix_time_from_system()
 
 
-## Nome da coisa desta casa para a fala, conforme o estado: "arbusto com
-## gravetos" vira "arbusto" depois de colhido, um bambu sem golpes faltando é
+## Nome da coisa desta casa para a fala, conforme o estado: "arbusto" (de
+## gravetos ou de frutas, sem distinguir) vira "arbusto vazio" depois de colhido, um bambu sem golpes faltando é
 ## "bambu derrubado". Vazio se a coisa foi recolhida e sumiu.
 func spoken_name(cell: Vector2i, at := -1.0) -> String:
 	var thing := world.thing_at(cell)

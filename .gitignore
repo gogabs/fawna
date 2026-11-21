@@ -14,3 +14,4 @@ build/
 addons/prismatoid/
 addons/nexus_resonance/
 __pycache__/
+/.tmp

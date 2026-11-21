@@ -91,10 +91,14 @@ func _test_cooldown() -> void:
 	_player(state, 2, "coelho")
 	_open_spot(state, 2)
 	_check(state.use_ability(2, 1000)["ok"], "primeiro uso")
-	var again := state.use_ability(2, 2000)
+	var again := state.use_ability(2, 1500)
 	_check(not again["ok"] and again["reason"] == "espera" and int(again["seconds"]) > 0, "espera entre usos")
 	_open_spot(state, 2)
-	_check(state.use_ability(2, 1000 + 16000)["ok"], "depois da espera, usa de novo")
+	_check(state.use_ability(2, 1000 + 3000)["ok"], "depois da espera, usa de novo")
+	var jump_wait := float(Abilities.data("salto")["cooldown"])
+	_check(jump_wait >= 2.0 and jump_wait <= 3.0, "salto: espera de 2 a 3 s")
+	_check(float(Abilities.data("fucar")["cooldown"]) >= 120.0, "fuçar: espera de minutos")
+	_check(Abilities.summary("fucar").contains("3 min") and Abilities.summary("salto").contains("2,5 s"), "resumo: " + Abilities.summary("fucar") + " / " + Abilities.summary("salto"))
 
 
 func _test_dash() -> void:
@@ -131,7 +135,7 @@ func _test_dig() -> void:
 	_open_spot(state, 2)
 	var result := state.use_ability(2, 1000)
 	_check(result["ok"] and result["event"] == "fucar" and float(result["seconds"]) == 5.0, "javali começa a fuçar")
-	_check(state.use_ability(2, 2000)["reason"] == "ocupado", "ocupado enquanto fuça")
+	_check(state.use_ability(2, 1500)["reason"] == "ocupado", "ocupado enquanto fuça")
 	_check(state.update_channels(3000).is_empty(), "ainda não terminou")
 	state.players[2]["pos"] += Vector2(3, 0)
 	var cancelled := state.update_channels(4000)

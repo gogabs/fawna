@@ -47,6 +47,23 @@ var heading := 0  # para onde a criatura local olha
 var caminheiro: Caminheiro  # a rota acesa aparece em azul
 
 
+var _flash := 0.0  # 1 no clarão, caindo a 0 (o Calado desistiu)
+var _flash_seconds := 1.0
+
+
+## Um clarão suave que se desfaz em "seconds" (sinal visual, sem texto).
+func flash(seconds: float) -> void:
+	_flash_seconds = maxf(seconds, 0.1)
+	_flash = 1.0
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	if _flash > 0.0:
+		_flash = maxf(0.0, _flash - delta / _flash_seconds)
+		queue_redraw()
+
+
 func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
 	_world = world
 	_players = players
@@ -93,3 +110,5 @@ func _draw() -> void:
 		draw_circle(center, TILE * WorldGen.PLAYER_RADIUS, color)
 		if id == _my_id:
 			draw_line(center, center + Compass.forward(heading) * TILE * 0.7, Color("e8792b"), 3.0)
+	if _flash > 0.0:
+		draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(0.85, 0.93, 1.0, 0.35 * _flash))

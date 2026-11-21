@@ -5,8 +5,7 @@ extends Node
 ## No servidor, roda a simulação (Horrors) e manda a cada jogador onde estão
 ## os horrores perto dele. No cliente, cuida do som: quanto mais perto o
 ## Calado, mais o mundo inteiro fica abafado e baixo; a respiração dele
-## soa no lugar onde ele está, e ela se cala
-## quando a criatura vira de frente para ele.
+## soa no lugar onde ele está (e gelo estala, mais rápido quanto mais perto).
 
 const STEP_SECONDS := 0.25  # passo da simulação no servidor
 const STALE_SECONDS := 2.0  # sem notícias por esse tempo, o cliente o esquece
@@ -18,7 +17,13 @@ const PRESENCE_RISE := 0.5  # por segundo: o abafamento chega devagar
 const PRESENCE_FALL := 0.35
 const BREATH_DB := -8.0
 const BREATH_FADE := 40.0  # dB por segundo
-const BREATH_CUT := 240.0  # encarado, ele prende a respiração de uma vez
+const CRACKLE_FAR := 12.0  # a partir daqui, estalos de gelo esparsos
+const CRACKLE_MID := 8.0
+const CRACKLE_NEAR := 4.5  # perto o bastante para golpear: quase contínuo
+const CRACKLE_BASE_DB := -6.0  # o gelo é baixinho
+const CRACKLE_MAX_BOOST_DB := 20.0  # no máximo, quanto se compensa o filtro
+const FLASH_SECONDS := 1.2
+const STRIKE_COOLDOWN := 0.35  # entre golpes na direção dele
 const BREATH_HEIGHT := 1.7  # metros
 const SILENT_DB := -80.0
 
@@ -35,6 +40,8 @@ var _breath: AudioStreamPlayer3D
 var _filter: AudioEffectLowPassFilter
 var _touched_master := false
 var _indoors := 0.0  # 0 fora, 1 dentro de paredes fechadas
+var _crackle_wait := 0.0
+var _last_strike := {}  # peer -> ms do último golpe contado
 
 
 func start_server(world: WorldGen) -> void:
@@ -90,7 +97,14 @@ func _server_step() -> void:
 	var game := get_parent()
 	if game.state == null:
 		return
-	for message in horrors.update(Time.get_ticks_msec(), game.state.players, _lit_fires(game.state.builds) + game.state.lit_torches(), game.daytime.is_night(), game.daytime.ring_lights(game.state.players), game.daytime.calado_rate()):
+	_dispatch(horrors.update(Time.get_ticks_msec(), game.state.players, _lit_fires(game.state.builds) + game.state.lit_torches(), game.daytime.is_night(), game.daytime.ring_lights(game.state.players), game.daytime.calado_rate()))
+	if game.birds.aviary != null:
+		game.birds.aviary.hush = horrors.points()
+
+
+## Entrega as mensagens da simulação a quem elas são.
+func _dispatch(messages: Array) -> void:
+	for message in messages:
 		var peer: int = message[0]
 		var args: Array = message[2]
 		match message[1]:
@@ -98,10 +112,29 @@ func _server_step() -> void:
 				horror_at.rpc_id(peer, args[0], args[1], args[2])
 			"gone":
 				horror_gone.rpc_id(peer, args[0])
+			"gaveup":
+				horror_gave_up.rpc_id(peer, args[0])
 			"caught":
 				_catch(peer)
-	if game.birds.aviary != null:
-		game.birds.aviary.hush = horrors.points()
+
+
+## J com arma na mão (ou garras): se o Calado que o persegue está ao alcance e
+## à frente, leva o golpe. A lança e as garras alcançam mais longe.
+func strike(peer: int, wielding: String, claws: bool) -> void:
+	if horrors == null:
+		return
+	var now := Time.get_ticks_msec()
+	if now - int(_last_strike.get(peer, -1000)) < int(STRIKE_COOLDOWN * 1000.0):
+		return
+	_last_strike[peer] = now
+	var long := claws or wielding == "lanca"
+	var armed := claws or wielding in ["machado", "clava", "lanca"]
+	if not armed:
+		return
+	var result := horrors.strike(peer, get_parent().state.players, Horrors.STRIKE_REACH_LONG if long else Horrors.STRIKE_REACH)
+	if result["hit"]:
+		horror_struck.rpc_id(peer)
+	_dispatch(result["messages"])
 
 
 ## O Calado alcançou o jogador: ele perde os recursos e reaparece no ponto
@@ -188,6 +221,29 @@ func horror_gone(id: int) -> void:
 	_known.erase(id)
 
 
+## Seu golpe acertou o Calado.
+@rpc("authority", "call_local", "reliable")
+func horror_struck() -> void:
+	var game := get_parent()
+	if game.world != null:
+		game._play(HorrorSounds.hit())
+
+
+## Ele desistiu de você: um suspiro que se afasta e um clarão curto. Sem texto.
+@rpc("authority", "call_local", "reliable")
+func horror_gave_up(id: int) -> void:
+	var game := get_parent()
+	if game.world == null:
+		return
+	if _known.has(id):
+		game.audio.play_at_point(_known[id]["shown"], HorrorSounds.gave_up(), 0.0, true, true)
+	else:
+		game._play(HorrorSounds.gave_up())
+	game.view.flash(FLASH_SECONDS)
+	if _known.has(id):
+		_known[id]["mode"] = Horrors.Mode.RETREAT
+
+
 ## O Calado alcançou esta criatura: o som se fecha, ela é levada e reaparece
 ## no ponto seguro. Ao voltar a si, uma fala curta.
 @rpc("authority", "call_local", "reliable")
@@ -253,6 +309,34 @@ func _client_step(delta: float) -> void:
 	_indoors = move_toward(_indoors, _indoor_target(game), delta / 0.6)
 	_apply_hush()
 	_update_breath(nearest, delta)
+	_update_crackle(nearest, delta)
+
+
+## Gelo estalando perto dele: o aviso de proximidade, em três faixas.
+func _update_crackle(nearest: Dictionary, delta: float) -> void:
+	if nearest.is_empty() or _caught:
+		_crackle_wait = 0.0
+		return
+	var distance := nearest_distance()
+	if distance > CRACKLE_FAR or nearest["mode"] == Horrors.Mode.RETREAT:
+		return
+	_crackle_wait -= delta
+	if _crackle_wait > 0.0:
+		return
+	var interval := 0.9 if distance > CRACKLE_MID else (0.45 if distance > CRACKLE_NEAR else 0.18)
+	_crackle_wait = interval * randf_range(0.7, 1.3)
+	var game := get_parent()
+	game.audio.play_at_point(nearest["shown"], HorrorSounds.crackle(randi()), _crackle_db(), true, true)
+
+
+## Volume do estalo: baixo, mais o que o abafamento do Calado tira dele (o
+## filtro passa-baixa de 6 dB por oitava e a queda de volume geral), para o
+## agudinho se ouvir com o mundo abafado.
+func _crackle_db() -> float:
+	var hush := maxf(_presence, _indoors * INDOOR_HUSH)
+	var cutoff := OPEN_HZ * pow(HUSHED_HZ / OPEN_HZ, hush)
+	var cut_db := 10.0 * log(1.0 + pow(HorrorSounds.CRACKLE_HZ / cutoff, 2.0)) / log(10.0)
+	return CRACKLE_BASE_DB + minf(cut_db, CRACKLE_MAX_BOOST_DB) - HUSHED_DB * hush
 
 
 func _nearest() -> Dictionary:
@@ -294,17 +378,14 @@ func _indoor_target(game: Node) -> float:
 func _update_breath(nearest: Dictionary, delta: float) -> void:
 	if _breath == null:
 		return
-	var game := get_parent()
 	var target := SILENT_DB
 	var rate := BREATH_FADE
 	if not nearest.is_empty():
 		var pos: Vector2 = nearest["shown"]
 		_breath.position = Aviary.to_3d(pos, BREATH_HEIGHT)
-		if Horrors.is_facing(game._pos, game._heading, pos):
-			rate = BREATH_CUT
-		else:
-			# Compensa o que o próprio abafamento tira dela.
-			target = BREATH_DB - HUSHED_DB * _presence + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
+		# Compensa o que o próprio abafamento tira dela. Encará-lo não a cala mais:
+		# é por ela que se acha o Calado para golpear.
+		target = BREATH_DB - HUSHED_DB * _presence + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
 	_breath.volume_db = move_toward(_breath.volume_db, target, rate * delta)
 	if _breath.volume_db > SILENT_DB + 1.0:
 		if not _breath.playing:
