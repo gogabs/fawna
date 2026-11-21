@@ -2351,12 +2351,16 @@ func _say_radar() -> void:
 	if _caminheiro.active:
 		parts.append("Caminheiro, rumo %s: %s." % [Narrator.contract("a", _caminheiro.place_name), Compass.describe(_tracked_destination - _pos, _heading)])
 	var found := []  # [distância, rótulo, deslocamento]
+	var seen_things := {}
 	for entry: Array in CAMINHEIRO_RESOURCES:
+		if seen_things.has(entry[1]):
+			continue  # Lenha e Frutas apontam para o mesmo arbusto: uma linha só
+		seen_things[entry[1]] = true
 		var cell := nearest_collectable(world, harvest, _pos, entry[1], RADAR_RADIUS)
 		if cell == WorldGen.NO_CELL or (_caminheiro.active and cell == _tracked_resource):
 			continue
 		var offset := WorldGen.cell_center(cell) - _pos
-		found.append([offset.length(), entry[0], offset])
+		found.append([offset.length(), "Arbusto" if entry[1].has(WorldGen.Thing.ARBUSTO) else entry[0], offset])
 	for build: Dictionary in builds.all():
 		var distance := Builds.reach_distance(build, _pos)
 		if distance > RADAR_RADIUS:
@@ -2776,14 +2780,17 @@ func _stow() -> String:
 ## contam e como se fala do destino (com artigo, para "rumo ao bambu").
 const CAMINHEIRO_RESOURCES := [
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
-	["Arbusto", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
+	["Lenha", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "a lenha"],
 	["Madeira", [WorldGen.Thing.ARVORE], "a árvore"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
 	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
+	["Frutas", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
 	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
+## Lenha e Frutas aparecem separadas, mas levam ao mesmo arbusto: o jogo não
+## diz qual deles dá o quê (só ao coletar).
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
 ## na região de agora ou na vizinha, sem depender de limites de região.
