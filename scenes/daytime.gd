@@ -57,6 +57,8 @@ func start_server(state: WorldState) -> void:
 	days = state.day_n
 	if Net.day_hour >= 0.0:
 		t = DayCycle.hour_to_t(Net.day_hour)
+	if Net.day_start >= 0:
+		days = Net.day_start
 	if Net.day_seconds > 0.0:
 		day_seconds = Net.day_seconds
 	_apply_shift()
