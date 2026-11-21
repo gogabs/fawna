@@ -2618,7 +2618,7 @@ func _debug_position() -> String:
 
 func _debug_fps() -> String:
 	var fps := int(Engine.get_frames_per_second())
-	var extra := ""
+	var extra := ", limite %d" % Engine.max_fps
 	if view3d != null:
 		extra = ", %d pedaços de chão em 3D" % view3d.chunk_count()
 	elif Net.graphics_off:

@@ -65,6 +65,7 @@ func _ready() -> void:
 	world_seed = randi()
 	load_settings()
 	apply_vsync()
+	apply_fps_limit(false)
 	_parse_cmdline()
 
 
@@ -100,9 +101,21 @@ func apply_vsync() -> void:
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 
 
+## Teto de quadros por segundo, aplicado por código (além do project.godot, que
+## já pede 60): o 3D sem teto esquentava o computador de quem joga. Sem
+## gráficos dentro do jogo não há nada para ver, então o teto cai.
+const FPS_LIMIT := 60
+const FPS_LIMIT_NO_GRAPHICS := 20
+
+
+func apply_fps_limit(in_game: bool) -> void:
+	Engine.max_fps = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+
+
 ## Só vale dentro do jogo (game.gd liga ao entrar e desfaz ao sair): os menus
 ## nativos precisam de quadros para o leitor de tela receber o foco.
 func apply_graphics(in_game: bool) -> void:
+	apply_fps_limit(in_game)
 	if DisplayServer.get_name() == "headless":
 		return
 	RenderingServer.render_loop_enabled = not (graphics_off and in_game)
