@@ -864,12 +864,54 @@ func _build_trail_line(from: Vector2i, to: Vector2i) -> PackedVector2Array:
 		var p := s + side * _trail_noise.get_noise_2d(s.x, s.y) * TRAIL_SWAY * ease
 		points.append(p)
 		wet.append(_is_water_at(cell_of(p)))
-	# Sobre a água, só ficam as margens: a ponte é a reta entre elas.
+	# Sobre a água a trilha vira ponte: um trecho reto, sempre norte-sul ou
+	# leste-oeste, nunca na diagonal.
 	var line := PackedVector2Array()
-	for i in points.size():
+	var i := 0
+	while i < points.size():
 		if not wet[i] or i == 0 or i == points.size() - 1:
 			line.append(points[i])
+			i += 1
+			continue
+		var last := i
+		while last + 1 < points.size() - 1 and wet[last + 1]:
+			last += 1
+		var bridge := _orthogonal_bridge(points[i - 1], points[last + 1])
+		line.append_array(bridge)
+		i = last + 1
 	return line
+
+
+## Ponte ortogonal entre a última margem seca "from" e a próxima "to" (ou o
+## ponto de encontro, se ele estiver na água): um trecho leste-oeste e outro
+## norte-sul, em L, com a quina onde houver mais água. Devolve a quina a
+## acrescentar à linha entre as duas, ou nada se os dois já estão alinhados.
+func _orthogonal_bridge(from: Vector2, to: Vector2) -> PackedVector2Array:
+	if is_equal_approx(from.x, to.x) or is_equal_approx(from.y, to.y):
+		return PackedVector2Array()
+	var east_west_first := Vector2(to.x, from.y)
+	var north_south_first := Vector2(from.x, to.y)
+	var first := east_west_first
+	if absf(to.x - from.x) < absf(to.y - from.y):
+		first = north_south_first
+	# A quina que deixa mais da ponte sobre a água, e menos sobre a terra.
+	var wet_a := _wet_length(from, east_west_first) + _wet_length(east_west_first, to)
+	var wet_b := _wet_length(from, north_south_first) + _wet_length(north_south_first, to)
+	if wet_a > wet_b:
+		first = east_west_first
+	elif wet_b > wet_a:
+		first = north_south_first
+	return PackedVector2Array([first])
+
+
+## Quanto da reta de "a" a "b" passa sobre a água, em casas (aproximado).
+func _wet_length(a: Vector2, b: Vector2) -> float:
+	var steps := maxi(1, ceili(a.distance_to(b) / TRAIL_STEP))
+	var wet := 0
+	for i in steps + 1:
+		if _is_water_at(cell_of(a.lerp(b, float(i) / steps))):
+			wet += 1
+	return wet * a.distance_to(b) / steps
 
 
 func _is_water_at(cell: Vector2i) -> bool:
