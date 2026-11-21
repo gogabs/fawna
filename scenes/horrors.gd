@@ -227,6 +227,8 @@ func horror_struck() -> void:
 	var game := get_parent()
 	if game.world != null:
 		game._play(HorrorSounds.hit())
+		if game.view3d != null:
+			game.view3d.pulse_horror()
 
 
 ## Ele desistiu de você: um suspiro que se afasta e um clarão curto. Sem texto.
@@ -240,6 +242,8 @@ func horror_gave_up(id: int) -> void:
 	else:
 		game._play(HorrorSounds.gave_up())
 	game.view.flash(FLASH_SECONDS)
+	if game.view3d != null:
+		game.view3d.flash(FLASH_SECONDS)
 	if _known.has(id):
 		_known[id]["mode"] = Horrors.Mode.RETREAT
 

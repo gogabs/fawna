@@ -54,6 +54,8 @@ var _world: WorldGen
 var _audio: SpatialAudio
 var _harvest: Harvest
 var _obras: BuildsView3D
+var _wildlife: WildlifeView3D
+var _flash_rect: ColorRect
 var _bridges := {}  # pedaço -> casas de ponte (para refazer as coisas)
 var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
 var _camera: Camera3D
@@ -103,6 +105,7 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		wildlife.name = "Bichos3D"
 		add_child(wildlife)
 		wildlife.setup(birds, horrors, _shapes)
+		_wildlife = wildlife
 
 
 ## Chamado a cada movimento: onde a criatura está. O giro vem do ouvinte,
@@ -124,6 +127,28 @@ func follow(pos: Vector2) -> void:
 func refresh_builds() -> void:
 	if _obras != null:
 		_obras.refresh()
+
+
+## Um clarão suave que se desfaz em "seconds" (sinal visual, sem texto); o
+## 2D de depuração tem o seu, mas fica escondido quando o 3D está ligado.
+func flash(seconds: float) -> void:
+	if _flash_rect == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 10
+		add_child(layer)
+		_flash_rect = ColorRect.new()
+		_flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(_flash_rect)
+	_flash_rect.color = Color(0.85, 0.93, 1.0, 0.35)
+	var tween := create_tween()
+	tween.tween_property(_flash_rect, "color:a", 0.0, maxf(seconds, 0.1))
+
+
+## Um golpe acertou o Calado.
+func pulse_horror() -> void:
+	if _wildlife != null:
+		_wildlife.pulse()
 
 
 func chunk_count() -> int:

@@ -4,8 +4,9 @@ extends Node3D
 ## já sabem (as posições que o servidor manda) e desenha por cima. Os pássaros
 ## são formas simples que batem asas quando voam; o Calado é uma nuvenzona
 ## cinza-escura de partículas, sem corpo nem rosto: algo que se aproxima.
-## Encarar o Calado não muda nada nele; recuo, atordoamento e desistência
-## (PR #77) ficam para quando o servidor mandar esses avisos.
+## Encarar o Calado não muda nada nele. Um golpe o empurra (a posição do
+## servidor já mostra o recuo, e a nuvem desliza até lá) e a agita; quando
+## ele desiste ou some, a nuvem se desfaz aos poucos.
 
 const METERS := WorldGen.METERS_PER_CELL
 const CLOUD_HEIGHT := 1.3
@@ -30,6 +31,7 @@ var _shapes := {}
 var _flock := {}  # id -> Node3D
 var _clouds := {}  # id -> CPUParticles3D
 var _time := 0.0
+var _pulse := 0.0  # 1 logo após um golpe acertar a nuvem, volta a 0
 var _cloud_mesh: SphereMesh
 var _cloud_material: StandardMaterial3D
 
@@ -113,11 +115,12 @@ func _piece(parent: Node3D, shape: String, at: Vector3, scale_to: Vector3, mater
 	parent.add_child(piece)
 
 
-func _sync_horrors(_delta: float) -> void:
+func _sync_horrors(delta: float) -> void:
+	_pulse = move_toward(_pulse, 0.0, delta * 2.5)
 	var known: Dictionary = _horrors_node.shown_horrors() if _horrors_node != null else {}
 	for id: int in _clouds.keys():
 		if not known.has(id):
-			_clouds[id].queue_free()
+			_dissolve(_clouds[id])
 			_clouds.erase(id)
 	for id: int in known:
 		if not _clouds.has(id):
@@ -127,6 +130,23 @@ func _sync_horrors(_delta: float) -> void:
 		var pos: Vector2 = known[id]["pos"]
 		var cloud: CPUParticles3D = _clouds[id]
 		cloud.position = Vector3(pos.x * METERS, CLOUD_HEIGHT, pos.y * METERS)
+		# Quando ele desiste (RETREAT), para de gerar nuvem: o que já existe
+		# se desfaz sozinho enquanto ele se afasta.
+		if int(known[id]["mode"]) == Horrors.Mode.RETREAT:
+			cloud.emitting = false
+		var pulse_scale := lerpf(1.0, 1.35, _pulse)
+		cloud.scale = Vector3.ONE * pulse_scale
+
+
+## Um golpe acertou: a nuvem se agita por um instante.
+func pulse() -> void:
+	_pulse = 1.0
+
+
+## Some devagar: para de gerar partículas e se solta depois de a última sumir.
+func _dissolve(cloud: CPUParticles3D) -> void:
+	cloud.emitting = false
+	get_tree().create_timer(cloud.lifetime + 0.2).timeout.connect(cloud.queue_free)
 
 
 ## A nuvenzona: esferas cinza-escuras e translúcidas que se misturam.
