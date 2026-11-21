@@ -29,6 +29,15 @@ var _shapes := {}
 var _built_root: Node3D
 var _folk := {}  # id -> Node3D
 var _center := Vector2.ZERO
+var _flickers := []  # [{ light, base, phase }] das luzes de fogueira
+var _torch_lights: Array[OmniLight3D] = []
+var _torch_flames: Array[MeshInstance3D] = []
+var _clock := 0.0
+const FIRE_ENERGY := 5.0
+const FIRE_RANGE := 18.0
+const TORCH_SLOTS := 4
+const TORCH_ENERGY := 2.6
+const TORCH_RANGE := 11.0
 
 
 func setup(world: WorldGen, builds: Builds, players: Dictionary, my_id: int, shapes: Dictionary, material: StandardMaterial3D) -> void:
@@ -44,7 +53,49 @@ func setup(world: WorldGen, builds: Builds, players: Dictionary, my_id: int, sha
 	_flame_material.emission_enabled = true
 	_flame_material.emission = FLAME_COLOR
 	_flame_material.emission_energy_multiplier = 2.0
+	for i in TORCH_SLOTS:
+		var light := OmniLight3D.new()
+		light.light_color = FLAME_COLOR
+		light.light_energy = TORCH_ENERGY
+		light.omni_range = TORCH_RANGE
+		light.visible = false
+		add_child(light)
+		_torch_lights.append(light)
+		var flame := MeshInstance3D.new()
+		flame.mesh = _shapes["blob"]
+		flame.material_override = _flame_material
+		flame.scale = Vector3(0.14, 0.22, 0.14)
+		flame.visible = false
+		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(flame)
+		_torch_flames.append(flame)
 	refresh()
+
+
+## As tochas acesas: "mine" é a da própria criatura (só luz, na mão esquerda) e
+## "others" são as posições (casas) de quem leva uma, com chama visível.
+func set_torches(mine: Variant, others: Array) -> void:
+	var i := 0
+	if mine is Vector2:
+		_place_torch(i, mine, false)
+		i += 1
+	for point: Vector2 in others:
+		if i >= TORCH_SLOTS:
+			break
+		_place_torch(i, point, true)
+		i += 1
+	while i < TORCH_SLOTS:
+		_torch_lights[i].visible = false
+		_torch_flames[i].visible = false
+		i += 1
+
+
+func _place_torch(i: int, point: Vector2, flame_visible: bool) -> void:
+	var at := Vector3(point.x * METERS, 1.0, point.y * METERS)
+	_torch_lights[i].position = at
+	_torch_lights[i].visible = true
+	_torch_flames[i].position = at
+	_torch_flames[i].visible = flame_visible
 
 
 ## Onde a criatura está (casas): as obras só aparecem por perto.
@@ -65,6 +116,7 @@ func refresh() -> void:
 	_built_root = Node3D.new()
 	_built_root.name = "Obras"
 	add_child(_built_root)
+	_flickers.clear()
 	var lists := {"trunk": [], "cone": [], "blob": [], "stalk": [], "box": []}
 	for build: Dictionary in _builds.all():
 		var origin: Vector2 = Vector2(build["cell"])
@@ -122,10 +174,11 @@ func _add_fire(lists: Dictionary, build: Dictionary, finished: int) -> void:
 			_built_root.add_child(flame)
 			var light := OmniLight3D.new()
 			light.light_color = FLAME_COLOR
-			light.light_energy = 2.5
-			light.omni_range = 12.0
+			light.light_energy = FIRE_ENERGY
+			light.omni_range = FIRE_RANGE
 			light.position = at + Vector3.UP * 1.0
 			_built_root.add_child(light)
+			_flickers.append({"light": light, "base": FIRE_ENERGY, "phase": randf() * TAU})
 		else:
 			WorldView3D.put(lists, "blob", at, Vector3(0.7, 0.1, 0.7), 0.0, 0.05, ASH)
 
@@ -168,6 +221,13 @@ func _add_house(lists: Dictionary, build: Dictionary, finished: int, size: int) 
 # --- Outras criaturas -------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_clock += delta
+	for entry: Dictionary in _flickers:
+		var wobble := 0.85 + 0.1 * sin(_clock * 11.0 + float(entry["phase"])) + 0.05 * sin(_clock * 23.0 + float(entry["phase"]) * 2.0)
+		(entry["light"] as OmniLight3D).light_energy = float(entry["base"]) * wobble
+	for i in TORCH_SLOTS:
+		if _torch_lights[i].visible:
+			_torch_lights[i].light_energy = TORCH_ENERGY * (0.88 + 0.12 * sin(_clock * 14.0 + i * 1.7))
 	if _players == null:
 		return
 	for id: int in _folk.keys():

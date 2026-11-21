@@ -2293,6 +2293,11 @@ func _update_torch_sounds() -> void:
 		if id != my_id and players.has(id):
 			points.append(players[id]["pos"])
 	audio.set_torches(points)
+	if view3d != null:
+		var mine: Variant = points[0] if _torch_ends > Time.get_unix_time_from_system() and not offhand.is_empty() else null
+		var others: Array = points.slice(1) if mine != null else points
+		view3d.set_torches(mine, others)
+		view3d.set_held_torch(not offhand.is_empty(), mine != null)
 
 
 func _say_inventory() -> void:
@@ -3577,6 +3582,8 @@ func _run_auto_commands() -> void:
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)
+			"TOCHA_ACESA":  # testes (só visual, local): põe uma tocha acesa na mão não dominante
+				offhand_changed(inventory, "tocha", 600.0, "", "tocha")
 			"CALADO_ONDE":
 				print("[teste] calado a %.1f casas, abafamento %.2f" % [horrors.nearest_distance(), horrors.presence()])
 			"ESPERAR":

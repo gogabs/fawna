@@ -61,6 +61,8 @@ var _ring_check := 0.0
 var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
+var _held_torch: Node3D
+var _held_flame: MeshInstance3D
 var _bridges := {}  # pedaço -> casas de ponte (para refazer as coisas)
 var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
 var _camera: Camera3D
@@ -151,6 +153,58 @@ func flash(seconds: float) -> void:
 	tween.tween_property(_flash_rect, "color:a", 0.0, maxf(seconds, 0.1))
 
 
+## A tocha na mão esquerda, no canto da tela: "held" se há uma tocha na mão,
+## "lit" se está acesa (apagada, só o cabo).
+func set_held_torch(held: bool, lit: bool) -> void:
+	if _camera == null:
+		return
+	if _held_torch == null:
+		_make_held_torch()
+	_held_torch.visible = held
+	_held_flame.visible = held and lit
+
+
+func _make_held_torch() -> void:
+	_held_torch = Node3D.new()
+	_held_torch.name = "TochaNaMao"
+	_held_torch.position = Vector3(-0.34, -0.42, -0.75)
+	_held_torch.rotation_degrees = Vector3(18.0, 0.0, -10.0)
+	_camera.add_child(_held_torch)
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color("4a3626")
+	wood.roughness = 1.0
+	var stick := MeshInstance3D.new()
+	stick.mesh = _shapes["trunk"]
+	stick.material_override = wood
+	stick.scale = Vector3(0.14, 0.55, 0.14)
+	stick.position = Vector3(0.0, 0.0, 0.0)
+	stick.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_held_torch.add_child(stick)
+	var wrap := MeshInstance3D.new()  # o pano embebido em resina na ponta
+	wrap.mesh = _shapes["blob"]
+	wrap.material_override = wood
+	wrap.scale = Vector3(0.06, 0.09, 0.06)
+	wrap.position = Vector3(0.0, 0.28, 0.0)
+	wrap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_held_torch.add_child(wrap)
+	_held_flame = MeshInstance3D.new()
+	_held_flame.mesh = _shapes["cone"]
+	var fire := StandardMaterial3D.new()
+	fire.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fire.albedo_color = Color("ff8a3a")
+	_held_flame.material_override = fire
+	_held_flame.scale = Vector3(0.07, 0.17, 0.07)
+	_held_flame.position = Vector3(0.0, 0.38, 0.0)
+	_held_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_held_torch.add_child(_held_flame)
+
+
+## As tochas acesas (a sua, se estiver acesa, e as dos outros).
+func set_torches(mine: Variant, others: Array) -> void:
+	if _obras != null:
+		_obras.set_torches(mine, others)
+
+
 ## Um golpe acertou o Calado.
 func pulse_horror() -> void:
 	if _wildlife != null:
@@ -213,6 +267,9 @@ func _plan(center: Vector2i) -> void:
 
 func _process(delta: float) -> void:
 	_update_sky(delta)
+	if _held_flame != null and _held_flame.visible:
+		var flicker := 1.0 + 0.12 * sin(Time.get_ticks_msec() * 0.021) + 0.06 * sin(Time.get_ticks_msec() * 0.047)
+		_held_flame.scale = Vector3(0.07, 0.17 * flicker, 0.07)
 	if _camera != null and _audio != null:
 		_camera.rotation.y = _audio.facing_yaw()
 	for i in MAX_BUILDS_PER_FRAME:
