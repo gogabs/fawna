@@ -4,6 +4,8 @@ extends Node3D
 ## já sabem (as posições que o servidor manda) e desenha por cima. Os pássaros
 ## são formas simples que batem asas quando voam; o Calado é uma nuvenzona
 ## cinza-escura de partículas, sem corpo nem rosto: algo que se aproxima.
+## Encarar o Calado não muda nada nele; recuo, atordoamento e desistência
+## (PR #77) ficam para quando o servidor mandar esses avisos.
 
 const METERS := WorldGen.METERS_PER_CELL
 const CLOUD_HEIGHT := 1.3
@@ -111,7 +113,7 @@ func _piece(parent: Node3D, shape: String, at: Vector3, scale_to: Vector3, mater
 	parent.add_child(piece)
 
 
-func _sync_horrors(delta: float) -> void:
+func _sync_horrors(_delta: float) -> void:
 	var known: Dictionary = _horrors_node.shown_horrors() if _horrors_node != null else {}
 	for id: int in _clouds.keys():
 		if not known.has(id):
@@ -125,11 +127,6 @@ func _sync_horrors(delta: float) -> void:
 		var pos: Vector2 = known[id]["pos"]
 		var cloud: CPUParticles3D = _clouds[id]
 		cloud.position = Vector3(pos.x * METERS, CLOUD_HEIGHT, pos.y * METERS)
-		# Encarado (HELD), a nuvem encolhe e para de se mexer.
-		var held: bool = int(known[id]["mode"]) == 1
-		cloud.speed_scale = move_toward(cloud.speed_scale, 0.25 if held else 1.0, delta)
-		var s := 0.8 if held else 1.0
-		cloud.scale = cloud.scale.lerp(Vector3.ONE * s, minf(1.0, delta * 3.0))
 
 
 ## A nuvenzona: esferas cinza-escuras e translúcidas que se misturam.
