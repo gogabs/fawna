@@ -44,7 +44,7 @@ Opções: `--server`, `--host`, `--debug` (liga o menu de depuração, veja abai
 
 ### Depuração (só para testes)
 
-O menu das setas ganha **Depuração** quando o servidor a liga: num servidor dedicado de testes com `--debug` (use outra porta que a do servidor principal, ex. `--server --debug --port=7351`; qualquer jogador que entrar nele usa) e em jogo hospedado pelo menu ou com `--host` (só quem hospeda usa, mesmo com convidados). Sem isso o menu não aparece e o servidor recusa os pedidos. Tem: dar pacotes de recursos (materiais de obra, raros, frutas, ferramentas ou tudo), esvaziar a bolsa, limite de carga alto (1000, sem sobrecarga), hora do dia (momentos como noite, coro do amanhecer ou meio-dia; o mundo vai sempre para a frente), estação (começo de cada uma), teleporte (40 casas para cada lado, miolo da faixa do anel ou longe dela, povoados e fogueiras), Calado (chamar atrás de você, dispensar, ligar/desligar as aparições sozinhas) e a posição atual. Comando de teste: `--auto=DBG_ação_argumento`.
+O menu das setas ganha **Depuração** quando o servidor a liga: num servidor dedicado de testes com `--debug` (use outra porta que a do servidor principal, ex. `--server --debug --port=7351`; qualquer jogador que entrar nele usa) e em jogo hospedado pelo menu ou com `--host` (só quem hospeda usa, mesmo com convidados). Sem isso o menu não aparece e o servidor recusa os pedidos. Tem: dar pacotes de recursos (materiais de obra, raros, frutas, ferramentas ou tudo), esvaziar a bolsa, limite de carga alto (1000, sem sobrecarga), hora do dia (momentos como noite, coro do amanhecer ou meio-dia; o mundo vai sempre para a frente), estação (começo de cada uma), teleporte (40 casas para cada lado, miolo da faixa do anel ou longe dela, povoados e fogueiras), Calado (chamar atrás de você, dispensar, ligar/desligar as aparições sozinhas), fome e frio (encher, quase esvaziar uma reserva, ouvir os números) e a posição atual. Comando de teste: `--auto=DBG_ação_argumento`.
 
 ## Controles
 
@@ -60,7 +60,7 @@ O menu das setas ganha **Depuração** quando o servidor a liga: num servidor de
 | Ajuda (lista de comandos) | H |
 | Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
-| Onde estou; apertando de novo, o momento do dia, o anel e a estação (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
+| Onde estou; apertando de novo, o momento do dia, o anel e a estação; mais uma vez, a fome e o frio (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
 
@@ -152,6 +152,10 @@ de beacon. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito d
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso
 apaga o cristal.
+
+### Fome e frio
+
+A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais depressa na Longa Escuridão. O calor só cai quando faz frio: à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas; cruzar um vau molha e esfria mais por um minuto. Uma fogueira acesa por perto devolve o calor em uns 2 minutos, e um abrigo pronto (estando dentro) aos poucos; a tocha só freia a perda. Come-se pela Bolsa (frutas, por enquanto). Não há barra: a barriga ronca e o corpo treme, mais seguido quanto pior, e uma frase avisa só quando um limiar piora (50%, 25% e vazio). Abaixo de 25% a criatura anda e trabalha nas obras mais devagar. Com uma reserva vazia por 1 minuto, desfalece, perde metade de cada recurso da bolsa e acorda no ponto seguro mais próximo. Os números ficam em `shared/body.gd`. Espécies: Pesado sente mais fome, Leve menos fome e mais frio, Pelagem (Troncudo e Geado) aguenta o frio, Mestre do fogo se aquece mais depressa.
 
 ## Como se joga (por enquanto)
 

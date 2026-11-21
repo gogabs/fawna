@@ -144,18 +144,26 @@ func _catch(peer: int) -> void:
 	var state: WorldState = game.state
 	if not state.players.has(peer):
 		return
-	var shelters := _lit_fires(state.builds)
-	for settlement: Dictionary in state.builds.settlements():
-		shelters.append(WorldGen.cell_center(settlement["cell"]))
-	var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
-	var from: Vector2 = state.players[peer]["pos"]
-	var spot := Horrors.landing_spot(state.world, Horrors.nearest_shelter(state.world, from, shelters), blocked)
+	var spot := rescue_spot(peer)
 	var lost := state.strip_resources(peer)
 	state.teleport(peer, spot)
 	game.inventory_changed.rpc_id(peer, state.inventory_of(peer), "", "")
 	game.player_moved.rpc(peer, spot)
 	horror_caught.rpc_id(peer, spot, not lost.is_empty())
 	print("[servidor] Calado alcançou %s: levado a %s, perdeu %s" % [state.players[peer]["name"], spot, lost])
+
+
+## O ponto seguro mais próximo de quem foi levado (pelo Calado, ou ao
+## desfalecer de fome ou de frio): fogueira acesa, povoado ou, sem nenhum por
+## perto, o cruzamento de trilhas mais próximo.
+func rescue_spot(peer: int) -> Vector2:
+	var state: WorldState = get_parent().state
+	var shelters := _lit_fires(state.builds)
+	for settlement: Dictionary in state.builds.settlements():
+		shelters.append(WorldGen.cell_center(settlement["cell"]))
+	var blocked := state.builds.all().map(func(build: Dictionary): return build["cell"])
+	var from: Vector2 = state.players[peer]["pos"]
+	return Horrors.landing_spot(state.world, Horrors.nearest_shelter(state.world, from, shelters), blocked)
 
 
 func _lit_fires(builds: Builds) -> Array:

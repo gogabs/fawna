@@ -23,7 +23,7 @@ func _check(condition: bool, message: String) -> void:
 
 func _test_data() -> void:
 	_check(Species.ORDER.size() == 8, "oito espécies")
-	_check(Species.TAGS.size() == 16, "dezesseis tags")
+	_check(Species.TAGS.size() == 17, "dezessete tags")
 	for id in Species.ORDER:
 		_check(Species.DATA.has(id), "dados de " + id)
 		_check(not Species.description(id).is_empty(), "descrição de " + id)
