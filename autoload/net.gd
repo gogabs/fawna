@@ -39,6 +39,12 @@ var vertical_nav := false
 ## Gráficos desligados: dentro do jogo, para de desenhar (a janela fica parada;
 ## som e fala continuam) e gasta bem menos processador. Escolhido em Opções.
 var graphics_off := false
+## Opções do 3D (ver WorldView3D): sombras, suavização de bordas (0 = desligada,
+## 2 ou 4 amostras) e brilho nas luzes. Os padrões são o preset "Mais desempenho".
+var shadows := false
+var msaa := 0
+var glow := false
+const PRESET_NAMES := ["Desativados", "Mais desempenho", "Melhores gráficos"]
 ## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
 ## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
 var debug := false
@@ -81,6 +87,9 @@ func load_settings() -> void:
 	password = config.get_value("jogador", "senha", password)
 	vsync = config.get_value("video", "vsync", vsync)
 	graphics_off = config.get_value("video", "sem_graficos", graphics_off)
+	shadows = config.get_value("video", "sombras", shadows)
+	msaa = config.get_value("video", "antisserrilhamento", msaa)
+	glow = config.get_value("video", "brilho", glow)
 	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
@@ -90,8 +99,35 @@ func save_settings() -> void:
 	config.set_value("jogador", "senha", password)
 	config.set_value("video", "vsync", vsync)
 	config.set_value("video", "sem_graficos", graphics_off)
+	config.set_value("video", "sombras", shadows)
+	config.set_value("video", "antisserrilhamento", msaa)
+	config.set_value("video", "brilho", glow)
 	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
+
+
+## O preset que as opções de vídeo formam (0 Desativados, 1 Mais desempenho,
+## 2 Melhores gráficos) ou -1 se foram mexidas uma a uma (Personalizado).
+func graphics_preset() -> int:
+	if graphics_off:
+		return 0
+	if not shadows and msaa == 0 and not glow:
+		return 1
+	if shadows and msaa == 2 and glow:
+		return 2
+	return -1
+
+
+func set_graphics_preset(preset: int) -> void:
+	graphics_off = preset == 0
+	shadows = preset == 2
+	msaa = 2 if preset == 2 else 0
+	glow = preset == 2
+
+
+func graphics_preset_name() -> String:
+	var preset := graphics_preset()
+	return PRESET_NAMES[preset] if preset >= 0 else "Personalizado"
 
 
 func apply_vsync() -> void:

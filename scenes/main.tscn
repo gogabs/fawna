@@ -118,15 +118,38 @@ theme_override_font_sizes/font_size = 36
 text = "Opções"
 horizontal_alignment = 1
 
+[node name="GraphicsHeader" type="Label" parent="Center/Card/Pages/OptionsPage"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Gráficos"
+horizontal_alignment = 1
+
+[node name="PresetButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Preset de gráficos: Mais desempenho"
+alignment = 0
+
 [node name="VsyncCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "VSync"
 
-[node name="GraphicsCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
+[node name="ShadowsCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Desligar os gráficos"
+text = "Sombras"
+
+[node name="MsaaButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Antisserrilhamento: Desligado"
+alignment = 0
+
+[node name="GlowCheck" type="CheckButton" parent="Center/Card/Pages/OptionsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Brilho nas luzes"
 
 [node name="NavButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
