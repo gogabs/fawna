@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_capacity()
 	_test_point_and_spot()
 	_test_horror_controls()
+	_test_species_switch()
 	if _failures == 0:
 		print("OK: depuração passou")
 	quit(1 if _failures > 0 else 0)
@@ -72,6 +73,16 @@ func _test_point_and_spot() -> void:
 	for point: Vector2 in [Vector2(40, 40), Vector2(-300, 200), Vector2(1000, -1000), WorldGen.center_point()]:
 		var spot := DebugTools.free_spot(world, point)
 		_check(world.is_free(spot), "o teleporte deveria cair num ponto livre perto de %s (caiu em %s)" % [point, spot])
+
+
+func _test_species_switch() -> void:
+	var state := WorldState.new(1)
+	state.add_player(2, "Teste")
+	_check(state.choose_species(2, "urso"), "escolha normal")
+	_check(not state.choose_species(2, "lobo"), "a escolha normal só vale uma vez")
+	_check(state.debug_set_species(2, "lobo") and state.species_of(2) == "lobo", "depuração troca a espécie")
+	_check(state.species.get("Teste", "") == "lobo", "a troca fica gravada pelo nome")
+	_check(not state.debug_set_species(2, "xyz"), "espécie inexistente é recusada")
 
 
 func _test_horror_controls() -> void:

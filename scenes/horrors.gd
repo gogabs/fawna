@@ -140,6 +140,13 @@ func hear_noise(peer: int, seconds: float) -> void:
 		horrors.hear_noise(peer, seconds)
 
 
+## O uivo afasta o Calado a até "radius" casas de "pos".
+func repel(pos: Vector2, radius: float) -> int:
+	if horrors == null:
+		return 0
+	return horrors.repel(pos, radius, get_parent().state.players)
+
+
 ## Testes: faz o Calado aparecer atrás de um jogador, a "distance" casas.
 func summon(peer: int, distance := Horrors.SPAWN_DISTANCE) -> int:
 	if horrors == null:

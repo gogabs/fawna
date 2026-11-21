@@ -174,7 +174,9 @@ func is_ready(cell: Vector2i, at := -1.0) -> bool:
 ## Um golpe de machado. Devolve { ok, reason, hits_left, felled }.
 ## reason: "nada" (não é algo que se corta), "colhido" (já foi recolhido),
 ## "caido" (já caiu, falta recolher).
-func strike(cell: Vector2i, at := -1.0) -> Dictionary:
+## power: força do golpe (1.0 normal; o guerreiro tem mais). A parte acima de
+## 1.0 é a chance de um golpe valer por dois.
+func strike(cell: Vector2i, at := -1.0, power := 1.0) -> Dictionary:
 	if at < 0.0:
 		at = now()
 	var thing := world.thing_at(cell)
@@ -185,8 +187,11 @@ func strike(cell: Vector2i, at := -1.0) -> Dictionary:
 	var left := hits_left(cell, at)
 	if left == 0:
 		return {"ok": false, "reason": "caido", "hits_left": 0, "felled": true}
-	_nodes[cell] = {"hits": _hits_done(cell, at) + 1, "regrow_at": 0.0, "struck_at": at}
-	left -= 1
+	var blows := 1
+	if power > 1.0 and left > 1 and rng.randf() < power - 1.0:
+		blows = 2
+	_nodes[cell] = {"hits": _hits_done(cell, at) + blows, "regrow_at": 0.0, "struck_at": at}
+	left -= blows
 	_sync(cell, at)
 	return {"ok": true, "reason": "", "hits_left": left, "felled": left == 0}
 

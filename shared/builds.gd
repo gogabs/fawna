@@ -579,14 +579,17 @@ func prep_cells(id: int) -> Dictionary:
 
 
 ## A casa de preparo mais perto de "pos" (de preferência à frente), até "reach"
-## casas. Devolve { id, cell } ou {} se não há. "tool" é o que está nas mãos.
-func prep_target(pos: Vector2, ahead: Vector2, reach: float, tool: String) -> Dictionary:
+## casas. Devolve { id, cell } ou {} se não há. "tool" é o que está nas mãos
+## (vazio: qualquer fase; no_trees: pula as árvores, que só o machado arranca).
+func prep_target(pos: Vector2, ahead: Vector2, reach: float, tool: String, no_trees := false) -> Dictionary:
 	var best := {}
 	var best_score := INF
 	for build: Dictionary in _builds.values():
-		if build["done"] or str(build["phase"]) == "obra" or Crafting.PREP_TOOLS[build["phase"]] != tool:
+		if build["done"] or str(build["phase"]) == "obra" or (not tool.is_empty() and Crafting.PREP_TOOLS[build["phase"]] != tool):
 			continue
 		for cell: Vector2i in build["prep"]:
+			if no_trees and world.thing_at(cell) == WorldGen.Thing.ARVORE and str(build["phase"]) == "limpeza":
+				continue
 			var offset := WorldGen.cell_center(cell) - pos
 			var distance := offset.length()
 			if distance > reach:
@@ -945,7 +948,7 @@ func store(id: int, bag: Dictionary, item: String, amount: int, key := "") -> Di
 ## Tira itens do estoque para a bolsa "bag", até onde cabe na carga. Devolve
 ## { ok, reason, item, amount }. reason: "desconhecida", "nao_guarda", "nao_dono",
 ## "nao_tem" (não há isso lá), "carga" (a criatura não aguenta mais peso).
-func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int, key := "") -> Dictionary:
+func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int, key := "", species := "") -> Dictionary:
 	var build := get_build(id)
 	if build.is_empty():
 		return {"ok": false, "reason": "desconhecida"}
@@ -957,7 +960,7 @@ func fetch(id: int, bag: Dictionary, wielded: String, item: String, amount: int,
 	var have := int(stock.get(item, 0))
 	if have <= 0 or amount <= 0:
 		return {"ok": false, "reason": "nao_tem", "item": item}
-	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item))
+	var moved := mini(mini(amount, have), Bag.room_for(bag, wielded, item, "", species))
 	if moved <= 0:
 		return {"ok": false, "reason": "carga", "item": item}
 	stock[item] = have - moved

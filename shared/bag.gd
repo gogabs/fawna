@@ -200,36 +200,49 @@ static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
 			+ (0 if offhand.is_empty() else weight_of(offhand))
 
 
-## Fração da velocidade de andar (1.0 até CAPACITY, caindo em linha reta até
-## MIN_SPEED_FACTOR em MAX_LOAD).
-static func speed_factor(bag: Dictionary, wielded := "", offhand := "") -> float:
+## Carga plena e limite absoluto de uma espécie (ver Species: pesado, leve e
+## guerreiro mexem na carga). Sem espécie, são CAPACITY e MAX_LOAD.
+static func capacity_for(species := "") -> int:
+	return roundi(capacity * Species.effect(species, "capacity"))
+
+
+static func max_load_for(species := "") -> int:
+	return roundi(max_load * Species.effect(species, "capacity"))
+
+
+## Fração da velocidade de andar (1.0 até a carga plena, caindo em linha reta
+## até MIN_SPEED_FACTOR no limite absoluto). Quem tem "resistente" perde só
+## metade da velocidade que perderia (Species, efeito "overload").
+static func speed_factor(bag: Dictionary, wielded := "", offhand := "", species := "") -> float:
+	var capacity := capacity_for(species)
 	var over := load_of(bag, wielded, offhand) - capacity
 	if over <= 0:
 		return 1.0
-	return lerpf(1.0, MIN_SPEED_FACTOR, minf(1.0, float(over) / float(maxi(1, max_load - capacity))))
+	var slowest := 1.0 - (1.0 - MIN_SPEED_FACTOR) * Species.effect(species, "overload")
+	return lerpf(1.0, slowest, minf(1.0, float(over) / float(maxi(1, max_load_for(species) - capacity))))
 
 
 ## Está além da carga plena (anda mais devagar).
-static func is_overloaded(bag: Dictionary, wielded := "", offhand := "") -> bool:
-	return load_of(bag, wielded, offhand) > capacity
+static func is_overloaded(bag: Dictionary, wielded := "", offhand := "", species := "") -> bool:
+	return load_of(bag, wielded, offhand) > capacity_for(species)
 
 
 ## Quanto peso ainda cabe, contando a sobrecarga (0 se a criatura já está no
 ## limite absoluto ou acima dele, como quem vem de um mundo salvo antes do
 ## limite existir).
-static func free_space(bag: Dictionary, wielded := "", offhand := "") -> int:
-	return maxi(0, max_load - load_of(bag, wielded, offhand))
+static func free_space(bag: Dictionary, wielded := "", offhand := "", species := "") -> int:
+	return maxi(0, max_load_for(species) - load_of(bag, wielded, offhand))
 
 
 ## Quantas unidades de "item" ainda cabem.
-static func room_for(bag: Dictionary, wielded: String, item: String, offhand := "") -> int:
-	return free_space(bag, wielded, offhand) / maxi(1, weight_of(item))
+static func room_for(bag: Dictionary, wielded: String, item: String, offhand := "", species := "") -> int:
+	return free_space(bag, wielded, offhand, species) / maxi(1, weight_of(item))
 
 
 ## Separa o que cabe do que não cabe, pondo primeiro o mais pesado (o que
 ## sobra de fora é o miúdo). Devolve [cabe, não cabe], cada um item -> quantidade.
-static func split_to_fit(bag: Dictionary, wielded: String, items: Dictionary, offhand := "") -> Array:
-	var free := free_space(bag, wielded, offhand)
+static func split_to_fit(bag: Dictionary, wielded: String, items: Dictionary, offhand := "", species := "") -> Array:
+	var free := free_space(bag, wielded, offhand, species)
 	var keys := items.keys()
 	keys.sort_custom(func(a, b):
 		return weight_of(a) > weight_of(b) if weight_of(a) != weight_of(b) else str(a) < str(b))
@@ -260,8 +273,8 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 
 
 ## "Carga, 18 de 24".
-static func load_label(bag: Dictionary, wielded := "", offhand := "") -> String:
-	var text := "Carga, %d de %d" % [load_of(bag, wielded, offhand), capacity]
-	if is_overloaded(bag, wielded, offhand):
-		text += ", sobrecarregado, andando a %d%%" % roundi(speed_factor(bag, wielded, offhand) * 100.0)
+static func load_label(bag: Dictionary, wielded := "", offhand := "", species := "") -> String:
+	var text := "Carga, %d de %d" % [load_of(bag, wielded, offhand), capacity_for(species)]
+	if is_overloaded(bag, wielded, offhand, species):
+		text += ", sobrecarregado, andando a %d%%" % roundi(speed_factor(bag, wielded, offhand, species) * 100.0)
 	return text
