@@ -290,7 +290,10 @@ func _update_exposure(peer: int, delta: float, now_ms: int, players: Dictionary,
 		return
 	if not _need.has(peer):
 		_need[peer] = _rng.randf_range(EXPOSURE[0], EXPOSURE[1])
-	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta * _rate * (1.0 - RING_APPEAR_SLOW * float(_lights.get(peer, 0.0)))
+	# A espécie pesa no barulho: o veloz chama o Calado mais cedo, o furtivo mais tarde.
+	var species: String = str(players[peer].get("species", "")) if players.has(peer) else ""
+	var noisy := Species.effect(species, "noise") * Species.effect(species, "calado_noise")
+	_exposure[peer] = float(_exposure.get(peer, 0.0)) + delta * _rate * noisy * (1.0 - RING_APPEAR_SLOW * float(_lights.get(peer, 0.0)))
 	if float(_exposure[peer]) >= float(_need[peer]):
 		summon(peer, players)
 
@@ -322,18 +325,23 @@ func _away_from_players(point: Vector2, players: Dictionary) -> Vector2:
 	return (point - nearest).normalized()
 
 
+## Até onde este jogador fica sabendo do Calado (a audição apurada alcança mais longe).
+static func hearing_of(player: Dictionary) -> float:
+	return HEARING * Species.effect(str(player.get("species", "")), "calado_hearing")
+
+
 ## Manda a posição a quem está ao alcance e avisa quem saiu dele.
 func _sync_watchers(players: Dictionary, out: Array) -> void:
 	for horror in horrors.values():
 		var pos: Vector2 = horror["pos"]
 		var watchers: Dictionary = horror["watchers"]
 		for peer in watchers.keys():
-			if not players.has(peer) or (players[peer]["pos"] as Vector2).distance_to(pos) > HEARING + 4.0:
+			if not players.has(peer) or (players[peer]["pos"] as Vector2).distance_to(pos) > hearing_of(players[peer]) + 4.0:
 				watchers.erase(peer)
 				if players.has(peer):
 					out.append([peer, "gone", [horror["id"]]])
 		for peer in players:
-			if not watchers.has(peer) and (players[peer]["pos"] as Vector2).distance_to(pos) > HEARING:
+			if not watchers.has(peer) and (players[peer]["pos"] as Vector2).distance_to(pos) > hearing_of(players[peer]):
 				continue
 			watchers[peer] = true
 			out.append([peer, "at", [horror["id"], pos, horror["mode"]]])
