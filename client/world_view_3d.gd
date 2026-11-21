@@ -49,7 +49,7 @@ const WATER_DRIFT := Vector2(0.018, 0.011)  # deslocamento das ondas por segundo
 const WATER_LEVEL := -0.18  # a água fica abaixo do chão
 const HEIGHT_AMP := 0.08  # metros: o chão ondula de leve, sem linhas retas
 const FOAM_COLOR := Color("8fa3a6")
-const SHADOW_DISTANCE := 36.0  # só as sombras perto da criatura (custo de FPS)
+const SHADOW_DISTANCE := 30.0  # só as sombras perto da criatura (custo de FPS)
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
 const TRAIL_COLOR := Color("6a5640")
@@ -278,7 +278,7 @@ func _setup_environment() -> void:
 	light.light_energy = 0.55
 	light.shadow_enabled = true
 	light.shadow_blur = 2.0
-	light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	light.directional_shadow_max_distance = SHADOW_DISTANCE
 	light.shadow_bias = 0.08
 	light.shadow_normal_bias = 1.5
@@ -321,9 +321,29 @@ func _process(delta: float) -> void:
 	for i in MAX_BUILDS_PER_FRAME:
 		if _wanted.is_empty():
 			return
-		var key: Vector2i = _wanted.pop_back()
-		if not _chunks.has(key):
-			_build(key)
+		var key: Vector2i = _wanted.back()
+		if _chunks.has(key):
+			_wanted.pop_back()
+			continue
+		# Gerar um pedaço do mundo custa mais que montar o chão dele: gera
+		# no máximo um por quadro e só então monta (a água e as margens
+		# olham os vizinhos).
+		if _generate_missing(key):
+			return
+		_wanted.pop_back()
+		_build(key)
+
+
+## Gera, no máximo, um pedaço do mundo que falta em volta de "key".
+## Devolve verdadeiro se gerou (o quadro já foi gasto).
+func _generate_missing(key: Vector2i) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var near := key + Vector2i(dx, dy)
+			if not _world.is_generated(near):
+				_world.generate(near)
+				return true
+	return false
 
 
 ## Monta já todos os pedaços da fila (para a captura de tela e os testes).
