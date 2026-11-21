@@ -1791,7 +1791,7 @@ func _prep_text(build: Dictionary) -> String:
 		return "falta%s %d casa%s de grama: %s" % ["" if prep.size() == 1 else "m", prep.size(), plural, ", ".join(parts)]
 	var names := {
 		WorldGen.Thing.ARVORE: ["árvore", "árvores"], WorldGen.Thing.BAMBU: ["touceira de bambu", "touceiras de bambu"],
-		WorldGen.Thing.ARBUSTO: ["arbusto", "arbustos"], WorldGen.Thing.ARBUSTO_FRUTAS: ["arbusto com frutas", "arbustos com frutas"],
+		WorldGen.Thing.ARBUSTO: ["arbusto", "arbustos"], WorldGen.Thing.ARBUSTO_FRUTAS: ["arbusto", "arbustos"],
 	}
 	var parts: PackedStringArray = []
 	for sector: String in sectors:

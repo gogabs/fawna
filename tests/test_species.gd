@@ -51,7 +51,12 @@ func _test_data() -> void:
 	_check(Species.unique_tags("cervo") == ["veloz", "disparada"], "únicas do cervo")
 	_check(Species.name_and_animal("raposa") == "Brasido, raposa", "nome e animal")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
-	_check(Species.tag_names("coelho") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
+	var passive := Species.tag_text("pesado")
+	_check(passive.begins_with("Pesado (passiva). "), "passiva: [nome] (passiva). [efeito] (%s)" % passive)
+	var active := Species.tag_text("salto")
+	_check(active.begins_with("Salto. ") and not active.contains("ativa"), "ativa: [nome]. [efeito], sem marcar ativa")
+	_check(Species.tag_text("garras").ends_with("Ainda sem efeito no jogo."), "tag sem efeito avisa")
+	_check(Species.tag_names("coelho") == "Leve (passiva), Audição apurada (passiva), Salto", "nomes das tags")
 
 
 func _test_choose_once() -> void:

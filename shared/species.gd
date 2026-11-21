@@ -130,9 +130,10 @@ static func tag_names(id: String) -> String:
 	return ", ".join(names)
 
 
-## "Salto (ativa)" para as ativas; o nome puro para as outras.
+## "Leve (passiva)" para as passivas; o nome puro para as ativas (a distinção
+## é só nossa: quem joga só vê que algumas são habilidades de H).
 static func tag_label(tag: String) -> String:
-	return "%s (ativa)" % TAGS[tag]["name"] if is_active(tag) else str(TAGS[tag]["name"])
+	return str(TAGS[tag]["name"]) if is_active(tag) else "%s (passiva)" % TAGS[tag]["name"]
 
 
 ## A tag já vale no jogo?
@@ -168,11 +169,14 @@ static func unique_tags(id: String) -> Array:
 
 ## Uma tag com o que ela dá e o que custa: "Pesado: carga plena 20% maior...".
 static func tag_text(tag: String) -> String:
-	var text := "%s: %s" % [TAGS[tag]["name"], TAGS[tag]["text"]]
+	var text := "%s. %s" % [tag_label(tag), TAGS[tag]["text"]]
 	if is_active(tag):
+		text += " Use com a tecla H."
 		var summary := Abilities.summary(tag)
 		if not summary.is_empty():
 			text += " Em números: %s." % summary
+	if not is_live(tag):
+		text += " Ainda sem efeito no jogo."
 	return text
 
 
