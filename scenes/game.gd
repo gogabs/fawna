@@ -2618,7 +2618,7 @@ func _debug_position() -> String:
 
 func _debug_fps() -> String:
 	var fps := int(Engine.get_frames_per_second())
-	var extra := ""
+	var extra := ", limite %d" % Engine.max_fps
 	if view3d != null:
 		extra = ", %d pedaços de chão em 3D" % view3d.chunk_count()
 	elif Net.graphics_off:
@@ -3582,6 +3582,12 @@ func _run_auto_commands() -> void:
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)
+			"MEDIR_FPS":  # testes: tira o teto do motor por 3 s e imprime os quadros por segundo (só o limitador manual segura)
+				Engine.max_fps = 0
+				var frames := Engine.get_frames_drawn()
+				await get_tree().create_timer(3.0).timeout
+				print("[teste] sem teto do motor: %.1f fps" % ((Engine.get_frames_drawn() - frames) / 3.0))
+				Net.apply_fps_limit(false)
 			"TOCHA_ACESA":  # testes (só visual, local): põe uma tocha acesa na mão não dominante
 				offhand_changed(inventory, "tocha", 600.0, "", "tocha")
 			"CALADO_ONDE":

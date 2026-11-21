@@ -65,6 +65,7 @@ func _ready() -> void:
 	world_seed = randi()
 	load_settings()
 	apply_vsync()
+	apply_fps_limit(false)
 	_parse_cmdline()
 
 
@@ -100,9 +101,44 @@ func apply_vsync() -> void:
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 
 
+## Teto de quadros por segundo, aplicado por código (além do project.godot, que
+## já pede 60): o 3D sem teto esquentava o computador de quem joga. Sem
+## gráficos dentro do jogo não há nada para ver, então o teto cai.
+const FPS_LIMIT := 60
+const FPS_LIMIT_NO_GRAPHICS := 20
+
+
+func apply_fps_limit(in_game: bool) -> void:
+	_fps_target = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+	# No Godot 4.7 atribuir o valor que já está (o 60 do project.godot) não liga
+	# o teto: é preciso passar por 0 antes (medido no PC do Gabs: 60 sozinho
+	# dava 1.700 FPS; 0 e depois 60 dá 60).
+	Engine.max_fps = 0
+	Engine.max_fps = _fps_target
+
+
+## Limitador manual: no Windows do Gabs o teto do motor (Engine.max_fps) não
+## segurou (790 FPS no menu), então, se o quadro acabou antes da hora, dorme o
+## resto. Se o motor já segura, o quadro já dura o suficiente e isto não faz
+## nada. O servidor sem tela fica de fora.
+var _last_frame_usec := 0
+var _fps_target := FPS_LIMIT
+
+
+func _process(_delta: float) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var target := int(1000000.0 / _fps_target)
+	var spent := Time.get_ticks_usec() - _last_frame_usec
+	if spent < target:
+		OS.delay_usec(target - spent)
+	_last_frame_usec = Time.get_ticks_usec()
+
+
 ## Só vale dentro do jogo (game.gd liga ao entrar e desfaz ao sair): os menus
 ## nativos precisam de quadros para o leitor de tela receber o foco.
 func apply_graphics(in_game: bool) -> void:
+	apply_fps_limit(in_game)
 	if DisplayServer.get_name() == "headless":
 		return
 	RenderingServer.render_loop_enabled = not (graphics_off and in_game)
