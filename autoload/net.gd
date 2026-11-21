@@ -109,7 +109,26 @@ const FPS_LIMIT_NO_GRAPHICS := 20
 
 
 func apply_fps_limit(in_game: bool) -> void:
-	Engine.max_fps = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+	_fps_target = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+	Engine.max_fps = _fps_target
+
+
+## Limitador manual: no Windows do Gabs o teto do motor (Engine.max_fps) não
+## segurou (790 FPS no menu), então, se o quadro acabou antes da hora, dorme o
+## resto. Se o motor já segura, o quadro já dura o suficiente e isto não faz
+## nada. O servidor sem tela fica de fora.
+var _last_frame_usec := 0
+var _fps_target := FPS_LIMIT
+
+
+func _process(_delta: float) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var target := int(1000000.0 / _fps_target)
+	var spent := Time.get_ticks_usec() - _last_frame_usec
+	if spent < target:
+		OS.delay_usec(target - spent)
+	_last_frame_usec = Time.get_ticks_usec()
 
 
 ## Só vale dentro do jogo (game.gd liga ao entrar e desfaz ao sair): os menus
