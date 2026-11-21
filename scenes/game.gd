@@ -2046,7 +2046,7 @@ func _character_items() -> Array:
 	var items := [{"label": "Nome: %s" % me.get("name", Net.player_name),
 		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
 	if Species.is_species(species_id):
-		items.append({"label": "Espécie: %s" % Species.display_name(species_id),
+		items.append({"label": "Espécie: %s" % Species.name_and_animal(species_id),
 			"info": "%s Tags: %s." % [Species.description(species_id), Species.tag_names(species_id)]})
 		items.append({"label": "Tags", "open": _tag_items.bind(species_id)})
 	else:
@@ -2058,7 +2058,7 @@ func _character_items() -> Array:
 func _species_choices() -> Array:
 	var items := []
 	for id: String in Species.ORDER:
-		items.append({"label": "%s, %s" % [Species.display_name(id), Species.tag_names(id)],
+		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.tag_names(id)],
 			"open": _species_confirm.bind(id)})
 	return items
 

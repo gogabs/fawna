@@ -45,13 +45,14 @@ func _test_data() -> void:
 	_check(is_equal_approx(Species.effect("urso", "capacity"), 1.2 * 0.9), "efeitos se multiplicam")
 	_check(Species.effect("urso", "torch") == 1.0, "efeito que ninguém mexe vale 1")
 	_check(Species.effect("", "speed") == 1.0, "sem espécie vale 1")
-	_check(Species.with_name("Lia", "onca") == "Lia, uma Onça-negra", "nome com espécie e artigo")
+	_check(Species.with_name("Lia", "onca") == "Lia, um Umbroso", "nome com espécie")
 	_check(Species.unique_tags("onca") == ["garras"], "única da onça")
 	_check(Species.unique_tags("raposa") == ["furtividade", "fogo"], "únicas da raposa")
 	_check(Species.unique_tags("javali") == ["forrageador", "fucar"], "únicas do javali")
 	_check(Species.unique_tags("cervo") == ["veloz", "disparada"], "únicas do cervo")
+	_check(Species.name_and_animal("raposa") == "Brasido, raposa", "nome e animal")
 	_check(Species.with_name("Lia", "") == "Lia", "nome sem espécie")
-	_check(Species.tag_names("lebre") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
+	_check(Species.tag_names("coelho") == "Leve, Audição apurada, Salto (ativa)", "nomes das tags")
 
 
 func _test_choose_once() -> void:

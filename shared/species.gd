@@ -62,24 +62,24 @@ const TAGS := {
 		"text": "Limpa a grama, os arbustos e os bambus da casa à frente sem enxada nem machado, e depois o preparo de terra agrícola, mas demora uns 5 s por casa e faz barulho."},
 }
 
-const ORDER: Array[String] = ["urso", "boi", "cervo", "lebre", "lobo", "raposa", "onca", "javali"]
+const ORDER: Array[String] = ["urso", "boi", "cervo", "coelho", "lobo", "raposa", "onca", "javali"]
 
 const DATA := {
-	"urso": {"name": "Urso de musgo", "article": "um", "tags": ["pesado", "guerreiro", "pesca"],
+	"urso": {"name": "Troncudo", "animal": "urso", "article": "um", "tags": ["pesado", "guerreiro", "pesca"],
 		"description": "Largo e lento, com os ombros cobertos por uma casca grossa de tronco, rugosa como carvalho velho. Anda com o peso de quem não tem pressa, e o cheiro de madeira e terra molhada vai atrás dele."},
-	"boi": {"name": "Boi de chifre-ferro", "article": "um", "tags": ["pesado", "resistente", "arar"],
+	"boi": {"name": "Ferrenho", "animal": "boi", "article": "um", "tags": ["pesado", "resistente", "arar"],
 		"description": "Pescoço grosso, chifres escuros como ferro velho e um olhar paciente que quase não pisca. Quando pega peso, leva até o fim, sem reclamar e sem pressa."},
-	"cervo": {"name": "Cervo de galhada-musgo", "article": "um", "tags": ["leve", "veloz", "disparada"],
+	"cervo": {"name": "Ramado", "animal": "cervo", "article": "um", "tags": ["leve", "veloz", "disparada"],
 		"description": "Esguio e alto, com uma galhada coberta de musgo que parece mais velha do que ele. Os passos mal tocam o chão, e ele corre como quem foge de algo que só ele ouve."},
-	"lebre": {"name": "Lebre-de-sombra", "article": "uma", "tags": ["leve", "audicao", "salto"],
-		"description": "Pequena e atenta, de orelhas longas e pelagem escura como a sombra de um arbusto ao meio-dia. Escuta o mundo antes que o mundo a escute, e já sumiu quando alguém percebe que ela estava ali."},
-	"lobo": {"name": "Lobo cinzento", "article": "um", "tags": ["guerreiro", "uivo"],
+	"coelho": {"name": "Terroso", "animal": "coelho", "article": "um", "tags": ["leve", "audicao", "salto"],
+		"description": "Pequeno e atento, de orelhas longas e pelagem cor de terra revolvida. Conhece cada toca e cada raiz do caminho, escuta o chão antes de ouvir o ar, e já sumiu quando alguém percebe que ele estava ali."},
+	"lobo": {"name": "Geado", "animal": "lobo", "article": "um", "tags": ["guerreiro", "uivo"],
 		"description": "Pelagem cinzenta com as pontas brancas, como neve suja de cinza, e um olhar fixo de quem já esperou muito por pouco. Quando uiva, a floresta inteira ouve."},
-	"raposa": {"name": "Raposa de cinza", "article": "uma", "tags": ["furtividade", "fogo", "salto"],
+	"raposa": {"name": "Brasido", "animal": "raposa", "article": "um", "tags": ["furtividade", "fogo", "salto"],
 		"description": "Pelo cor de cinza e, por baixo dele, uma brasa que nunca apaga por inteiro, viva nos olhos. Gosta do que queima e do que se esconde, e deixa um cheiro leve de fumaça por onde passa."},
-	"onca": {"name": "Onça-negra", "article": "uma", "tags": ["garras", "guerreiro", "salto"],
+	"onca": {"name": "Umbroso", "animal": "onça", "article": "um", "tags": ["garras", "guerreiro", "salto"],
 		"description": "Pelagem negra como breu, onde só se vê o brilho dos olhos e das garras. Anda sem peso, ataca sem aviso e raramente precisa de mais do que tem nas próprias mãos."},
-	"javali": {"name": "Javali de carvão", "article": "um", "tags": ["guerreiro", "forrageador", "fucar"],
+	"javali": {"name": "Tisnado", "animal": "javali", "article": "um", "tags": ["guerreiro", "forrageador", "fucar"],
 		"description": "Pele escura como carvão e presas curtas, sujas de terra. Fuça o chão como quem sabe que a terra guarda coisas, e reconhece pelo cheiro o que serve de comida e o que não serve."},
 }
 
@@ -88,16 +88,26 @@ static func is_species(id: String) -> bool:
 	return DATA.has(id)
 
 
-## "Urso de musgo"; vazio para uma espécie desconhecida ou ainda não escolhida.
+## "Troncudo"; vazio para uma espécie desconhecida ou ainda não escolhida.
 static func display_name(id: String) -> String:
 	return str(DATA[id]["name"]) if DATA.has(id) else ""
+
+
+## O animal da espécie ("urso", "coelho"...); vazio se desconhecida.
+static func animal(id: String) -> String:
+	return str(DATA[id]["animal"]) if DATA.has(id) else ""
+
+
+## "Troncudo, urso" (nome e animal, para as listas).
+static func name_and_animal(id: String) -> String:
+	return "%s, %s" % [display_name(id), animal(id)] if DATA.has(id) else ""
 
 
 static func article(id: String) -> String:
 	return str(DATA[id]["article"]) if DATA.has(id) else "um"
 
 
-## "um Urso de musgo", ou "sem espécie".
+## "um Troncudo", ou "sem espécie".
 static func label(id: String) -> String:
 	if not DATA.has(id):
 		return "sem espécie"
