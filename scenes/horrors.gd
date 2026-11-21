@@ -20,6 +20,8 @@ const BREATH_FADE := 40.0  # dB por segundo
 const CRACKLE_FAR := 12.0  # a partir daqui, estalos de gelo esparsos
 const CRACKLE_MID := 8.0
 const CRACKLE_NEAR := 4.5  # perto o bastante para golpear: quase contínuo
+const CRACKLE_BASE_DB := -6.0  # o gelo é baixinho
+const CRACKLE_MAX_BOOST_DB := 20.0  # no máximo, quanto se compensa o filtro
 const FLASH_SECONDS := 1.2
 const STRIKE_COOLDOWN := 0.35  # entre golpes na direção dele
 const BREATH_HEIGHT := 1.7  # metros
@@ -316,8 +318,17 @@ func _update_crackle(nearest: Dictionary, delta: float) -> void:
 	var interval := 0.9 if distance > CRACKLE_MID else (0.45 if distance > CRACKLE_NEAR else 0.18)
 	_crackle_wait = interval * randf_range(0.7, 1.3)
 	var game := get_parent()
-	# O abafamento do próprio Calado tira volume de tudo: o estalo compensa.
-	game.audio.play_at_point(nearest["shown"], HorrorSounds.crackle(randi()), -HUSHED_DB * _presence, true, true)
+	game.audio.play_at_point(nearest["shown"], HorrorSounds.crackle(randi()), _crackle_db(), true, true)
+
+
+## Volume do estalo: baixo, mais o que o abafamento do Calado tira dele (o
+## filtro passa-baixa de 6 dB por oitava e a queda de volume geral), para o
+## agudinho se ouvir com o mundo abafado.
+func _crackle_db() -> float:
+	var hush := maxf(_presence, _indoors * INDOOR_HUSH)
+	var cutoff := OPEN_HZ * pow(HUSHED_HZ / OPEN_HZ, hush)
+	var cut_db := 10.0 * log(1.0 + pow(HorrorSounds.CRACKLE_HZ / cutoff, 2.0)) / log(10.0)
+	return CRACKLE_BASE_DB + minf(cut_db, CRACKLE_MAX_BOOST_DB) - HUSHED_DB * hush
 
 
 func _nearest() -> Dictionary:

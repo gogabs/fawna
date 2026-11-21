@@ -168,6 +168,7 @@ static func relief_samples() -> PackedFloat32Array:
 ## Calado perto soa assim, mais rápido quanto mais perto ele está. Quatro
 ## variações, para não repetir.
 const CRACKLE_VARIANTS := 4
+const CRACKLE_HZ := 2200.0  # frequência típica dos estalos, para compensar o filtro
 
 
 static func crackle(variant: int) -> AudioStream:
@@ -185,13 +186,13 @@ static func crackle_samples(variant: int) -> PackedFloat32Array:
 	rng.seed = 5100 + variant
 	var clicks := rng.randi_range(3, 5)
 	for k in clicks:
-		# Cada estalo é um "tec" de gelo: um tom curto no meio do espectro
-		# (350 a 800 Hz, como a respiração), que atravessa o abafamento do
-		# Calado, com um toque de ruído na batida.
+		# Cada estalo é um "tec" de gelo: um tom curto e agudinho (1,5 a 3 kHz).
+		# O filtro do Calado o corta bastante; quem toca compensa o volume
+		# (ver CRACKLE_HZ e scenes/horrors.gd).
 		var first := int(rng.randf_range(0.0, 0.2) * RATE)
 		var amp := rng.randf_range(0.4, 0.9)
-		var freq := rng.randf_range(380.0, 760.0)
-		var decay := rng.randf_range(110.0, 230.0)
+		var freq := rng.randf_range(1500.0, 3000.0)
+		var decay := rng.randf_range(160.0, 320.0)
 		for i in int(0.06 * RATE):
 			var n := first + i
 			if n >= count:
