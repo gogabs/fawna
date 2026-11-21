@@ -49,6 +49,8 @@ const WATER_DRIFT := Vector2(0.018, 0.011)  # deslocamento das ondas por segundo
 const WATER_LEVEL := -0.18  # a água fica abaixo do chão
 const HEIGHT_AMP := 0.08  # metros: o chão ondula de leve, sem linhas retas
 const FOAM_COLOR := Color("8fa3a6")
+const SHADOWS := false  # sombras e MSAA custaram 15 FPS na GPU integrada do Gabs
+const MSAA := Viewport.MSAA_DISABLED
 const SHADOW_DISTANCE := 30.0  # só as sombras perto da criatura (custo de FPS)
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
@@ -117,7 +119,7 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_water_material.emission_enabled = true
 	_water_material.emission = Color("0d2233")
 	_water_material.emission_energy_multiplier = 0.6
-	get_viewport().msaa_3d = Viewport.MSAA_2X
+	get_viewport().msaa_3d = MSAA
 	_make_shapes()
 	_camera = Camera3D.new()
 	_camera.name = "Olhos"
@@ -276,7 +278,7 @@ func _setup_environment() -> void:
 	light.rotation_degrees = Vector3(-55.0, 30.0, 0.0)
 	light.light_color = Color("a9b6cf")
 	light.light_energy = 0.55
-	light.shadow_enabled = true
+	light.shadow_enabled = SHADOWS
 	light.shadow_blur = 2.0
 	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	light.directional_shadow_max_distance = SHADOW_DISTANCE
