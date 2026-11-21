@@ -88,6 +88,7 @@ const MENU_ACTIONS := {
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
 @onready var audio: SpatialAudio = $SpatialAudio
+var view3d: WorldView3D  # o mundo em 3D; nulo sem tela (servidor ou gráficos desligados)
 @onready var birds: Node = $Birds
 @onready var horrors: Node = $Horrors
 @onready var daytime: Node = $Daytime
@@ -257,6 +258,7 @@ func _process(delta: float) -> void:
 			occupants.append(players[id]["pos"])
 		if not harvest.prune(-1.0, occupants).is_empty():
 			audio.refresh_resources()
+			_refresh_view3d()
 	if _caminheiro != null:
 		_caminheiro.update(_pos, delta, Compass.forward(_heading))
 	_send_timer += delta
@@ -285,6 +287,10 @@ func my_position() -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if view3d != null and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
+		view.visible = not view.visible  # vista 2D de depuração
+		get_viewport().set_input_as_handled()
+		return
 	if world != null and event.is_action_pressed("ouvir_arredores") and not event.is_echo():
 		_say_radar()
 		get_viewport().set_input_as_handled()
@@ -1086,6 +1092,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	view.heading = _heading
 	audio.setup(world, harvest)
 	audio.set_heading(_heading, false)
+	_setup_view3d()
 	birds.start_client(audio)
 	horrors.start_client(audio)
 	daytime.start_client()
@@ -1113,6 +1120,7 @@ func harvest_snapshot(data: Dictionary) -> void:
 		return
 	harvest.apply_snapshot(data)
 	audio.refresh_resources()
+	_refresh_view3d()
 
 
 ## Os itens que já estão no chão, para quem acabou de entrar.
@@ -1154,6 +1162,11 @@ func ground_changed(cell: Vector2i, items: Dictionary, event: String, by_id: int
 
 
 ## O que há no monte desta casa, para a fala.
+func _refresh_view3d() -> void:
+	if view3d != null:
+		view3d.refresh_state()
+
+
 func _pile_text(cell: Vector2i) -> String:
 	return Economy.items_text(ground.items_at(cell))
 
@@ -1185,6 +1198,7 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
+	_refresh_view3d()
 
 
 ## Um golpe de faca numa árvore: o som sai do tronco e quem golpeou ouve os
@@ -2046,6 +2060,8 @@ func _set_pos(new_pos: Vector2) -> void:
 	_pos = new_pos
 	players[my_id]["pos"] = new_pos
 	audio.move_listener(new_pos)
+	if view3d != null:
+		view3d.follow(new_pos)
 	view.queue_redraw()
 	var cell := WorldGen.cell_of(new_pos)
 	if cell != _cell:
@@ -2277,6 +2293,11 @@ func _update_torch_sounds() -> void:
 		if id != my_id and players.has(id):
 			points.append(players[id]["pos"])
 	audio.set_torches(points)
+	if view3d != null:
+		var mine: Variant = points[0] if _torch_ends > Time.get_unix_time_from_system() and not offhand.is_empty() else null
+		var others: Array = points.slice(1) if mine != null else points
+		view3d.set_torches(mine, others)
+		view3d.set_held_torch(not offhand.is_empty(), mine != null)
 
 
 func _say_inventory() -> void:
@@ -2521,6 +2542,20 @@ func _near_lake(cell: Vector2i) -> bool:
 
 func _update_listener() -> void:
 	audio.move_listener(_pos)
+	if view3d != null:
+		view3d.follow(_pos)
+
+
+## O 3D só existe com tela e com os gráficos ligados. A vista 2D antiga fica
+## escondida, só como depuração (F3 mostra); sai quando o 3D estiver estável.
+func _setup_view3d() -> void:
+	if not Net.has_local_player() or DisplayServer.get_name() == "headless" or Net.graphics_off:
+		return
+	view3d = WorldView3D.new()
+	view3d.name = "View3D"
+	add_child(view3d)
+	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime)
+	view.visible = false
 
 
 func _sender_id() -> int:
@@ -2572,12 +2607,23 @@ func _debug_items() -> Array:
 		{"label": "Estação", "open": _debug_season_items},
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
 	]
 
 
 func _debug_position() -> String:
 	return "x %.0f, y %.0f, região %d, %d" % [_pos.x, _pos.y, _region.x, _region.y]
+
+
+func _debug_fps() -> String:
+	var fps := int(Engine.get_frames_per_second())
+	var extra := ""
+	if view3d != null:
+		extra = ", %d pedaços de chão em 3D" % view3d.chunk_count()
+	elif Net.graphics_off:
+		extra = ", gráficos desligados"
+	return "%d quadros por segundo%s." % [fps, extra]
 
 
 func _debug_ask(action: String, arg: String) -> String:
@@ -3440,6 +3486,8 @@ func _refresh_fires() -> void:
 		if builds.is_lit(int(build["id"])):
 			cells.append(build["cell"])
 	audio.set_lit_fires(cells)
+	if view3d != null:
+		view3d.refresh_builds()
 
 
 func _on_menu_sound(kind: String) -> void:
@@ -3485,6 +3533,13 @@ func _run_auto_commands() -> void:
 			_cell = WorldGen.cell_of(_pos)
 			_region = world.region_of(_cell)
 			continue
+		if command.begins_with("FOTO_") and view3d != null:  # testes: FOTO_nome salva a tela 3D em user://nome.png
+			view3d.build_all()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://%s.png" % command.get_slice("_", 1))
+			print("FOTO %s: %s, %d pedaços 3D, %d fps" % [command.get_slice("_", 1), Narrator.where_am_i(world, _pos, _heading), view3d.chunk_count(), Engine.get_frames_per_second()])
+			continue
 		if command.begins_with("DBG_"):  # testes: DBG_acao_argumento pede uma ação de depuração (ver request_debug)
 			var parts := command.split("_", true, 2)
 			request_debug.rpc_id(1, parts[1], parts[2] if parts.size() > 2 else "")
@@ -3527,6 +3582,8 @@ func _run_auto_commands() -> void:
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)
+			"TOCHA_ACESA":  # testes (só visual, local): põe uma tocha acesa na mão não dominante
+				offhand_changed(inventory, "tocha", 600.0, "", "tocha")
 			"CALADO_ONDE":
 				print("[teste] calado a %.1f casas, abafamento %.2f" % [horrors.nearest_distance(), horrors.presence()])
 			"ESPERAR":

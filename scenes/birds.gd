@@ -154,6 +154,23 @@ func bird_position(id: int) -> Vector3:
 	return pos
 
 
+## Os pássaros conhecidos (id -> espécie), para a vista 3D.
+func bird_species() -> Dictionary:
+	var out := {}
+	for id: int in _birds:
+		out[id] = int(_birds[id]["species"])
+	return out
+
+
+## O pássaro está no ar agora (voando entre dois poleiros)?
+func bird_flying(id: int) -> bool:
+	if not _birds.has(id):
+		return false
+	var bird: Dictionary = _birds[id]
+	var x := (_clock - float(bird["start"])) / maxf(0.001, float(bird["duration"]))
+	return x > 0.0 and x < 1.0
+
+
 func bird_count() -> int:
 	return _birds.size()
 

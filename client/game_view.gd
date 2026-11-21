@@ -1,6 +1,8 @@
 class_name GameView
 extends Node2D
-## Visual provisório, só para quem enxerga acompanhar e depurar.
+## DEPURAÇÃO: vista 2D de cima, provisória. O visual de verdade é o 3D
+## (WorldView3D); esta fica escondida e F3 a mostra. REMOVER quando o 3D
+## estiver estável.
 ## O jogo precisa ser totalmente jogável sem esta tela.
 
 const TILE := 20
