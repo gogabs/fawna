@@ -2619,7 +2619,8 @@ func _debug_horror_items() -> Array:
 	]
 
 
-## Menu de personagem: nome, espécie com descrição e traços. Sem espécie
+## Menu de personagem: nome, espécie e uma linha por tag, já com o efeito
+## ("Leve (passiva). Anda mais rápido..."), sem precisar abrir nada. Sem espécie
 ## ainda, oferece a escolha.
 func _character_items() -> Array:
 	var me: Dictionary = players.get(my_id, {})
@@ -2628,38 +2629,35 @@ func _character_items() -> Array:
 		"info": "Seu nome é %s." % me.get("name", Net.player_name)}]
 	if Species.is_species(species_id):
 		items.append({"label": "Espécie: %s" % Species.name_and_animal(species_id),
-			"info": "%s Tags: %s." % [Species.description(species_id), Species.tag_names(species_id)]})
-		items.append({"label": "Tags", "open": _tag_items.bind(species_id)})
+			"info": Species.description(species_id)})
+		items.append_array(_tag_items(species_id))
 	else:
 		items.append({"label": "Escolher espécie", "open": _species_choices})
 	return items
 
 
-## As espécies para escolher; cada uma abre a descrição, o traço e a confirmação.
+## As espécies para escolher: "Nome, animal, descrição"; cada uma abre as tags
+## e a confirmação.
 func _species_choices() -> Array:
 	var items := []
 	for id: String in Species.ORDER:
-		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.tag_names(id)],
+		items.append({"label": "%s, %s" % [Species.name_and_animal(id), Species.description(id)],
 			"open": _species_confirm.bind(id)})
 	return items
 
 
 func _species_confirm(id: String) -> Array:
-	var items := [{"label": "Sobre", "info": Species.description(id)}]
-	items.append_array(_tag_items(id))
+	var items := _tag_items(id)
 	items.append({"label": "Escolher %s (não dá para trocar depois)" % Species.display_name(id),
 		"run": _choose_species.bind(id), "close": true})
 	return items
 
 
-## Uma opção por tag da espécie, com o que ela dá e o que custa.
+## Uma linha por tag da espécie, com o que ela dá e o que custa.
 func _tag_items(id: String) -> Array:
 	var items := []
 	for tag: String in Species.tags_of(id):
-		var text := Species.tag_text(tag)
-		if not Species.is_live(tag):
-			text += " Ainda sem efeito no jogo."
-		items.append({"label": Species.tag_label(tag), "info": text})
+		items.append({"label": Species.tag_text(tag)})
 	return items
 
 
