@@ -53,6 +53,11 @@ const BRIDGE_COLOR := Color("503a24")
 var _world: WorldGen
 var _audio: SpatialAudio
 var _harvest: Harvest
+var _daytime: Node  # o relógio do mundo (Daytime); nulo = sempre noite
+var _env: Environment
+var _sun: DirectionalLight3D
+var _ring_glow := 0.0
+var _ring_check := 0.0
 var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
@@ -69,8 +74,9 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null, daytime: Node = null) -> void:
 	_world = world
+	_daytime = daytime
 	_audio = audio
 	_harvest = harvest
 	_noise.seed = 1234
@@ -168,6 +174,7 @@ func _setup_environment() -> void:
 	env.fog_depth_begin = FOG_END * 0.2
 	env.fog_depth_end = FOG_END
 	env.fog_depth_curve = 1.4
+	_env = env
 	var holder := WorldEnvironment.new()
 	holder.environment = env
 	add_child(holder)
@@ -177,6 +184,8 @@ func _setup_environment() -> void:
 	light.light_energy = 0.55
 	light.shadow_enabled = false
 	add_child(light)
+	_sun = light
+	_update_sky(0.0)
 
 
 static func _chunk_of(cell: Vector2i) -> Vector2i:
@@ -202,7 +211,8 @@ func _plan(center: Vector2i) -> void:
 		return (a - center).length_squared() > (b - center).length_squared())  # o mais perto no fim, para pop_back
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_sky(delta)
 	if _camera != null and _audio != null:
 		_camera.rotation.y = _audio.facing_yaw()
 	for i in MAX_BUILDS_PER_FRAME:
@@ -496,3 +506,51 @@ func _add_bridge(lists: Dictionary, cell: Vector2i) -> void:
 		var side := Vector3(dir.x, 0.0, dir.y) * half
 		var size := Vector3(0.1, 0.6, METERS) if dir.x != 0 else Vector3(METERS, 0.6, 0.1)
 		put(lists, "box", center + side, size, 0.0, 0.14 + 0.3, BRIDGE_COLOR * 0.75)
+
+
+# --- Dia e noite --------------------------------------------------------------
+
+const DAY_SKY := Color("56666b")  # céu encoberto, verde-acinzentado
+const NIGHT_SKY := Color("0d1217")
+const DAY_FOG := Color("5c6b70")
+const NIGHT_FOG := Color("141b20")
+const DUSK_TINT := Color("a2603c")  # o céu esquenta um pouco entre o dia e a noite
+const DAY_AMBIENT := Color("8d9a9e")
+const NIGHT_AMBIENT := Color("56627a")
+const SUN_COLOR := Color("d6cfbd")
+const MOON_COLOR := Color("a9b6cf")
+const RING_GLOW := Color("9fb4d6")  # a luz refletida do anel, de noite
+
+
+## Liga céu, neblina e luz ao relógio do jogo: dark fantasy, então o dia é
+## encoberto e pálido, nunca ensolarado; o anel clareia a noite e escurece o dia.
+func _update_sky(delta: float) -> void:
+	if _env == null:
+		return
+	var dark := 1.0  # 0 dia, 1 noite
+	var hour := 0.0
+	if _daytime != null:
+		dark = _daytime.darkness_here()
+		hour = DayCycle.hour_of(_daytime.t)
+		_ring_check -= delta
+		if _ring_check <= 0.0:
+			_ring_check = 0.5
+			_ring_glow = _daytime.ring_strength_at(_pos)
+	var warm := sin(PI * clampf(dark, 0.0, 1.0)) * 0.35  # só entre o dia e a noite
+	var sky := DAY_SKY.lerp(NIGHT_SKY, dark).lerp(DUSK_TINT, warm * 0.5)
+	var fog := DAY_FOG.lerp(NIGHT_FOG, dark).lerp(DUSK_TINT, warm * 0.4)
+	# De noite, a faixa do anel reflete luz: o céu e o chão clareiam.
+	var glow := _ring_glow * dark
+	sky = sky.lerp(RING_GLOW * 0.35, glow * 0.5)
+	fog = fog.lerp(RING_GLOW * 0.3, glow * 0.5)
+	_env.background_color = sky
+	_env.fog_light_color = fog
+	_env.ambient_light_color = DAY_AMBIENT.lerp(NIGHT_AMBIENT, dark).lerp(RING_GLOW, glow * 0.5)
+	_env.ambient_light_energy = lerpf(1.3, 0.8, dark) + 0.5 * glow
+	# O sol cruza o céu de leste a oeste das 6h às 18h; de noite, uma lua fixa.
+	var progress := clampf((hour - 6.0) / 12.0, 0.0, 1.0)
+	var sun_pitch := -(12.0 + 55.0 * sin(PI * progress))
+	var sun_yaw := lerpf(90.0, 270.0, progress)
+	_sun.rotation_degrees = Vector3(lerpf(sun_pitch, -40.0, dark), lerpf(sun_yaw, 30.0, dark), 0.0)
+	_sun.light_color = SUN_COLOR.lerp(MOON_COLOR, dark).lerp(RING_GLOW, glow * 0.4)
+	_sun.light_energy = lerpf(0.9, 0.3, dark) + 0.4 * glow
