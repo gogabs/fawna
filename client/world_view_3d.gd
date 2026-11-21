@@ -5,6 +5,8 @@ extends Node3D
 ## servidor e não toca em som. O jogo continua inteiro jogável sem esta tela.
 ##
 ## Etapa 1: chão colorido por bioma, trilhas, pontes e água, com neblina.
+## Etapa 2: árvores, arbustos, bambu, pedras e recursos pequenos, feitos de
+## primitivas (cilindros, cones, esferas) em MultiMesh, um por forma e pedaço.
 ## O chão é montado em pedaços do tamanho dos pedaços do mundo (CHUNK casas),
 ## com cores nos vértices, uma malha por pedaço e um só material. Só os
 ## pedaços perto da criatura existem, e no máximo MAX_BUILDS_PER_FRAME nascem
@@ -39,6 +41,8 @@ const WATER_COLORS := {
 	WorldGen.Thing.LAGO: Color("1d364d"),
 	WorldGen.Thing.MAR: Color("14263d"),
 	WorldGen.Thing.CHARCO: Color("2a4540"),
+	WorldGen.Thing.RIO: Color("21405a"),
+	WorldGen.Thing.VAU: Color("2c4d63"),  # vau: água rasa, mais clara
 }
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
 const TRAIL_COLOR := Color("6a5640")
@@ -50,6 +54,7 @@ var _camera: Camera3D
 var _chunks := {}  # Vector2i (pedaço) -> MeshInstance3D
 var _material: StandardMaterial3D
 var _noise := FastNoiseLite.new()
+var _shapes := {}  # forma (String) -> Mesh, criadas uma vez e repartidas entre os pedaços
 var _center_chunk := Vector2i(1 << 30, 1 << 30)
 var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais longe
 var _pos := Vector2.ZERO
@@ -63,6 +68,7 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
+	_make_shapes()
 	_camera = Camera3D.new()
 	_camera.name = "Olhos"
 	_camera.fov = FOV
@@ -205,6 +211,7 @@ func _build(key: Vector2i) -> void:
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 	_chunks[key] = instance
+	_add_things(instance, first)
 
 
 func _cell_color(cell: Vector2i) -> Color:
@@ -222,3 +229,122 @@ func _cell_color(cell: Vector2i) -> Color:
 	var out := ground * jitter
 	out.a = 1.0
 	return out
+
+
+# --- Etapa 2: coisas em cima do chão -------------------------------------
+
+const TREE_CROWN := {
+	WorldGen.Biome.FLORESTA_GELADA: Color("5a737d"),
+	WorldGen.Biome.BREJO: Color("3b4a2e"),
+	WorldGen.Biome.BAMBUZAL: Color("2c4a28"),
+}
+const TREE_CROWN_DEFAULT := Color("1f3324")
+const TRUNK_COLOR := Color("3a2c22")
+const SHRUB_COLOR := Color("2f4a2c")
+const FRUIT_SHRUB_COLOR := Color("57303d")
+const BAMBOO_COLOR := Color("5f7d3c")
+const STONE_COLOR := Color("69686a")
+const CLAY_COLOR := Color("8f5844")
+const FLINT_COLOR := Color("2a3036")
+const FIBER_COLOR := Color("b3a468")
+const VINE_COLOR := Color("2d5430")
+
+
+func _make_shapes() -> void:
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.12
+	trunk.bottom_radius = 0.2
+	trunk.height = 1.0
+	trunk.radial_segments = 6
+	trunk.rings = 1
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 1.0
+	cone.height = 1.0
+	cone.radial_segments = 7
+	cone.rings = 1
+	var blob := SphereMesh.new()
+	blob.radius = 0.5
+	blob.height = 1.0
+	blob.radial_segments = 8
+	blob.rings = 4
+	var stalk := CylinderMesh.new()
+	stalk.top_radius = 0.05
+	stalk.bottom_radius = 0.08
+	stalk.height = 1.0
+	stalk.radial_segments = 5
+	stalk.rings = 1
+	_shapes = {"trunk": trunk, "cone": cone, "blob": blob, "stalk": stalk}
+
+
+## Número estável de 0 a 1 por casa e "sal": a mesma casa sempre sai igual.
+static func _rand(cell: Vector2i, salt: int) -> float:
+	var h := (cell.x * 73856093) ^ (cell.y * 19349663) ^ (salt * 83492791)
+	h = (h ^ (h >> 13)) * 1274126177
+	return float((h ^ (h >> 16)) & 0xFFFF) / 65535.0
+
+
+func _add_things(parent: Node3D, first: Vector2i) -> void:
+	var lists := {"trunk": [], "cone": [], "blob": [], "stalk": []}
+	for y in CHUNK:
+		for x in CHUNK:
+			var cell := first + Vector2i(x, y)
+			var thing := _world.thing_at(cell)
+			if thing == WorldGen.Thing.NADA:
+				continue
+			var base := Vector3((cell.x + 0.5) * METERS, 0.0, (cell.y + 0.5) * METERS)
+			var r1 := _rand(cell, 1)
+			var r2 := _rand(cell, 2)
+			var r3 := _rand(cell, 3)
+			var turn := r1 * TAU
+			var shade := 0.85 + 0.3 * r2
+			match thing:
+				WorldGen.Thing.ARVORE:
+					var s := 0.8 + 0.5 * r1
+					_put(lists, "trunk", base, Vector3(s, 2.2 * s, s), turn, 1.1 * s, TRUNK_COLOR * shade)
+					var crown: Color = TREE_CROWN.get(_world.biome_at(cell), TREE_CROWN_DEFAULT)
+					_put(lists, "cone", base, Vector3(1.3 * s, 3.4 * s, 1.3 * s), turn, 3.3 * s, crown * shade)
+				WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
+					var s := 0.8 + 0.5 * r1
+					var color := FRUIT_SHRUB_COLOR if thing == WorldGen.Thing.ARBUSTO_FRUTAS else SHRUB_COLOR
+					_put(lists, "blob", base, Vector3(1.0 * s, 0.7 * s, 1.0 * s), turn, 0.3 * s, color * shade)
+				WorldGen.Thing.BAMBU:
+					for k in 3:
+						var offset := Vector3((_rand(cell, 10 + k) - 0.5) * 1.0, 0.0, (_rand(cell, 20 + k) - 0.5) * 1.0)
+						var h := 3.5 + 2.0 * _rand(cell, 30 + k)
+						_put(lists, "stalk", base + offset, Vector3(1.0, h, 1.0), 0.0, h * 0.5, BAMBOO_COLOR * shade)
+				WorldGen.Thing.PEDRAS:
+					var s := 0.6 + 0.6 * r1
+					_put(lists, "blob", base, Vector3(s, 0.6 * s * (0.7 + r3), s * (0.8 + 0.4 * r2)), turn, 0.15 * s, STONE_COLOR * shade)
+				WorldGen.Thing.ARGILA:
+					_put(lists, "blob", base, Vector3(0.9, 0.25, 0.9), turn, 0.05, CLAY_COLOR * shade)
+				WorldGen.Thing.SILEX:
+					_put(lists, "blob", base, Vector3(0.3, 0.22, 0.25), turn, 0.07, FLINT_COLOR * shade)
+				WorldGen.Thing.FIBRA:
+					_put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
+				WorldGen.Thing.CIPO:
+					_put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
+	for shape: String in lists:
+		var items: Array = lists[shape]
+		if items.is_empty():
+			continue
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.use_colors = true
+		multi.mesh = _shapes[shape]
+		multi.instance_count = items.size()
+		for i in items.size():
+			multi.set_instance_transform(i, items[i][0])
+			multi.set_instance_color(i, items[i][1])
+		var holder := MultiMeshInstance3D.new()
+		holder.multimesh = multi
+		holder.material_override = _material
+		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(holder)
+
+
+## Guarda uma peça: escala, giro, altura do centro e cor.
+static func _put(lists: Dictionary, shape: String, at: Vector3, scale: Vector3, turn: float, height: float, color: Color) -> void:
+	var basis := Basis(Vector3.UP, turn).scaled(scale)
+	color.a = 1.0
+	lists[shape].append([Transform3D(basis, at + Vector3.UP * height), color])
