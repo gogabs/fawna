@@ -781,7 +781,7 @@ func request_swing() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	if state.wielding(id).is_empty():
+	if state.wielding(id).is_empty() and not Species.has_tag(state.species_of(id), "garras"):
 		return
 	_tell_others_handled(id, "golpeou")
 
@@ -2282,6 +2282,12 @@ func _say_inventory() -> void:
 ## J: golpeia com o que estiver nas mãos (por enquanto, só o machado).
 func _swing() -> void:
 	if wielded.is_empty():
+		if Species.has_tag(_my_species(), "garras"):
+			if _swing_cooldown <= 0.0:
+				_swing_cooldown = SWING_COOLDOWN
+				_play(Sounds.axe_swing(), true)
+				request_swing.rpc_id(1)
+			return
 		Speech.say("Suas mãos estão livres. Empunhe o machado pela Bolsa, no menu das setas.")
 		return
 	if _swing_cooldown > 0.0:
