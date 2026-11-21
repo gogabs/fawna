@@ -2569,12 +2569,23 @@ func _debug_items() -> Array:
 		{"label": "Estação", "open": _debug_season_items},
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
 	]
 
 
 func _debug_position() -> String:
 	return "x %.0f, y %.0f, região %d, %d" % [_pos.x, _pos.y, _region.x, _region.y]
+
+
+func _debug_fps() -> String:
+	var fps := int(Engine.get_frames_per_second())
+	var extra := ""
+	if view3d != null:
+		extra = ", %d pedaços de chão em 3D" % view3d.chunk_count()
+	elif Net.graphics_off:
+		extra = ", gráficos desligados"
+	return "%d quadros por segundo%s." % [fps, extra]
 
 
 func _debug_ask(action: String, arg: String) -> String:
