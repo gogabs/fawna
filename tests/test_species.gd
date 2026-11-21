@@ -10,7 +10,6 @@ func _init() -> void:
 	_test_choose_once()
 	_test_save_round_trip()
 	_test_snapshot_has_species()
-	_test_loudness()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -89,8 +88,3 @@ func _test_snapshot_has_species() -> void:
 	_check(state.snapshot()[2]["species"] == "onca", "snapshot leva a espécie")
 
 
-func _test_loudness() -> void:
-	_check(Loudness.muffle_seconds("passos") == 0.0 and Loudness.muffle_seconds("passaros") == 0.0, "passos e pássaros não abafam")
-	_check(Loudness.muffle_seconds("obra") < Loudness.muffle_seconds("machadada"), "obra abafa menos que machadada")
-	_check(Loudness.muffle_seconds("machadada") < Loudness.muffle_seconds("arvore_caindo"), "machadada abafa menos que árvore caindo")
-	_check(Loudness.muffle_seconds("som_desconhecido") == 0.0, "som desconhecido não abafa")

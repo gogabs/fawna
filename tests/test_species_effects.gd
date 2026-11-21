@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_axe_power()
 	_test_speed_allowance()
 	_test_ford()
+	_test_franzino()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -166,3 +167,16 @@ func _test_ford() -> void:
 	var pos := WorldGen.cell_center(ford)
 	_check(Species.may_step("urso", world, pos), "urso atravessa o vau")
 	_check(not Species.may_step("raposa", world, pos), "mestre do fogo não pisa no vau")
+
+
+func _test_franzino() -> void:
+	_check(Species.effect("coelho", "axe") == 0.7, "audição apurada: machado 30% mais fraco")
+	_check(Species.effect("coelho", "work") == 0.75, "audição apurada: obra 25% mais lenta")
+	_check(Species.effect("urso", "work") == 1.0, "quem não tem audição apurada trabalha no ritmo normal")
+	var state := WorldState.new(7)
+	state.add_player(1, "Lunar")
+	state.add_player(2, "Troncudo")
+	state.choose_species(1, "coelho")
+	state.choose_species(2, "urso")
+	_check(state.build_cooldown_ms(1) > state.build_cooldown_ms(2), "o Lunar leva mais tempo por batida na obra")
+	_check(is_equal_approx(state.build_cooldown_ms(2), float(WorldState.BUILD_COOLDOWN_MS)), "ritmo normal mantém o intervalo base")
