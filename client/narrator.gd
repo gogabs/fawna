@@ -54,6 +54,21 @@ static func where_am_i(world: WorldGen, pos: Vector2, heading: int) -> String:
 	return "Você está %s, %s." % [biome, facing]
 
 
+## A primeira fala do C: onde a criatura pisa e para onde olha. "Pisando em uma
+## trilha, no bosque de micélio, olhando para o leste." Sem nada de especial no
+## chão, só o lugar: "No bosque de micélio, olhando para o leste."
+static func stepping_on(world: WorldGen, pos: Vector2, heading: int) -> String:
+	var cell := WorldGen.cell_of(pos)
+	var place := world.place_in(cell)
+	var facing := "olhando para o %s" % Compass.name_of(heading)
+	match world.thing_at(cell):
+		WorldGen.Thing.TRILHA:
+			return "Pisando em uma trilha, %s, %s." % [place, facing]
+		WorldGen.Thing.PONTE:
+			return "Pisando em uma ponte, %s, %s." % [place, facing]
+	return "%s, %s." % [place.substr(0, 1).to_upper() + place.substr(1), facing]
+
+
 ## Lista o que está por perto, do mais próximo ao mais distante, em relação
 ## a para onde a criatura olha. De cada tipo de coisa, só a mais próxima; e,
 ## se não estiver numa trilha, onde fica a trilha mais próxima.

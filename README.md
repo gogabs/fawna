@@ -54,7 +54,7 @@ Opções: `--server`, `--host`, `--join=ENDEREÇO`, `--port=N`, `--name=NOME`, `
 | Ajuda (lista de comandos) | H |
 | Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
-| Onde estou | C |
+| Onde estou; apertando de novo, o momento do dia, o anel e a estação (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
 
@@ -229,6 +229,7 @@ godot --headless --path . --script res://tests/test_updater.gd
 godot --headless --path . --script res://tests/test_birds.gd
 godot --headless --path . --script res://tests/test_credentials.gd
 godot --headless --path . --script res://tests/test_harvest.gd
+godot --headless --path . --script res://tests/test_dia_noite.gd
 ```
 
 Caminheiro (precisa rodar como cena):

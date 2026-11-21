@@ -44,6 +44,13 @@ var seed_from_cmdline := false
 ## Onde o servidor salva o mundo. --novo-mundo ignora o save existente.
 var save_path := "user://mundo.json"
 var new_world := false
+## Só para testes e depuração (servidor): hora inicial do mundo (0 a 24, -1 = a salva)
+## e duração do dia em segundos (0 = a normal). Ver DayCycle.
+var day_hour := -1.0
+var day_seconds := 0.0
+## Só para testes (servidor): dia do mundo em que começar (-1 = o salvo); decide em que
+## estação está e onde passa a faixa do anel.
+var day_start := -1
 
 ## Comandos automáticos para testes (ex.: --auto=N,N,L,ARREDORES,SAIR).
 var auto_commands: PackedStringArray = []
@@ -187,6 +194,12 @@ func _parse_cmdline() -> void:
 				save_path = value
 			"--novo-mundo":
 				new_world = true
+			"--hora":
+				day_hour = float(value)
+			"--dia":
+				day_seconds = float(value)
+			"--dia-inicial":
+				day_start = int(value)
 			"--auto":
 				auto_commands = value.split(",", false)
 	# Linha de comando e testes não passam pelo menu, então não exigem nome.
