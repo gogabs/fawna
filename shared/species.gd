@@ -20,29 +20,33 @@ extends RefCounted
 ##   calado_noise: o Calado percebe de mais longe (ou mais perto)       ouve o Calado
 ##   calado_delay: tempo que o Calado leva até chegar
 ##   work: ritmo de trabalho nas obras (0.75 = cada batida leva 1/0.75 do tempo)
+##   hunger: quanto a fome gasta     cold: quanto o frio tira do calor
+##   fire_warm: quão depressa o fogo devolve o calor (ver Body)
 ## Tags que já valem no jogo (LIVE_TAGS); as outras aparecem no menu de
 ## personagem, mas o efeito delas entra em PRs seguintes.
-const LIVE_TAGS: Array[String] = ["pesado", "leve", "veloz", "furtividade", "resistente", "audicao", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar"]
+const LIVE_TAGS: Array[String] = ["pesado", "leve", "veloz", "furtividade", "resistente", "audicao", "guerreiro", "fogo", "salto", "disparada", "uivo", "fucar", "arar", "pelagem"]
 ##
 ## A escolha é feita uma vez por nome de personagem e fica gravada no servidor.
 
 const TAGS := {
-	"pesado": {"name": "Pesado", "effects": {"capacity": 1.2, "speed": 0.9},
-		"text": "Carga plena 20% maior, mas anda 10% mais devagar."},
-	"leve": {"name": "Leve", "effects": {"speed": 1.1, "capacity": 0.85},
-		"text": "Anda 10% mais rápido, mas a carga plena é 15% menor."},
+	"pesado": {"name": "Pesado", "effects": {"capacity": 1.2, "speed": 0.9, "hunger": 1.15},
+		"text": "Carga plena 20% maior, mas anda 10% mais devagar e, de corpo grande, sente fome 15% mais depressa."},
+	"leve": {"name": "Leve", "effects": {"speed": 1.1, "capacity": 0.85, "hunger": 0.85, "cold": 1.15},
+		"text": "Anda 10% mais rápido e sente fome 15% mais devagar, mas a carga plena é 15% menor e o frio o pega 15% mais."},
 	"veloz": {"name": "Veloz", "effects": {"speed": 1.1, "calado_noise": 1.25},
 		"text": "Anda 10% mais rápido, mas faz barulho e o Calado o percebe de mais longe."},
 	"resistente": {"name": "Resistente", "effects": {"overload": 0.5, "speed": 0.95},
 		"text": "A sobrecarga custa metade da lentidão, mas anda 5% mais devagar."},
 	"audicao": {"name": "Audição apurada", "effects": {"calado_hearing": 1.3, "caminheiro_regions": 1, "axe": 0.7, "work": 0.75},
 		"text": "Ouve o Calado e os pássaros de mais longe, e o Caminheiro alcança também as 8 regiões ao redor, mas é franzino: o machado corta 30% menos e as obras andam 25% mais devagar."},
-	"fogo": {"name": "Mestre do fogo", "effects": {"torch": 1.3},
-		"text": "A tocha dura mais e acende sem sílex, mas não consegue cruzar água."},
+	"fogo": {"name": "Mestre do fogo", "effects": {"torch": 1.3, "fire_warm": 1.3},
+		"text": "A tocha dura mais e acende sem sílex, e perto do fogo se aquece 30% mais depressa, mas não consegue cruzar água."},
 	"guerreiro": {"name": "Guerreiro", "effects": {"axe": 1.15, "capacity": 0.9},
 		"text": "Machado 15% mais forte, mas arma e armadura pesam: carga plena 10% menor."},
 	"furtividade": {"name": "Furtividade", "effects": {"noise": 0.5, "speed": 0.9, "jump": 0.8},
 		"text": "Faz menos barulho ao andar e ao saltar, mas anda mais devagar e salta mais curto."},
+	"pelagem": {"name": "Pelagem", "effects": {"cold": 0.7, "fire_warm": 0.8},
+		"text": "O pelo grosso segura o calor: o frio o pega 30% menos, mas perto do fogo demora mais a se aquecer."},
 	"garras": {"name": "Garras", "effects": {},
 		"text": "Ataca sem precisar de arma, com as garras."},
 	"forrageador": {"name": "Forrageador", "effects": {},
@@ -65,7 +69,7 @@ const TAGS := {
 const ORDER: Array[String] = ["urso", "boi", "cervo", "coelho", "lobo", "raposa", "onca", "javali"]
 
 const DATA := {
-	"urso": {"name": "Troncudo", "animal": "urso", "article": "um", "tags": ["pesado", "guerreiro", "pesca"],
+	"urso": {"name": "Troncudo", "animal": "urso", "article": "um", "tags": ["pesado", "guerreiro", "pelagem", "pesca"],
 		"description": "Largo e lento, com os ombros cobertos por uma casca grossa de tronco, rugosa como carvalho velho. Anda com o peso de quem não tem pressa, e o cheiro de madeira e terra molhada vai atrás dele."},
 	"boi": {"name": "Ferrenho", "animal": "boi", "article": "um", "tags": ["pesado", "resistente", "arar"],
 		"description": "Pescoço grosso, chifres escuros como ferro velho e um olhar paciente que quase não pisca. Tem a paciência da terra e a teimosia do ferro."},
@@ -73,7 +77,7 @@ const DATA := {
 		"description": "Esguio e alto, com uma galhada coberta de musgo que parece mais velha do que ele. Os passos mal tocam o chão, e ele corre como quem foge de algo que só ele ouve."},
 	"coelho": {"name": "Lunar", "animal": "coelho", "article": "um", "tags": ["leve", "audicao", "salto"],
 		"description": "Pequeno e atento, de orelhas longas e pelagem branca salpicada de manchas castanhas, como a lua com as suas crateras. Conhece cada toca do caminho, escuta o chão antes de ouvir o ar, e já sumiu quando alguém percebe que ele estava ali."},
-	"lobo": {"name": "Geado", "animal": "lobo", "article": "um", "tags": ["guerreiro", "uivo"],
+	"lobo": {"name": "Geado", "animal": "lobo", "article": "um", "tags": ["guerreiro", "pelagem", "uivo"],
 		"description": "Pelagem cinzenta com as pontas brancas, como neve suja de cinza, e um olhar gelado de quem sabe o seu lugar: defendendo a sua tribo. Quando uiva, a floresta inteira ouve."},
 	"raposa": {"name": "Brasido", "animal": "raposa", "article": "um", "tags": ["furtividade", "fogo", "salto"],
 		"description": "Pelo vermelho escuro, cor de brasa, com manchas cinzentas, e uma chama viva nos olhos. Gosta do que queima e do que se esconde, e deixa um cheiro leve de fumaça por onde passa."},
