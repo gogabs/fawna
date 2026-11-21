@@ -14,8 +14,8 @@ extends Node
 ##     diz o momento do dia e onde se está em relação ao anel;
 ##   - o anel: faixa de sombra de dia e de luz de noite que anda norte e sul
 ##     com as estações, avisada ao entrar e ao sair dela;
-##   - estações (36 dias do jogo cada): a noite encolhe no Anel Alto e estica
-##     no Anel Baixo, e o Calado demora mais ou menos para aparecer.
+##   - estações (36 dias do jogo cada): a noite encolhe na Coroada e estica
+##     na Longa Escuridão, e o Calado demora mais ou menos para aparecer.
 ## E o Calado só ronda de noite (ver Horrors), e tem mais dificuldade na luz
 ## do anel.
 

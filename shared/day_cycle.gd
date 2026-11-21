@@ -15,7 +15,7 @@ extends RefCounted
 ## vale num mundo infinito: as faixas se repetem a cada RING_SPACING metros e
 ## todas vão e vêm juntas, norte e sul, ao longo do ano (YEAR_DAYS dias do
 ## jogo, ou 3 dias reais). O ano tem quatro estações; a noite fica mais curta
-## no Anel Alto e mais longa no Anel Baixo.
+## na Coroada e mais longa na Longa Escuridão.
 
 const DEFAULT_SECONDS := 1800.0
 ## Hora em que um mundo novo começa (de manhã, sem pressa), e o dia do mundo
@@ -151,13 +151,15 @@ static func ring_strength(y: float, d: float) -> float:
 	return 1.0 - x * x * (3.0 - 2.0 * x)
 
 
-## Estações: 0 Anel Alto (faixa no extremo norte), 1 Luz Descendo, 2 Anel Baixo
-## (extremo sul), 3 Luz Subindo. Cada uma centrada no seu ponto do ano.
+## Estações: [nome, o que vem depois de "na estação " (e de "Início da estação "), aviso].
+## 0 Coroada (faixa no extremo norte, noites curtas), 1 Declínio (desce para o sul),
+## 2 Longa Escuridão (extremo sul, noites longas), 3 Ressurgência (volta ao norte).
+## Cada uma centrada no seu ponto do ano.
 const SEASONS := [
-	["Anel Alto", "do Anel Alto", "Estação do Anel Alto. O anel brilha no auge, e as noites encurtam."],
-	["Luz Descendo", "da Luz Descendo", "Estação da Luz Descendo. A sombra e a luz do anel deslizam para o sul."],
-	["Anel Baixo", "do Anel Baixo", "Estação do Anel Baixo. O anel afunda no céu, e as noites se alongam."],
-	["Luz Subindo", "da Luz Subindo", "Estação da Luz Subindo. A sombra e a luz do anel voltam para o norte."],
+	["Coroada", "Coroada", "Estação Coroada. O anel alcança o zênite, e as noites se encurtam."],
+	["Declínio", "do Declínio", "Estação do Declínio. O anel declina para o sul, e luz e sombra mudam de lugar."],
+	["Longa Escuridão", "da Longa Escuridão", "Estação da Longa Escuridão. O anel se apaga no céu, e as noites se alongam."],
+	["Ressurgência", "da Ressurgência", "Estação da Ressurgência. O anel volta ao norte, e a luz torna a subir."],
 ]
 
 
@@ -165,14 +167,14 @@ static func season_of(d: float) -> int:
 	return int(floor(fposmod(d - SEASON_DAYS * 0.5, YEAR_DAYS) / SEASON_DAYS)) % 4
 
 
-## Quanto a noite encolhe (+, Anel Alto) ou estica (-, Anel Baixo): muda aos
+## Quanto a noite encolhe (+, Coroada) ou estica (-, Longa Escuridão): muda aos
 ## poucos, sem saltos.
 static func season_shift(d: float) -> float:
 	return SHIFT_MAX * cos(TAU * (d - SEASON_DAYS) / YEAR_DAYS)
 
 
-## O ritmo com que o Calado se aproxima de aparecer: 0,8 no Anel Alto (noite
-## curta, ele demora mais), 1,2 no Anel Baixo.
+## O ritmo com que o Calado se aproxima de aparecer: 0,8 no Coroada (noite
+## curta, ele demora mais), 1,2 no Longa Escuridão.
 static func calado_rate(d: float) -> float:
 	return 1.0 + CALADO_SEASON_SWING * cos(TAU * (d - 3.0 * SEASON_DAYS) / YEAR_DAYS)
 

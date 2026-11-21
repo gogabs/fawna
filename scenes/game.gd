@@ -3037,9 +3037,9 @@ func _run_auto_commands() -> void:
 			"IR_MEIO_DIA", "IR_ENTARDECER", "IR_GRILOS", "IR_NOITE", "IR_MEIA_NOITE", "IR_CORO", "IR_DIA":  # testes, só quem hospeda: vai para um momento (DayCycle.MOMENTS)
 				if Net.is_server():
 					Speech.say(daytime.jump_to(command.trim_prefix("IR_").to_lower()))
-			"IR_ANEL_ALTO", "IR_LUZ_DESCENDO", "IR_ANEL_BAIXO", "IR_LUZ_SUBINDO":  # testes, só quem hospeda: vai para o começo de uma estação
+			"IR_COROADA", "IR_DECLINIO", "IR_LONGA_ESCURIDAO", "IR_RESSURGENCIA":  # testes, só quem hospeda: vai para o começo de uma estação
 				if Net.is_server():
-					Speech.say(daytime.jump_to_season(["IR_ANEL_ALTO", "IR_LUZ_DESCENDO", "IR_ANEL_BAIXO", "IR_LUZ_SUBINDO"].find(command)))
+					Speech.say(daytime.jump_to_season(["IR_COROADA", "IR_DECLINIO", "IR_LONGA_ESCURIDAO", "IR_RESSURGENCIA"].find(command)))
 			"NOITE", "DIA":  # testes, só quem hospeda: muda a hora do mundo (meia-noite ou meio-dia)
 				if daytime != null and Net.is_server():
 					daytime.set_hour(0.0 if command == "NOITE" else 12.0)

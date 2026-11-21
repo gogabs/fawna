@@ -65,7 +65,7 @@ func _test_describe() -> void:
 	_check(names[DayCycle.period_of(_at(12.0))] == "Meio-dia", "12h é meio-dia")
 	_check(is_equal_approx(DayCycle.seconds_to_next_period(_at(23.0), 1800.0), 75.0), "da 23h à meia-noite é uma hora")
 	var text := DayCycle.describe(_at(14.5), 36.0)
-	_check(text.begins_with("Tarde, na estação do Anel Alto. ") and not text.contains("minuto"), "descreve a tarde com a estação: " + text)
+	_check(text.begins_with("Tarde, na estação Coroada. ") and not text.contains("minuto"), "descreve a tarde com a estação: " + text)
 	var digits := RegEx.create_from_string("[0-9]")
 	for i in DayCycle.PERIODS.size():
 		_check(DayCycle.period_of(_at(DayCycle.period_start(i))) == i, "o período %d começa na hora dele" % i)
@@ -92,9 +92,9 @@ func _test_ring() -> void:
 	# O sinal: a faixa ao norte (y menor) dá deslocamento negativo.
 	_check(DayCycle.ring_offset(center + 100.0, d) < 0.0, "a faixa está ao norte de quem está ao sul dela")
 	_check(DayCycle.ring_offset(center - 100.0, d) > 0.0, "e ao sul de quem está ao norte")
-	# O ano: vai ao extremo norte no Anel Alto, ao sul no Anel Baixo, e volta.
-	_check(is_equal_approx(DayCycle.ring_center(36.0), -DayCycle.RING_TRAVEL), "no Anel Alto a faixa está no extremo norte")
-	_check(is_equal_approx(DayCycle.ring_center(108.0), DayCycle.RING_TRAVEL), "no Anel Baixo, no extremo sul")
+	# O ano: vai ao extremo norte no Coroada, ao sul no Longa Escuridão, e volta.
+	_check(is_equal_approx(DayCycle.ring_center(36.0), -DayCycle.RING_TRAVEL), "no Coroada a faixa está no extremo norte")
+	_check(is_equal_approx(DayCycle.ring_center(108.0), DayCycle.RING_TRAVEL), "no Longa Escuridão, no extremo sul")
 	_check(absf(DayCycle.ring_center(144.0)) < 0.001, "o ano fecha")
 	# Um lugar fixo vê a sombra passar ao longo do ano; a faixa nunca cruza outra.
 	var seen := 0
@@ -107,21 +107,21 @@ func _test_ring() -> void:
 
 func _test_seasons() -> void:
 	_check(DayCycle.season_of(36.0) == 0 and DayCycle.season_of(72.0) == 1 and DayCycle.season_of(108.0) == 2 and DayCycle.season_of(140.0) == 3, "as estações vêm na ordem")
-	_check(DayCycle.season_of(0.0) == 3 and DayCycle.season_of(17.9) == 3 and DayCycle.season_of(18.0) == 0, "o ano começa na Luz Subindo e vira no dia 18")
+	_check(DayCycle.season_of(0.0) == 3 and DayCycle.season_of(17.9) == 3 and DayCycle.season_of(18.0) == 0, "o ano começa na Ressurgência e vira no dia 18")
 	_check(DayCycle.season_of(36.0 + 144.0) == 0, "o ano se repete")
-	_check(is_equal_approx(DayCycle.season_shift(36.0), DayCycle.SHIFT_MAX), "no Anel Alto a noite encurta")
-	_check(is_equal_approx(DayCycle.season_shift(108.0), -DayCycle.SHIFT_MAX), "no Anel Baixo a noite estica")
+	_check(is_equal_approx(DayCycle.season_shift(36.0), DayCycle.SHIFT_MAX), "no Coroada a noite encurta")
+	_check(is_equal_approx(DayCycle.season_shift(108.0), -DayCycle.SHIFT_MAX), "no Longa Escuridão a noite estica")
 	_check(absf(DayCycle.season_shift(72.0)) < 0.001, "entre as duas, a noite é normal")
 	DayCycle.shift_hours = DayCycle.season_shift(36.0)
-	_check(DayCycle.is_night(_at(4.0)) and not DayCycle.is_night(_at(4.6)) and DayCycle.is_night(_at(20.6)) and not DayCycle.is_night(_at(20.4)), "o Anel Alto tem noite de 20h30 às 4h30")
+	_check(DayCycle.is_night(_at(4.0)) and not DayCycle.is_night(_at(4.6)) and DayCycle.is_night(_at(20.6)) and not DayCycle.is_night(_at(20.4)), "o Coroada tem noite de 20h30 às 4h30")
 	var short_night := 24.0 - DayCycle.night_hour() + DayCycle.dawn_hour()
 	DayCycle.shift_hours = DayCycle.season_shift(108.0)
 	var long_night := 24.0 - DayCycle.night_hour() + DayCycle.dawn_hour()
-	_check(short_night < 9.0 and long_night > 9.0, "a noite do Anel Alto é mais curta que a do Anel Baixo")
+	_check(short_night < 9.0 and long_night > 9.0, "a noite do Coroada é mais curta que a do Longa Escuridão")
 	for i in DayCycle.PERIODS.size():
 		_check(DayCycle.period_of(_at(DayCycle.period_start(i))) == i, "com a noite esticada, o período %d ainda começa na hora dele" % i)
 	DayCycle.shift_hours = 0.0
-	_check(DayCycle.calado_rate(36.0) < 1.0 and DayCycle.calado_rate(108.0) > 1.0, "o Calado demora mais no Anel Alto e menos no Anel Baixo")
+	_check(DayCycle.calado_rate(36.0) < 1.0 and DayCycle.calado_rate(108.0) > 1.0, "o Calado demora mais no Coroada e menos no Longa Escuridão")
 	_check(is_equal_approx(DayCycle.calado_rate(36.0), 0.8) and is_equal_approx(DayCycle.calado_rate(108.0), 1.2), "20% para cada lado")
 	_check(DayCycle.darkness_with_ring(_at(12.0), 1.0) > 0.4 and DayCycle.darkness_with_ring(_at(12.0), 0.0) == 0.0, "a sombra escurece o dia")
 	_check(is_equal_approx(DayCycle.darkness_with_ring(_at(2.0), 1.0), 1.0), "e não passa do escuro da noite")
@@ -244,7 +244,7 @@ func _test_horror_ring() -> void:
 	_check(lit > plain, "na luz do anel ele demora mais (%.0f s contra %.0f s)" % [lit, plain])
 	var slow := _appears_in(world, spot, 0.0, 0.8)
 	var fast := _appears_in(world, spot, 0.0, 1.2)
-	_check(slow > fast, "no Anel Alto ele demora mais que no Anel Baixo (%.0f s contra %.0f s)" % [slow, fast])
+	_check(slow > fast, "no Coroada ele demora mais que no Longa Escuridão (%.0f s contra %.0f s)" % [slow, fast])
 	# Dentro da luz ele chega mais devagar e precisa chegar mais perto.
 	var pos_plain := _stalk_distance(world, spot, 0.0)
 	var pos_lit := _stalk_distance(world, spot, 1.0)
