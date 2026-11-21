@@ -2776,11 +2776,10 @@ func _stow() -> String:
 ## contam e como se fala do destino (com artigo, para "rumo ao bambu").
 const CAMINHEIRO_RESOURCES := [
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
-	["Lenha", [WorldGen.Thing.ARBUSTO], "a lenha"],
+	["Arbusto", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
 	["Madeira", [WorldGen.Thing.ARVORE], "a árvore"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
-	["Frutas", [WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
 	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
 	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
