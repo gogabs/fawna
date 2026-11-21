@@ -110,6 +110,11 @@ const FPS_LIMIT_NO_GRAPHICS := 20
 
 func apply_fps_limit(in_game: bool) -> void:
 	_fps_target = FPS_LIMIT_NO_GRAPHICS if (graphics_off and in_game) else FPS_LIMIT
+	# Depuração: --fps-teto=N troca o teto (0 = sem teto) e --sem-limitador
+	# desliga o limitador manual, para comparar o que segura melhor o FPS.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--fps-teto="):
+			_fps_target = int(arg.get_slice("=", 1))
 	# No Godot 4.7 atribuir o valor que já está (o 60 do project.godot) não liga
 	# o teto: é preciso passar por 0 antes (medido no PC do Gabs: 60 sozinho
 	# dava 1.700 FPS; 0 e depois 60 dá 60).
@@ -127,6 +132,8 @@ var _fps_target := FPS_LIMIT
 
 func _process(_delta: float) -> void:
 	if DisplayServer.get_name() == "headless":
+		return
+	if _fps_target <= 0 or "--sem-limitador" in OS.get_cmdline_user_args():
 		return
 	var target := int(1000000.0 / _fps_target)
 	var spent := Time.get_ticks_usec() - _last_frame_usec
