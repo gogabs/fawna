@@ -5,7 +5,9 @@ extends RefCounted
 ## belos e um pouco inumanos (dark fantasy, sem fofura).
 ##
 ## Cada espécie é uma lista de tags (TAGS), e cada tag é um pequeno pacote de
-## efeitos com um ganho e SEMPRE um custo: nenhuma tag só tem vantagem.
+## efeitos com um ganho e um custo: nenhuma tag só tem vantagem. Exceções, por
+## decisão do Gabs (2026-11-20): uivo, garras e forrageador não têm custo,
+## porque quem as tem compensa com poucas tags.
 ## Toda espécie tem exatamente UMA tag ativa (habilidade usada numa tecla, com
 ## espera entre usos, "active": true; pode repetir em outras espécies) e uma
 ## tag ÚNICA, que só ela tem (a ativa pode ser a própria única). O jogo
@@ -42,16 +44,16 @@ const TAGS := {
 	"furtividade": {"name": "Furtividade", "effects": {"noise": 0.5, "speed": 0.9, "jump": 0.8},
 		"text": "Faz menos barulho ao andar e ao saltar, mas anda mais devagar e salta mais curto."},
 	"garras": {"name": "Garras", "effects": {},
-		"text": "Ataca sem precisar de arma, com as garras, mas o golpe é mais fraco que o de uma arma."},
+		"text": "Ataca sem precisar de arma, com as garras."},
 	"forrageador": {"name": "Forrageador", "effects": {},
-		"text": "Distingue as plantas pelo faro: frutos, leguminosas, raízes e outras, mas gasta mais tempo farejando antes de colher. Por enquanto não há plantas que façam sentido."},
+		"text": "Distingue as plantas pelo faro: frutos, leguminosas, raízes e outras. Por enquanto não há plantas que façam sentido."},
 	"sete_vidas": {"name": "Sete vidas", "effects": {"lives": 7, "speed_after_loss": 0.9},
 		"text": "Tem sete vidas, bem mais que as outras espécies, mas cada vida perdida a deixa 10% mais lenta por uns minutos."},
 	# Ativas (ainda sem lógica no jogo; cada uma entra em PR próprio).
 	"salto": {"name": "Salto", "active": true, "effects": {},
 		"text": "Pulo curto, com espera entre usos, e o pouso faz barulho."},
 	"uivo": {"name": "Uivo", "active": true, "effects": {},
-		"text": "Som que os amigos ouvem de longe, com direção, e que afasta o Calado, mas é um som alto: revela onde ele está a quem ouvir, abafa quem tem audição apurada e há espera entre usos."},
+		"text": "Som que os amigos ouvem de longe, com direção, e que afasta o Calado."},
 	"disparada": {"name": "Disparada", "active": true, "effects": {},
 		"text": "Corre o dobro por uns 3 s, mas faz muito barulho e fica cansado depois."},
 	"fucar": {"name": "Fuçar", "active": true, "effects": {},
