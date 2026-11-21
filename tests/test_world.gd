@@ -7,7 +7,7 @@ var _failures := 0
 
 func _init() -> void:
 	_test_same_seed_same_world()
-	_test_origin_is_free()
+	_test_spawn_is_free()
 	_test_has_both_biomes()
 	_test_narrator_direction()
 	_test_world_state_moves()
@@ -46,13 +46,15 @@ func _test_same_seed_same_world() -> void:
 	_check(differs, "sementes diferentes deveriam gerar mundos diferentes")
 
 
-func _test_origin_is_free() -> void:
+func _test_spawn_is_free() -> void:
 	for world_seed in range(20):
-		var world := WorldGen.new(world_seed)
-		var center := WorldGen.center()
-		_check(world.thing_at(center) == WorldGen.Thing.ORIGEM, "a Origem deveria estar no centro")
-		for offset in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-			_check(world.is_passable(center + offset), "o entorno da Origem deveria ser livre (semente %d)" % world_seed)
+		var state := WorldState.new(world_seed)
+		var seen := {}
+		for id in range(1, 6):
+			var pos := state.add_player(id, "J%d" % id)
+			_check(state.world.is_free(pos), "o ponto de entrada deveria ser livre (semente %d)" % world_seed)
+			_check(not seen.has(pos), "cada jogador deveria nascer num lugar diferente (semente %d)" % world_seed)
+			seen[pos] = true
 
 
 func _test_has_both_biomes() -> void:
@@ -74,14 +76,14 @@ func _test_world_state_moves() -> void:
 	var state := WorldState.new(42)
 	var pos := state.add_player(10, "Lua")
 	_check(state.world.is_free(pos), "o ponto de entrada deveria ser livre")
-	_check(pos.distance_to(WorldGen.origin_point()) < 2.0, "entra perto da Origem")
+	_check(pos.distance_to(WorldGen.center_point()) < 2.0, "entra perto do centro do mundo")
 	var t := 100000
 	var result := state.move_to(10, pos + Vector2(6, 0), t)
 	_check(not result["ok"] and result["pos"] == pos, "teletransporte deveria ser recusado")
 	result = state.move_to(99, pos, t)
 	_check(not result["ok"], "jogador desconhecido não deveria andar")
 	result = state.move_to(10, pos + Vector2(0, -0.15), t + 100)
-	_check(result["ok"], "andar um pouquinho em direção à Origem deveria funcionar")
+	_check(result["ok"], "andar um pouquinho deveria funcionar")
 
 
 func _test_collision() -> void:
@@ -95,7 +97,7 @@ func _test_collision() -> void:
 	_check(not world.is_free(WorldGen.cell_center(bamboo)), "não dá para ficar dentro do bambu")
 	_check(world.blocker_at(WorldGen.cell_center(bamboo)) == bamboo, "o obstáculo é o bambu")
 	_check(not world.is_free(Vector2(WorldGen.WORLD_LIMIT + 1.1, 5.5)), "o limite do mundo bloqueia")
-	_check(world.is_free(WorldGen.origin_point()), "a Origem é livre")
+	_check(world.is_free(WorldGen.center_point()), "o centro do mundo é livre")
 	_check(WorldGen.cell_of(Vector2(3.99, 4.0)) == Vector2i(3, 4), "casa de um ponto")
 
 
@@ -116,7 +118,7 @@ func _test_compass() -> void:
 
 func _test_regions_and_trails() -> void:
 	var world := WorldGen.new(42)
-	_check(world.region_biome(Vector2i.ZERO) == WorldGen.Biome.PRADARIA, "a Origem fica numa pradaria")
+	_check(world.region_biome(Vector2i.ZERO) == WorldGen.Biome.PRADARIA, "o centro do mundo fica numa pradaria")
 	# Regiões são grandes: casas vizinhas quase sempre têm o mesmo bioma.
 	var same := 0
 	var total := 0
@@ -126,12 +128,12 @@ func _test_regions_and_trails() -> void:
 			if world.biome_at(Vector2i(x, y)) == world.biome_at(Vector2i(x + 1, y)):
 				same += 1
 	_check(same > total * 0.9, "biomas deveriam vir em regiões grandes")
-	# Longe da Origem também existe mundo (sem bordas), e é sempre o mesmo.
+	# Longe do centro também existe mundo (sem bordas), e é sempre o mesmo.
 	var far := Vector2i(1500, -2200)
 	_check(world.thing_at(far) == WorldGen.new(42).thing_at(far), "mundo distante também é fixo pela semente")
-	# A Origem é ponto de encontro de trilhas: deve haver trilha logo ao lado.
-	var near_origin := world.nearest_trail(WorldGen.origin_point(), 6)
-	_check(near_origin != WorldGen.NO_CELL, "deveria sair uma trilha da Origem")
+	# O centro do mundo é ponto de encontro de trilhas: deve haver trilha logo ao lado.
+	var near_origin := world.nearest_trail(WorldGen.center_point(), 6)
+	_check(near_origin != WorldGen.NO_CELL, "deveria sair uma trilha do centro")
 	# Seguindo a reta até o ponto de encontro vizinho, quase tudo é trilha
 	# (ela serpenteia um pouco em volta da reta).
 	var a := world.region_landmark(Vector2i.ZERO)
@@ -142,7 +144,7 @@ func _test_regions_and_trails() -> void:
 		var p := a.lerp(b, (i + 0.5) / samples)
 		if world.nearest_trail(p, 3) != WorldGen.NO_CELL:
 			on_trail += 1
-	_check(on_trail >= samples * 0.9, "deveria haver trilha ligando a Origem à região vizinha (%d/%d)" % [on_trail, samples])
+	_check(on_trail >= samples * 0.9, "deveria haver trilha ligando o centro à região vizinha (%d/%d)" % [on_trail, samples])
 	# Ponte em vez de água no meio da trilha: trilhas nunca bloqueiam.
 	for y in range(-80, 80):
 		for x in range(-80, 80):
@@ -174,10 +176,10 @@ func _test_straight_bridges() -> void:
 					var steps := maxi(1, ceili(a.distance_to(b) / 0.25))
 					for k in steps:
 						var p := a.lerp(b, float(k) / steps)
-						if p.distance_to(WorldGen.origin_point()) > WorldGen.ORIGIN_CLEAR_RADIUS and not world.is_free(p):
+						if not world.is_free(p):
 							_check(false, "a linha da trilha esbarra em algo em %s" % p)
 							return
-	_check(bridges > 0, "deveria haver alguma ponte perto da Origem")
+	_check(bridges > 0, "deveria haver alguma ponte perto do centro")
 	# A linha é a mesma nos dois sentidos.
 	var there := world.trail_line(Vector2i.ZERO, Vector2i.RIGHT)
 	var back := world.trail_line(Vector2i.RIGHT, Vector2i.ZERO)
@@ -206,8 +208,6 @@ func _test_clear_wide_trails() -> void:
 							var turn := absf((line[i] - line[i - 1]).angle_to(line[i + 1] - line[i]))
 							_check(turn < deg_to_rad(12.0), "trilha vira de repente em %s (semente %d)" % [p, world_seed])
 						var side := dir.orthogonal()
-						if p.distance_to(WorldGen.origin_point()) < WorldGen.ORIGIN_CLEAR_RADIUS + 2.0:
-							continue  # a clareira da Origem é toda livre
 						for offset in [-0.8, 0.8]:
 							var cell := WorldGen.cell_of(p + side * offset)
 							var thing := world.thing_at(cell)
@@ -297,11 +297,11 @@ func _test_biomes_and_borders() -> void:
 		_check(clearings > 0, "deveria haver clareiras (semente %d)" % world_seed)
 		# Sorteando ao acaso, uns 20% das vizinhas teriam o mesmo bioma.
 		_check(same > pairs * 0.45, "regiões vizinhas deveriam ser parecidas (semente %d: %d de %d)" % [world_seed, same, pairs])
-		# Perto da Origem não há mar nem frio.
+		# Perto do centro não há mar nem frio.
 		for ry in range(-1, 2):
 			for rx in range(-1, 2):
 				var near := world.region_biome(Vector2i(rx, ry))
-				_check(near != WorldGen.Biome.MAR and not WorldGen.COLD_BIOMES.has(near), "em volta da Origem o clima é ameno (semente %d)" % world_seed)
+				_check(near != WorldGen.Biome.MAR and not WorldGen.COLD_BIOMES.has(near), "em volta do centro o clima é ameno (semente %d)" % world_seed)
 	# Mar: água que bloqueia, com uma praia andável encostada na terra.
 	var world := WorldGen.new(42)
 	var sea := WorldGen.NO_CELL
@@ -334,7 +334,7 @@ func _test_biomes_and_borders() -> void:
 	var d1 := world.border_distance(Vector2i(20, 0), [east_cover])
 	_check(d1 < d0 and d1 < 8.0, "a borda leste fica mais perto andando para leste (%.1f, %.1f)" % [d0, d1])
 	# Nomes de lugar.
-	_check(world.place_in(Vector2i.ZERO) == "na pradaria de girassóis", "a Origem fica na pradaria")
+	_check(world.place_in(Vector2i.ZERO) == "na pradaria de girassóis", "o centro fica na pradaria")
 
 
 ## O Caminheiro dá a volta no mar, e sabe sair da praia e chegar nela.

@@ -94,4 +94,4 @@ static func free_spot(world: WorldGen, point: Vector2, blocked: Array = []) -> V
 			var spot := world.nearest_free(try)
 			if world.is_free(spot) and not blocked.has(WorldGen.cell_of(spot)):
 				return spot
-	return WorldGen.origin_point()
+	return WorldGen.center_point()

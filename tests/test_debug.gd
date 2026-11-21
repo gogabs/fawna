@@ -54,13 +54,14 @@ func _test_capacity() -> void:
 	DebugTools.give(bag, "tudo")
 	_check(Bag.load_of(bag) > Bag.CAPACITY, "o pacote tudo passa do limite normal")
 	_check(Bag.free_space(bag) == 0, "no limite normal, não cabe mais nada")
-	Bag.capacity = DebugTools.HIGH_CAPACITY
+	Bag.apply_limit(DebugTools.HIGH_CAPACITY)
 	_check(Bag.free_space(bag) > 0, "com o limite alto, ainda cabe")
 	_check(Bag.load_label(bag).ends_with("de %d" % DebugTools.HIGH_CAPACITY), "o rótulo mostra o limite novo")
 	var split := Bag.split_to_fit({}, "", {"pedra_grande": 50}, "")
 	_check(split[1].is_empty(), "com o limite alto, 50 pedras grandes cabem")
-	Bag.capacity = Bag.CAPACITY
-	_check(Bag.free_space({}) == Bag.CAPACITY, "voltar ao normal")
+	_check(Bag.speed_factor(bag) == 1.0, "com o limite alto, não anda mais devagar")
+	Bag.apply_limit(Bag.CAPACITY)
+	_check(Bag.free_space({}) == Bag.MAX_LOAD and Bag.capacity == Bag.CAPACITY, "voltar ao normal")
 
 
 func _test_point_and_spot() -> void:
@@ -68,7 +69,7 @@ func _test_point_and_spot() -> void:
 	_check(DebugTools.parse_point("abc") == null and DebugTools.parse_point("1,2,3") == null, "ponto inválido")
 	_check(DebugTools.parse_point("nan,1") == null and DebugTools.parse_point("1e30,1") == null, "ponto absurdo")
 	var world := WorldGen.new(42)
-	for point: Vector2 in [Vector2(40, 40), Vector2(-300, 200), Vector2(1000, -1000), WorldGen.origin_point()]:
+	for point: Vector2 in [Vector2(40, 40), Vector2(-300, 200), Vector2(1000, -1000), WorldGen.center_point()]:
 		var spot := DebugTools.free_spot(world, point)
 		_check(world.is_free(spot), "o teleporte deveria cair num ponto livre perto de %s (caiu em %s)" % [point, spot])
 
@@ -76,7 +77,7 @@ func _test_point_and_spot() -> void:
 func _test_horror_controls() -> void:
 	var world := WorldGen.new(42)
 	var horrors := Horrors.new(world)
-	var players := {1: {"pos": WorldGen.origin_point() + Vector2(60, 60), "heading": 0}}
+	var players := {1: {"pos": WorldGen.center_point() + Vector2(60, 60), "heading": 0}}
 	_check(horrors.summon(1, players, 12.0) >= 0, "chamar o Calado")
 	_check(horrors.summon(1, players, 12.0) < 0, "já há um atrás dele")
 	var out := horrors.dismiss_all(1000)

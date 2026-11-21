@@ -16,16 +16,18 @@ const BIOME_COLORS := {
 	WorldGen.Biome.DESERTO_GELADO: Color("cfd8dc"),
 	WorldGen.Biome.BAMBUZAL: Color("3f6a2f"),
 	WorldGen.Biome.BREJO: Color("5a6240"),
+	WorldGen.Biome.MONTANHA: Color("7d7468"),
 }
 const THING_COLORS := {
 	WorldGen.Thing.RIACHO: Color("3a7bd5"),
+	WorldGen.Thing.VAU: Color("6aa0e0"),
+	WorldGen.Thing.RIO: Color("2a5bb5"),
 	WorldGen.Thing.LAGO: Color("2f65b5"),
 	WorldGen.Thing.MAR: Color("1f3f6f"),
 	WorldGen.Thing.CHARCO: Color("3f5f5a"),
 	WorldGen.Thing.TRILHA: Color("a07a4f"),
 	WorldGen.Thing.PONTE: Color("7a5230"),
 	WorldGen.Thing.ARBUSTO: Color("d98ad9"),
-	WorldGen.Thing.ORIGEM: Color("f6c453"),
 	WorldGen.Thing.BAMBU: Color("5f8a3a"),
 	WorldGen.Thing.ARGILA: Color("b0654a"),
 	WorldGen.Thing.ARBUSTO_FRUTAS: Color("b02a4a"),
@@ -52,7 +54,7 @@ func setup(world: WorldGen, players: Dictionary, my_id: int) -> void:
 
 ## O mundo não tem bordas: a tela mostra só o entorno da criatura local.
 func _origin() -> Vector2:
-	var me: Vector2 = _players[_my_id]["pos"] if _players.has(_my_id) else WorldGen.origin_point()
+	var me: Vector2 = _players[_my_id]["pos"] if _players.has(_my_id) else WorldGen.center_point()
 	return me - Vector2(VIEW_CELLS) * 0.5
 
 

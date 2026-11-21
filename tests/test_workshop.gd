@@ -22,7 +22,7 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _workshop(state: WorldState, entrance: String, size := 5, done := true) -> Dictionary:
-	var cell := WorldGen.cell_of(WorldGen.origin_point()) + Vector2i(30, 30)
+	var cell := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(30, 30)
 	var build := state.builds._fill(state.builds._new_build(1, "oficina", cell, size, entrance), {"size": size, "entrance": entrance}, 0.0)
 	build["done"] = done
 	state.builds._add(build)

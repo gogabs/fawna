@@ -37,7 +37,7 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStreamWAV:
 				_cache[key] = _sea_loop()
 			WorldGen.Biome.FLORESTA_GELADA:
 				_cache[key] = _cold_wind_loop(false)
-			WorldGen.Biome.DESERTO_GELADO:
+			WorldGen.Biome.DESERTO_GELADO, WorldGen.Biome.MONTANHA:
 				_cache[key] = _cold_wind_loop(true)
 			_:
 				return null
@@ -45,6 +45,93 @@ static func biome_bed(biome: WorldGen.Biome) -> AudioStreamWAV:
 
 
 const BED_SECONDS := 6
+
+## Grilos da noite (em loop, 8 s): três grilos de alturas diferentes, cada um
+## com a sua cantiga, um trinado de pulsinhos curtos que se repete. Os
+## períodos cabem inteiros no loop, então ele fecha sem emenda.
+static func crickets() -> AudioStreamWAV:
+	if _cache.has("grilos"):
+		return _cache["grilos"]
+	var seconds := 8
+	var count := RATE * seconds
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	# [altura em Hz, chirps no loop, pulsos por chirp, volume, atraso em s]
+	var singers := [[4300.0, 16, 4, 0.05, 0.0], [3700.0, 11, 3, 0.04, 0.21], [4900.0, 13, 5, 0.03, 0.37]]
+	for singer in singers:
+		var chirp_period: float = float(seconds) / int(singer[1])
+		var pulses: int = singer[2]
+		var pulse_period := 0.034
+		var pulse_len := 0.017
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(singer[4]), float(seconds))
+			var local := fposmod(t, chirp_period)
+			var n := int(local / pulse_period)
+			if n >= pulses:
+				continue
+			var in_pulse := local - n * pulse_period
+			if in_pulse >= pulse_len:
+				continue
+			var env := sin(PI * in_pulse / pulse_len)
+			# O trinado cresce e some em arco; o grilo oscila um pouco de altura.
+			var arc := sin(PI * (n + 0.5) / pulses)
+			var freq: float = singer[0] * (1.0 + 0.01 * sin(TAU * t * 0.7))
+			samples[i] += sin(TAU * freq * t) * env * env * arc * float(singer[3])
+	var peak := 0.0
+	for value in samples:
+		peak = maxf(peak, absf(value))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.5
+	_cache["grilos"] = _to_wav(samples, true)
+	return _cache["grilos"]
+
+
+## Sapinhos da lagoa (em loop, 8 s): um coro de pios agudos e curtos que
+## sobem de altura (como um sapinho-de-primavera), em duas vozes, e de vez em
+## quando um coaxar grave de sapo grande, feito de pulsos rápidos. Os
+## períodos cabem inteiros no loop.
+static func frogs() -> AudioStreamWAV:
+	if _cache.has("sapos"):
+		return _cache["sapos"]
+	var seconds := 8
+	var count := RATE * seconds
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	# Pios: [altura inicial em Hz, quantos no loop, atraso em s, volume]
+	for peeper in [[2500.0, 14, 0.0, 0.05], [2900.0, 11, 0.31, 0.04]]:
+		var period: float = float(seconds) / int(peeper[1])
+		var length := 0.085
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(peeper[2]), float(seconds))
+			var local := fposmod(t, period)
+			if local >= length:
+				continue
+			var x := local / length
+			# Sobe uns 30% durante o pio.
+			var phase := TAU * float(peeper[0]) * (local + 0.15 * length * x * x)
+			samples[i] += sin(phase) * sin(PI * x) * float(peeper[3])
+	# Coaxares: [altura em Hz, quantos no loop, atraso em s, volume]
+	for croaker in [[170.0, 3, 1.1, 0.12], [210.0, 2, 4.3, 0.09]]:
+		var period: float = float(seconds) / int(croaker[1])
+		var length := 0.32
+		for i in count:
+			var t := fposmod(float(i) / RATE - float(croaker[2]), float(seconds))
+			var local := fposmod(t, period)
+			if local >= length:
+				continue
+			var x := local / length
+			var pulses := 0.5 + 0.5 * sin(TAU * 38.0 * local)
+			var freq: float = croaker[0] * (1.0 - 0.18 * x)
+			var voice := sin(TAU * freq * local) + 0.4 * sin(TAU * freq * 2.0 * local)
+			samples[i] += voice * pulses * sin(PI * x) * float(croaker[3])
+	var peak := 0.0
+	for value in samples:
+		peak = maxf(peak, absf(value))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.5
+	_cache["sapos"] = _to_wav(samples, true)
+	return _cache["sapos"]
+
 
 ## Mar: uma onda grave e lenta que cresce, quebra num chiado e recua. O loop
 ## fecha no ponto mais baixo, entre uma onda e outra.
@@ -141,18 +228,14 @@ static func pickup() -> AudioStreamWAV:
 
 
 ## Som contínuo (em loop) de cada coisa do mundo, para o áudio espacial.
-## "level" escolhe uma versão mais cheia da Origem (usada só pela ocarina
-## guardada, como reserva).
-static func ambient(thing: WorldGen.Thing, level := 0) -> AudioStreamWAV:
-	var key := "amb_%d_%d" % [thing, level if thing == WorldGen.Thing.ORIGEM else 0]
+static func ambient(thing: WorldGen.Thing) -> AudioStreamWAV:
+	var key := "amb_%d" % thing
 	if not _cache.has(key):
 		match thing:
-			WorldGen.Thing.RIACHO, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
+			WorldGen.Thing.RIACHO, WorldGen.Thing.RIO, WorldGen.Thing.VAU, WorldGen.Thing.LAGO, WorldGen.Thing.MAR, WorldGen.Thing.CHARCO:
 				_cache[key] = _water_loop()
 			WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
 				_cache[key] = _bees_loop()
-			WorldGen.Thing.ORIGEM:
-				_cache[key] = _origin_loop(level)
 			_:
 				return null
 	return _cache[key]
@@ -187,9 +270,17 @@ static func _bees_loop() -> AudioStreamWAV:
 	return _to_wav(samples, true)
 
 
-## Origem: sininhos numa escala pentatônica, como um sino de vento. Nos
-## níveis mais altos, ganha mais notas, um baixo e passarinhos.
-static func _origin_loop(level: int) -> AudioStreamWAV:
+## Sininhos numa escala pentatônica, como um sino de vento: a musiquinha de
+## reserva quando faltam os arquivos. Nos níveis mais altos, ganha mais notas,
+## um baixo e passarinhos.
+static func bells_loop(level: int) -> AudioStreamWAV:
+	var key := "sinos_%d" % level
+	if not _cache.has(key):
+		_cache[key] = _bells_build(level)
+	return _cache[key]
+
+
+static func _bells_build(level: int) -> AudioStreamWAV:
 	var notes := [523.25, 659.25, 783.99, 659.25] if level == 0 else \
 		[523.25, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33]
 	var count := RATE * 4
@@ -247,29 +338,6 @@ static func heartbeat() -> AudioStreamWAV:
 				samples[i] *= 0.95 / peak
 		_cache["coracao"] = _to_wav(samples)
 	return _cache["coracao"]
-
-
-## Woosh do Caminheiro: um sopro que cresce e some, abrindo e fechando o
-## brilho no meio. Quem toca move a fonte rumo ao próximo beacon.
-static func woosh() -> AudioStreamWAV:
-	if not _cache.has("woosh"):
-		var count := int(0.75 * RATE)
-		var samples := PackedFloat32Array()
-		samples.resize(count)
-		var rng := RandomNumberGenerator.new()
-		rng.seed = 31415
-		var low := 0.0
-		var band := 0.0
-		for i in count:
-			var k := float(i) / count
-			var envelope := pow(sin(PI * pow(k, 0.7)), 2.0)
-			# Mais aberto (menos suavizado) no meio do sopro.
-			var smooth := lerpf(0.97, 0.8, envelope)
-			low = lerpf(rng.randf_range(-1.0, 1.0), low, smooth)
-			band = lerpf(low, band, 0.6)
-			samples[i] = (low - band * 0.5) * envelope * 1.4
-		_cache["woosh"] = _to_wav(samples)
-	return _cache["woosh"]
 
 
 ## Machado cortando o ar: um sopro curto.
@@ -331,6 +399,65 @@ static func region_change() -> AudioStreamWAV:
 			samples[i] = air2 * swell * 4.0 + first * 0.4 + second * 0.3
 		_cache["regiao"] = _to_wav(samples)
 	return _cache["regiao"]
+
+
+## Mudança do céu (período do dia ou estação), tocada um instante antes da fala,
+## na família do sopro de mudança de região: um sopro de ar e duas notas ocas e
+## distantes, que mudam com o momento. "claro" (amanhecer a tarde): as notas
+## sobem, o ar é mais aberto. "escuro" (fim de tarde a madrugada): as notas
+## descem, o ar é mais abafado. "estacao": mais longa e grave, com um brilho
+## distante, como se o anel soasse.
+static func sky_change(kind: String) -> AudioStreamWAV:
+	var key := "ceu_" + kind
+	if _cache.has(key):
+		return _cache[key]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5101 + kind.length()
+	var seconds := 2.2 if kind == "estacao" else 1.3
+	var count := int(seconds * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var notes := [196.0, 293.66]  # claro: sobe uma quinta
+	var smooth := 0.97
+	var air_gain := 3.2
+	if kind == "escuro":
+		notes = [146.83, 98.0]  # desce uma quinta
+		smooth = 0.99
+		air_gain = 3.6
+	elif kind == "estacao":
+		notes = [98.0, 65.41]
+		smooth = 0.992
+		air_gain = 4.0
+	var gap := 0.5 if kind == "estacao" else 0.34
+	var air := 0.0
+	var air2 := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var swell := sin(PI * minf(t / seconds, 1.0)) ** 2.0
+		air = lerpf(rng.randf_range(-1.0, 1.0), air, smooth)
+		air2 = lerpf(air, air2, 0.9)
+		var value: float = air2 * swell * air_gain
+		for n in 2:
+			var local := maxf(t - gap * n, 0.0)
+			if local <= 0.0:
+				continue
+			var decay := 2.4 if kind == "estacao" else 3.4
+			var env: float = exp(-local * decay) * minf(local / 0.05, 1.0)
+			var tone := sin(TAU * notes[n] * local) + 0.25 * sin(TAU * notes[n] * 2.0 * local)
+			if kind == "claro":
+				tone += 0.18 * sin(TAU * notes[n] * 2.76 * local)  # um brilho de sininho
+			value += tone * env * (0.34 if n == 0 else 0.28)
+		if kind == "estacao":
+			var shimmer := sin(TAU * 784.0 * t + 2.0 * sin(TAU * 0.7 * t)) * (0.5 - 0.5 * cos(TAU * minf(t / seconds, 1.0)))
+			value += shimmer * 0.05 * (0.6 + 0.4 * sin(TAU * 5.0 * t))
+		samples[i] = value
+	var peak := 0.0
+	for v in samples:
+		peak = maxf(peak, absf(v))
+	for i in count:
+		samples[i] = samples[i] / peak * 0.7
+	_cache[key] = _to_wav(samples)
+	return _cache[key]
 
 
 ## Item largado no chão: um baque surdo e curto, com um pouco de poeira.

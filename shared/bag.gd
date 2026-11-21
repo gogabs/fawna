@@ -24,9 +24,23 @@ const STARTER := {"machado": 1}
 ## grandes, 2 médias e 1 pequena = 25) não cabe numa viagem só, e uma
 ## fogueira (23) só cabe se o machado (3) ficar no chão.
 const CAPACITY := 24
-## A carga em uso. Só muda no menu de depuração (DebugTools), para testar com
-## a bolsa cheia; no jogo normal é sempre CAPACITY.
+## Sobrecarga: dá para levar até MAX_LOAD (150% da carga) ao custo de
+## velocidade. De CAPACITY para cima a criatura anda mais devagar, em linha
+## reta, até MIN_SPEED_FACTOR da velocidade normal no limite absoluto.
+const MAX_LOAD := 36
+const MIN_SPEED_FACTOR := 0.5
+## A carga em uso: a plena e o limite absoluto. Só mudam no menu de
+## depuração (DebugTools), para testar com a bolsa cheia; no jogo normal são
+## sempre CAPACITY e MAX_LOAD.
 static var capacity := CAPACITY
+static var max_load := MAX_LOAD
+
+
+## Depuração: acima de CAPACITY, os dois limites (carga plena e absoluto)
+## viram "limit", e a criatura não anda mais devagar; senão, volta ao normal.
+static func apply_limit(limit: int) -> void:
+	capacity = maxi(limit, CAPACITY)
+	max_load = maxi(limit, MAX_LOAD)
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
@@ -186,10 +200,25 @@ static func load_of(bag: Dictionary, wielded := "", offhand := "") -> int:
 			+ (0 if offhand.is_empty() else weight_of(offhand))
 
 
-## Quanto peso ainda cabe (0 se a criatura já está no limite ou acima dele,
-## como quem vem de um mundo salvo antes do limite existir).
+## Fração da velocidade de andar (1.0 até CAPACITY, caindo em linha reta até
+## MIN_SPEED_FACTOR em MAX_LOAD).
+static func speed_factor(bag: Dictionary, wielded := "", offhand := "") -> float:
+	var over := load_of(bag, wielded, offhand) - capacity
+	if over <= 0:
+		return 1.0
+	return lerpf(1.0, MIN_SPEED_FACTOR, minf(1.0, float(over) / float(maxi(1, max_load - capacity))))
+
+
+## Está além da carga plena (anda mais devagar).
+static func is_overloaded(bag: Dictionary, wielded := "", offhand := "") -> bool:
+	return load_of(bag, wielded, offhand) > capacity
+
+
+## Quanto peso ainda cabe, contando a sobrecarga (0 se a criatura já está no
+## limite absoluto ou acima dele, como quem vem de um mundo salvo antes do
+## limite existir).
 static func free_space(bag: Dictionary, wielded := "", offhand := "") -> int:
-	return maxi(0, capacity - load_of(bag, wielded, offhand))
+	return maxi(0, max_load - load_of(bag, wielded, offhand))
 
 
 ## Quantas unidades de "item" ainda cabem.
@@ -232,4 +261,7 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 
 ## "Carga, 18 de 24".
 static func load_label(bag: Dictionary, wielded := "", offhand := "") -> String:
-	return "Carga, %d de %d" % [load_of(bag, wielded, offhand), capacity]
+	var text := "Carga, %d de %d" % [load_of(bag, wielded, offhand), capacity]
+	if is_overloaded(bag, wielded, offhand):
+		text += ", sobrecarregado, andando a %d%%" % roundi(speed_factor(bag, wielded, offhand) * 100.0)
+	return text
