@@ -130,7 +130,10 @@ func _process(_delta: float) -> void:
 		return
 	var target := int(1000000.0 / _fps_target)
 	var spent := Time.get_ticks_usec() - _last_frame_usec
-	if spent < target:
+	# Só age quando o quadro foi bem mais curto que o teto (o teto do motor
+	# não está segurando). Dormir por diferenças pequenas atrapalhava o teto
+	# do motor e, no Windows, dava quadros de 23 ms (43 FPS) em vez de 16.
+	if spent < target * 0.85:
 		OS.delay_usec(target - spent)
 	_last_frame_usec = Time.get_ticks_usec()
 
