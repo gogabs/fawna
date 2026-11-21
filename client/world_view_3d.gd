@@ -45,6 +45,7 @@ const WATER_COLORS := {
 	WorldGen.Thing.RIO: Color("21405a"),
 	WorldGen.Thing.VAU: Color("2c4d63"),  # vau: água rasa, mais clara
 }
+const WATER_DRIFT := Vector2(0.018, 0.011)  # deslocamento das ondas por segundo (ladrilhos)
 const WATER_LEVEL := -0.18  # a água fica abaixo do chão
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
@@ -69,6 +70,7 @@ var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para 
 var _camera: Camera3D
 var _chunks := {}  # Vector2i (pedaço) -> MeshInstance3D
 var _material: StandardMaterial3D
+var _water_time := 0.0
 var _materials := {}  # forma -> material com a textura dela
 var _water_material: StandardMaterial3D
 var _noise := FastNoiseLite.new()
@@ -96,7 +98,12 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_materials = {"trunk": bark, "stalk": bark, "box": bark, "cone": leaf, "blob": stone}
 	_water_material = StandardMaterial3D.new()
 	_water_material.vertex_color_use_as_albedo = true
-	_water_material.roughness = 0.15
+	_water_material.roughness = 0.12
+	_water_material.normal_enabled = true
+	_water_material.normal_texture = WorldTextures.water_normal()
+	_water_material.normal_scale = 0.8
+	_water_material.texture_repeat = true
+	_water_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	_water_material.metallic_specular = 0.9
 	_water_material.emission_enabled = true
 	_water_material.emission = Color("0d2233")
@@ -274,6 +281,7 @@ func _plan(center: Vector2i) -> void:
 
 func _process(delta: float) -> void:
 	_update_sky(delta)
+	_animate_water(delta)
 	if _held_flame != null and _held_flame.visible:
 		var flicker := 1.0 + 0.12 * sin(Time.get_ticks_msec() * 0.021) + 0.06 * sin(Time.get_ticks_msec() * 0.047)
 		_held_flame.scale = Vector3(0.07, 0.17 * flicker, 0.07)
@@ -601,6 +609,14 @@ const NIGHT_AMBIENT := Color("56627a")
 const SUN_COLOR := Color("d6cfbd")
 const MOON_COLOR := Color("a9b6cf")
 const RING_GLOW := Color("9fb4d6")  # a luz refletida do anel, de noite
+
+
+## A água se mexe: o relevo das ondas desliza devagar em duas direções ao
+## mesmo tempo (só mexe no deslocamento do material, sem custo de malha).
+func _animate_water(delta: float) -> void:
+	_water_time += delta
+	_water_material.uv1_offset = Vector3(_water_time * WATER_DRIFT.x, _water_time * WATER_DRIFT.y, 0.0)
+	_water_material.uv1_scale = Vector3.ONE * (0.9 + 0.1 * sin(_water_time * 0.3))
 
 
 ## Liga céu, neblina e luz ao relógio do jogo: dark fantasy, então o dia é

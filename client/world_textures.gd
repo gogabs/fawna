@@ -13,6 +13,7 @@ const GROUND_FLOOR := 0.62
 const BARK_FLOOR := 0.35
 const LEAF_FLOOR := 0.55
 const STONE_FLOOR := 0.5
+const WATER_BUMP := 6.0  # força das ondas no mapa de relevo
 
 
 static func make_all() -> Dictionary:
@@ -55,6 +56,16 @@ static func stone() -> ImageTexture:
 	cracks_noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
 	var cracks := cracks_noise.get_seamless_image(SIZE, SIZE)
 	return _combine(blotch, cracks, 0.65, STONE_FLOOR)
+
+
+## Ondulação da água: um mapa de relevo (normais) de ondas suaves, que se repete
+## sem emenda. O jogo o desliza devagar pela água para ela parecer se mexer.
+static func water_normal() -> ImageTexture:
+	var waves := _noise(FastNoiseLite.TYPE_SIMPLEX_SMOOTH, 0.03, 3, 51).get_seamless_image(SIZE, SIZE)
+	waves.convert(Image.FORMAT_RGBA8)
+	waves.bump_map_to_normal_map(WATER_BUMP)
+	waves.generate_mipmaps()
+	return ImageTexture.create_from_image(waves)
 
 
 static func _noise(kind: int, frequency: float, octaves: int, noise_seed: int) -> FastNoiseLite:
