@@ -21,7 +21,7 @@ const SOUND_GAPS := [[50.0, 90.0], [22.0, 40.0], [9.0, 16.0]]
 const BODY_DB := -10.0  # baixos: o corpo fala baixo
 const WARM_DB := -12.0
 const FAINT_SECONDS := 2.5  # do apagar até acordar no ponto seguro
-const PING_DB := -8.0  # toque da barra sonora
+const PING_DB := -4.0  # toque da barra sonora (era -8; Gabs pediu um pouco mais alto)
 const PING_GAP := 0.35  # fome e calor mudando juntos: um toque depois do outro
 
 # Servidor
