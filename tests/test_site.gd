@@ -284,7 +284,7 @@ func _test_posts_and_drying() -> void:
 	_check(builds.dry_left(id, 1000.0) == 240.0, "dry_left")
 	_check(builds.status_text(id, 1000.0).contains("seca"), "a fala avisa que a argila seca")
 	# Durante a secagem, cada batida vale metade: uma sim, outra não.
-	bag = {"madeira": 6}
+	bag = {"madeira_grande": 6}
 	builds.work(id, bag, 1001.0, nw)  # depósito
 	var counted := 0
 	for i in 6:

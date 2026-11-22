@@ -142,11 +142,11 @@ func _test_recipes() -> void:
 	var inv := state.inventory_of(2)
 	_check(state.craft(2, "faca")["reason"] == "faltam", "faca sem material não sai")
 	inv["silex"] = 2
-	inv["lenha_pequena"] = 1
+	inv["madeira_pequena"] = 1
 	_check(state.craft(2, "faca")["ok"] and int(inv.get("faca", 0)) == 1 and not inv.has("silex"), "faca bruta: 2 sílex e 1 lenha pequena")
 	_check(Bag.can_wield("faca") and Bag.with_article("faca") == "a faca bruta de sílex", "faca se empunha e se fala")
 	_check(Crafting.TOOL_ORDER.has("faca"), "faca está em Ferramentas")
-	inv["lenha_media"] = 1
+	inv["madeira_media"] = 1
 	inv["resina"] = 2
 	inv["fibra"] = 2
 	inv["cipo"] = 1

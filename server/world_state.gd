@@ -749,8 +749,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	return {"ok": true, "pos": pos}
 
 
-## Recolhe o recurso de uma casa ao alcance (gravetos ou frutas de um arbusto,
-## argila, pedras, ou um bambu já derrubado). Lenha e pedra entram na bolsa
+## Recolhe o recurso de uma casa ao alcance (fibra ou frutas de um arbusto,
+## galhos, argila, pedras, ou um bambu já derrubado). Madeira e pedra entram na bolsa
 ## por tamanho (Harvest.take devolve "parts"). A fonte se esgota e rebrota com o tempo
 ## (Harvest).
 ## O que não cabe na carga (Bag.CAPACITY) fica no chão, na casa da criatura.
@@ -797,13 +797,13 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
-	# Na Longa Escuridão o arbusto não tem frutas: dá só gravetos, como os outros.
+	# Na Longa Escuridão o arbusto não tem frutas: dá só fibra, como os outros.
 	if str(result["item"]) == "frutas" and season() == 2:
-		item = "lenha"
 		var bush: Dictionary = Harvest.SOURCES[WorldGen.Thing.ARBUSTO]
+		item = str(bush["item"])
 		result["item"] = item
 		result["amount"] = int(bush["amount"])
-		result["parts"] = harvest._roll_parts(cell, item, int(bush["amount"]))
+		result["parts"] = {}
 	var parts: Dictionary = result.get("parts", {})
 	var got: Dictionary = (parts if not parts.is_empty() else {item: int(result["amount"])}).duplicate()
 	var extras: Dictionary = result.get("extras", {})
@@ -1249,10 +1249,8 @@ static func from_save(data: Dictionary) -> WorldState:
 		var inv := {}
 		var saved: Dictionary = data["inventories"][player_name]
 		for item: String in saved:
-			var key := item
-			# Lenha de antes dos tamanhos vira lenha média.
-			if Economy.has_sizes(item):
-				key = Economy.sized(item, "media")
+			# Lenha e madeira de saves antigos viram madeira com tamanho.
+			var key := Economy.migrate(item)
 			# Itens que não existem mais no jogo ficam para trás.
 			if Economy.is_item(key) or Bag.NAMES.has(key):
 				inv[key] = int(inv.get(key, 0)) + int(saved[item])

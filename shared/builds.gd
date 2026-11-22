@@ -1,7 +1,7 @@
 class_name Builds
 extends RefCounted
 ## Construções no mundo (marcos, fogueiras): onde estão, em que etapa, o que
-## já foi depositado e, nas fogueiras, se estão acesas e quanta lenha têm.
+## já foi depositado e, nas fogueiras, se estão acesas e quanta madeira têm.
 ## As receitas ficam em Crafting.
 ##
 ## Povoado: um marco e uma fogueira prontos na mesma região. Só então o marco
@@ -25,9 +25,9 @@ extends RefCounted
 ## para a argila secar (Crafting, "dry"): dá para trabalhar antes, mas cada
 ## batida vale metade; uma fogueira acesa na região seca em metade do tempo.
 ## Fogueira pronta:
-##   apagada com lenha -> batidas de pedra (faíscas; reacender pede lenha e 1 sílex dentro da fogueira) -> acesa -> queima a
-##   lenha com o tempo -> apagada. Espaço com ela acesa (ou sem lenha) põe
-##   mais uma lenha.
+##   apagada com madeira -> batidas de pedra (faíscas; reacender pede madeira e 1 sílex dentro da fogueira) -> acesa -> queima a
+##   madeira com o tempo -> apagada. Espaço com ela acesa (ou sem madeira) põe
+##   mais uma madeira.
 
 ## Quantas casas livres ficam entre uma construção e outra (2 casas, 3 m).
 const SPACING := 2
@@ -365,7 +365,7 @@ func is_lit(id: int, at_time := -1.0) -> bool:
 	return float(build["burn_until"]) > at_time
 
 
-## Segundos de lenha que a fogueira ainda tem (queimando ou guardada).
+## Segundos de madeira que a fogueira ainda tem (queimando ou guardada).
 func fuel_left(id: int, at_time := -1.0) -> float:
 	var build := get_build(id)
 	if build.is_empty():
@@ -651,11 +651,11 @@ func prep_hit(id: int, cell: Vector2i, tool: String) -> Dictionary:
 ##   o canteiro, e "post_left", o que falta a ele; "slow" se a argila ainda seca e a batida valeu menos);
 ##   "etapa": a etapa terminou ("next": nome da próxima; "dry": segundos de secagem, se houver);
 ##   "pronta": a construção terminou;
-##   "abasteceu" / "alimentou": lenha na fogueira apagada / acesa ("item");
+##   "abasteceu" / "alimentou": madeira na fogueira apagada / acesa ("item");
 ##   "faisca": uma batida de pedra ("sparks_left"); "acesa": pegou fogo.
 ## Recusas (ok = false): "faltam" (a bolsa não tem nada do que falta;
-## "missing"), "pronta" (nada mais a fazer), "sem_lenha" (fogueira sem lenha
-## e bolsa sem lenha), "cheia" (fogueira com lenha no máximo), "preparo" (a
+## "missing"), "pronta" (nada mais a fazer), "sem_lenha" (fogueira sem madeira
+## e bolsa sem madeira), "cheia" (fogueira com madeira no máximo), "preparo" (a
 ## obra grande ainda está na limpeza ou na capina), "canto" (nenhum canteiro
 ## com trabalho a fazer ao alcance; "posts": os cantos que ainda têm).
 func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -> Dictionary:
@@ -733,7 +733,7 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 	if Crafting.has_furniture(build["kind"]):
 		done_result["walls"] = true  # os móveis ocupam casas: quem estava nelas é levado para o lado
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
-		# A lenha da última etapa fica como o primeiro combustível.
+		# A madeira da última etapa fica como o primeiro combustível.
 		var fuel := 0.0
 		for item: String in finished["materials"]:
 			fuel += float(Crafting.FUEL_SECONDS.get(item, 0.0)) * int(finished["materials"][item])
@@ -995,7 +995,7 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 				break
 		if wood.is_empty():
 			return {"ok": false, "reason": "sem_lenha" if not lit else "sem_lenha_bolsa"}
-		# Não aceita lenha que ia sobrar (mais da metade passando do máximo).
+		# Não aceita madeira que ia sobrar (mais da metade passando do máximo).
 		if fuel_left(id, at_time) + float(Crafting.FUEL_SECONDS[wood]) * 0.5 > Crafting.MAX_FUEL:
 			return {"ok": false, "reason": "cheia"}
 		bag[wood] = int(bag[wood]) - 1
@@ -1008,8 +1008,8 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 		build["fuel"] = minf(float(build["fuel"]) + seconds, Crafting.MAX_FUEL)
 		return {"ok": true, "event": "abasteceu", "item": wood}
 	# A primeira vez usa o sílex que entrou na obra. Reacender (depois que o fogo
-	# já pegou uma vez) pede lenha e um sílex dentro da fogueira: Espaço põe a
-	# lenha, depois o sílex (que passa a fazer parte dela) e só então acende,
+	# já pegou uma vez) pede madeira e um sílex dentro da fogueira: Espaço põe a
+	# madeira, depois o sílex (que passa a fazer parte dela) e só então acende,
 	# gastando esse sílex.
 	var relight := bool(build.get("ignited", false))
 	if relight and int(build.get("flint", 0)) <= 0:
@@ -1031,7 +1031,7 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 	return {"ok": true, "event": "acesa"}
 
 
-## Fogueiras que apagaram desde a última vez (a lenha acabou). Devolve os ids.
+## Fogueiras que apagaram desde a última vez (a madeira acabou). Devolve os ids.
 func burn_out(at_time := -1.0) -> Array:
 	if at_time < 0.0:
 		at_time = now()
@@ -1093,7 +1093,7 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 	var cell := Vector2i(int(data["x"]), int(data["y"]))
 	var deposited := {}
 	for item in data.get("deposited", {}):
-		deposited[str(item)] = int(data["deposited"][item])
+		deposited[Economy.migrate(str(item))] = int(deposited.get(Economy.migrate(str(item)), 0)) + int(data["deposited"][item])
 	var burn_left := float(data.get("burn_left", 0.0))
 	var dry_left := float(data.get("dry_left", 0.0))
 	_add(_fill({"id": int(data["id"]), "kind": str(data["kind"]), "cell": cell, "region": world.region_of(cell),
@@ -1160,7 +1160,7 @@ func load_save(data: Dictionary) -> void:
 		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
 		var deposited := {}
 		for item in entry.get("deposited", {}):
-			deposited[str(item)] = int(entry["deposited"][item])
+			deposited[Economy.migrate(str(item))] = int(deposited.get(Economy.migrate(str(item)), 0)) + int(entry["deposited"][item])
 		_add(_fill({"id": int(entry["id"]), "kind": str(entry["kind"]), "cell": cell, "region": world.region_of(cell),
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
@@ -1212,7 +1212,7 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 	var stock := {}
 	for item in data.get("stock", {}):
 		if int(data["stock"][item]) > 0:
-			stock[str(item)] = int(data["stock"][item])
+			stock[Economy.migrate(str(item))] = int(stock.get(Economy.migrate(str(item)), 0)) + int(data["stock"][item])
 	build["stock"] = stock
 	var owners := []
 	for owner in data.get("owners", []):
@@ -1240,7 +1240,7 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 		var locker := {}
 		for item in data["lockers"][owner]:
 			if int(data["lockers"][owner][item]) > 0:
-				locker[str(item)] = int(data["lockers"][owner][item])
+				locker[Economy.migrate(str(item))] = int(locker.get(Economy.migrate(str(item)), 0)) + int(data["lockers"][owner][item])
 		if not locker.is_empty():
 			lockers[str(owner)] = locker
 	build["lockers"] = lockers
@@ -1746,13 +1746,13 @@ func status_text(id: int, at_time := -1.0) -> String:
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		var minutes := ceili(fuel_left(id, at_time) / 60.0)
 		if is_lit(id, at_time):
-			return "%s acesa, com lenha para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
+			return "%s acesa, com madeira para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
 		var needs_flint: bool = bool(build.get("ignited", false)) and int(build.get("flint", 0)) <= 0
 		if float(build["fuel"]) > 0.0:
 			if needs_flint:
-				return "%s apagada, com lenha para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-		return "%s apagada e sem lenha%s. Espaço põe uma lenha." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
+				return "%s apagada, com madeira para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
+			return "%s apagada, com madeira para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
+		return "%s apagada e sem madeira%s. Espaço põe uma madeira." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
 		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]

@@ -535,6 +535,11 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 					put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
 				WorldGen.Thing.CIPO:
 					put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
+				WorldGen.Thing.GALHOS:
+					# Dois ou três galhos finos caídos, cruzados no chão.
+					for k in 2 + int(r3 * 2.0):
+						var offset := Vector3((_rand(cell, 40 + k) - 0.5) * 0.6, 0.0, (_rand(cell, 50 + k) - 0.5) * 0.6)
+						put(lists, "box", base + offset, Vector3(0.08, 0.08, 0.9 + 0.4 * _rand(cell, 60 + k)), turn + k * 1.1, 0.05, TRUNK_COLOR * shade)
 	_sources[first / CHUNK] = sources
 	var holder_parent := Node3D.new()
 	holder_parent.name = "Coisas"

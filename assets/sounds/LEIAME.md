@@ -80,7 +80,7 @@ um é sorteado, sem repetir o anterior. Ainda fora do repositório, até o Gabs
 autorizar publicar: copie para `assets/sounds/recursos/` para ouvir.
 
 Loops para achar de ouvido (em 3D, na posição do recurso): `amb_bambu`,
-`amb_frutas`. Os gravetos saem dos arbustos e não têm loop próprio. A argila não tem loop: fica
+`amb_frutas`. Os galhos caídos (madeira média e pequena) não têm loop próprio; `coleta_lenha` soa ao catá-los. A argila não tem loop: fica
 sempre na beira da água, que já soa. Sem os arquivos, o jogo usa sons do
 pacote `world/` e sons gerados por código (`client/sound_bank.gd`).
 
@@ -102,7 +102,7 @@ filtrados e nivelados; publicados com autorização dele. Todos CC0 1.0.
 - `recursos/coleta_argila_1..3.ogg`: "MudSquelch" ([ahill86, 207142](https://freesound.org/s/207142/)).
 - `recursos/coleta_frutas_1..3.ogg`: "Rustling foliage" ([DDT197, 445788](https://freesound.org/s/445788/)) com o estalo de "pencil snap..." ([kyles, 637746](https://freesound.org/s/637746/)).
 - `recursos/amb_bambu.ogg` e `recursos/amb_frutas.ogg`: gerados por código para o projeto (`tools/sons_recursos.py`): madeira oca batendo, e farfalhar baixinho com gotinhas ascendentes (a frutinha).
-- Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos gravetos (eles saem dos arbustos, que já soam).
+- Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos galhos caídos ao pé das árvores.
 
 ## Árvores
 

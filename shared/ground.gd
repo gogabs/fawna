@@ -113,5 +113,6 @@ func load_save(data: Array) -> void:
 		var cell := Vector2i(int(entry[0]), int(entry[1]))
 		for item in entry[2]:
 			# Itens que não existem mais no jogo ficam para trás.
-			if Economy.is_item(str(item)) or Bag.NAMES.has(str(item)):
-				add(cell, str(item), int(entry[2][item]))
+			var key := Economy.migrate(str(item))
+			if Economy.is_item(key) or Bag.NAMES.has(key):
+				add(cell, key, int(entry[2][item]))
