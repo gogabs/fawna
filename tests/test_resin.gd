@@ -49,12 +49,12 @@ func _test_placement() -> void:
 				else:
 					fibers += 1
 				# A fibra também nasce na beira da água (Plants).
-				if world.cover_at(cell) != WorldGen.Cover.FECHADA and not (thing == WorldGen.Thing.FIBRA and world.is_waterside(cell)):
+				if world.cover_at(cell) != WorldGen.Cover.FECHADA and not (thing == WorldGen.Thing.FIBRA and (world.is_waterside(cell) or Plants.species_at(world, cell) == "milho")):
 					outside += 1
 			elif thing == WorldGen.Thing.SILEX:
 				flints += 1
 	_check(vines > 0 and fibers > 0, "há cipó e fibra nas matas (cipó %d, fibra %d)" % [vines, fibers])
-	_check(outside == 0, "cipó só na mata fechada; fibra na mata fechada ou na beira da água")
+	_check(outside == 0, "cipó só na mata fechada; capim na mata fechada, na beira da água ou (milho) no campo")
 	_check(flints > 0, "há sílex no mundo (%d)" % flints)
 	for thing: int in [WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA, WorldGen.Thing.SILEX]:
 		_check(Harvest.is_source(thing) and not Harvest.needs_tool(thing), "recurso novo se colhe com a mão")

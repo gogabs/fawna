@@ -23,7 +23,7 @@ const KITS := {
 		"bambu": 10, "argila": 10,
 	}],
 	"raros": ["Raros: sílex, cipó, fibra e resina", {"silex": 10, "cipo": 10, "fibra": 10, "resina": 10}],
-	"comida": ["Frutas e raízes", {"frutas_amora": 10, "frutas_pitanga": 10, "raiz_batata": 5, "raiz_mandioca": 5, "raiz_cara": 5}],
+	"comida": ["Frutas e raízes", {"frutas_amora": 10, "frutas_pitanga": 10, "raiz_batata": 5, "raiz_mandioca": 5, "raiz_cara": 5, "raiz_cenoura": 5, "cogumelo_pardo": 5, "milho": 5}],
 	"ferramentas": ["Ferramentas e armas", {"faca": 1, "enxada": 1, "lanca": 1, "clava": 1, "tocha": 1}],
 }
 

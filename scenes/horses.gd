@@ -157,7 +157,7 @@ func _server_step() -> void:
 
 # --- Domesticar (pedidos dos clientes, no servidor) -----------------------------
 
-## Espaço num cavalo selvagem: oferece uma fruta da bolsa.
+## Espaço num cavalo selvagem: oferece uma cenoura ou uma fruta da bolsa.
 @rpc("any_peer", "call_local", "reliable")
 func request_offer(horse_id: int) -> void:
 	if not multiplayer.is_server() or herd == null:
@@ -166,8 +166,10 @@ func request_offer(horse_id: int) -> void:
 	var id: int = game._sender_id()
 	if not game.state.players.has(id):
 		return
-	# Qualquer fruta serve (amora, pitanga...): a primeira que houver na bolsa.
-	var fruits := Bag.keys_of(game.state.inventory_of(id), "frutas")
+	# Cenoura primeiro (o cavalo gosta mais); senão, qualquer fruta (amora,
+	# pitanga...), a primeira que houver na bolsa.
+	var inv: Dictionary = game.state.inventory_of(id)
+	var fruits := (["raiz_cenoura"] if int(inv.get("raiz_cenoura", 0)) > 0 else []) + Bag.keys_of(inv, "frutas")
 	if fruits.is_empty():
 		offer_result.rpc_id(id, "sem_frutas")
 		return
@@ -177,7 +179,7 @@ func request_offer(horse_id: int) -> void:
 		game.state.give_away(id, fruits[0])
 		game._dirty = true
 		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
-	offer_result.rpc_id(id, str(result["reason"]))
+	offer_result.rpc_id(id, str(result["reason"]), fruits[0])
 
 
 ## O dono escolhe o nome do seu cavalo (prefixo + sufixo, Herd.is_name).
@@ -260,22 +262,24 @@ func horse_named(id: int, owner: String, horse_name: String) -> void:
 
 ## Respostas do servidor ao Espaço num cavalo (ver Herd.offer).
 const OFFER_TEXT := {
-	"comeu": "Ele come a fruta da sua mão.",
+	"comeu": "Ele come %s da sua mão.",
 	"pronto": "Ele come e fica junto de você. Fique quieto.",
 	"desconfia": "Ele ainda desconfia. Espere parado perto da manada.",
 	"longe": "Chegue mais perto do cavalo.",
 	"mastigando": "Ele ainda está mastigando.",
-	"sem_frutas": "Você não tem frutas.",
+	"sem_frutas": "Você não tem frutas nem cenouras.",
 	"domado": "Esse cavalo já tem dono.",
 	"sumiu": "",
 }
 
 
 @rpc("authority", "call_local", "reliable")
-func offer_result(reason: String) -> void:
+func offer_result(reason: String, item := "") -> void:
 	if not Net.auto_commands.is_empty():
 		print("[teste] oferta: %s" % reason)
 	var text: String = OFFER_TEXT.get(reason, "")
+	if text.contains("%s"):
+		text = text % (Bag.with_article(item) if not item.is_empty() else "a fruta")
 	if not text.is_empty():
 		Speech.say(text)
 

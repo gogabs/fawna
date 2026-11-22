@@ -1575,7 +1575,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"cavar":
 			Speech.say("A raiz está embaixo da rama. Empunhe a enxada e cave com J.")
 		"sem_frutas":
-			Speech.say("Na Longa Escuridão esta planta não dá fruta.")
+			Speech.say("Na Longa Escuridão isto não dá nada.")
 		"cheio":
 			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
 		"nao_tem":
@@ -2964,16 +2964,15 @@ const CAMINHEIRO_RESOURCES := [
 	["Árvores", [WorldGen.Thing.ARVORE, WorldGen.Thing.GALHOS], "a árvore"],
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
 	["Capim", [WorldGen.Thing.FIBRA], "o capim"],
-	["Cogumelos", [], "os cogumelos"],
+	["Cogumelos", [WorldGen.Thing.COGUMELO], "o cogumelo"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Ramas", [WorldGen.Thing.RAMA], "a rama"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
 ]
 ## Quem não é Forrageador vê só a categoria da planta (arbusto, rama,
-## trepadeira, capim): a espécie se descobre ao colher. Árvores leva também
-## aos galhos caídos, que ficam ao pé delas. Cogumelos ainda não existem: a
-## busca sempre diz que não há nenhum por perto.
+## trepadeira, capim, cogumelo): a espécie se descobre ao colher. Árvores
+## leva também aos galhos caídos, que ficam ao pé delas.
 ## O Forrageador tem ainda "Espécies de plantas", com cada espécie (Plants):
 ## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
@@ -3042,7 +3041,7 @@ func _neighbor_region_items() -> Array:
 ## Rótulo de um recurso no radar: as plantas pelo nome falado (a categoria,
 ## ou a espécie para o Forrageador); o resto, pelo rótulo do Caminheiro.
 func _radar_label(cell: Vector2i, label: String) -> String:
-	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA]:
+	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA, WorldGen.Thing.COGUMELO]:
 		var spoken := harvest.spoken_name(cell)
 		return spoken.left(1).to_upper() + spoken.substr(1)
 	return label
@@ -3137,7 +3136,7 @@ func _track_resource(things: Array, place: String) -> String:
 
 
 ## Coisas do mundo que são plantas com espécie (Plants.species_at).
-const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE, WorldGen.Thing.FIBRA]
+const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE, WorldGen.Thing.FIBRA, WorldGen.Thing.COGUMELO]
 
 
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas

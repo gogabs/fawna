@@ -40,6 +40,7 @@ const SOURCES := {
 	WorldGen.Thing.CIPO: {"item": "cipo", "amount": 1, "hits": 0, "regrow": 1200.0},
 	# A rama não se colhe com a mão: a raiz sai com a enxada (WorldState.dig_roots).
 	WorldGen.Thing.RAMA: {"item": "raiz", "amount": 2, "hits": 0, "tool": "enxada", "regrow": 1200.0},
+	WorldGen.Thing.COGUMELO: {"item": "cogumelo", "amount": 2, "hits": 0, "regrow": 1800.0},
 	WorldGen.Thing.FIBRA: {"item": "fibra", "amount": 2, "hits": 0, "regrow": 900.0},
 	WorldGen.Thing.SILEX: {"item": "silex", "amount": 1, "hits": 0, "regrow": 1800.0},
 }
@@ -131,6 +132,9 @@ func regrow_time(cell: Vector2i) -> float:
 	var thing := world.thing_at(cell)
 	if thing == WorldGen.Thing.BAMBU and world.biome_at(cell) == WorldGen.Biome.BAMBUZAL:
 		return NEVER
+	var own := Plants.regrow_of(Plants.species_at(world, cell))
+	if own > 0.0:
+		return own
 	return float(SOURCES[thing]["regrow"])
 
 

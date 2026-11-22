@@ -75,8 +75,14 @@ const FOODS := {
 	"raiz": {"food": 5.0, "warmth": 0.0, "eat": "uma raiz crua", "keeps": 6.0, "raw": true},
 	"raiz_assada": {"food": 20.0, "warmth": 8.0, "eat": "uma raiz assada, ainda quente", "keeps": 3.0},
 	"castanha": {"food": 8.0, "warmth": 0.0, "eat": "uma castanha", "keeps": 144.0},
-	# A mandioca crua estraga depressa.
+	# A mandioca crua estraga depressa; a cenoura se come crua, sem enjoar.
 	"raiz_mandioca": {"food": 5.0, "warmth": 0.0, "keeps": 3.0, "raw": true},
+	"raiz_cenoura": {"food": 6.0, "warmth": 0.0, "keeps": 6.0},
+	# Cogumelos comuns: saciam pouco e estragam depressa.
+	"cogumelo": {"food": 6.0, "warmth": 0.0, "keeps": 1.5},
+	# Milho: cru enjoa como a raiz; assado sustenta e aquece.
+	"milho": {"food": 4.0, "warmth": 0.0, "eat": "uma espiga de milho crua", "keeps": 4.0, "raw": true},
+	"milho_assado": {"food": 15.0, "warmth": 6.0, "eat": "uma espiga assada, ainda quente", "keeps": 2.0},
 }
 ## O que a comida vira quando estraga: só serve para jogar fora.
 const SPOILED := "estragada"
@@ -101,7 +107,7 @@ const NUT_TREES := 0.4
 const NUT_AMOUNT := 3
 ## Assar: a até ROAST_REACH casas de uma fogueira acesa, a raiz crua vira assada.
 const ROAST_REACH := 2.5
-const ROASTS := {"raiz": "raiz_assada"}  # vale para toda espécie de raiz
+const ROASTS := {"raiz": "raiz_assada", "milho": "milho_assado"}  # a raiz vale para toda espécie
 
 ## Frases dos limiares, faladas só ao piorar. [fome, calor] por nível 1 a 3.
 const HUNGER_LINES := [

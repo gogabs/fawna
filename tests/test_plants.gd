@@ -16,6 +16,7 @@ func _init() -> void:
 	_test_digging()
 	_test_winter_and_rama()
 	_test_migration_and_food()
+	_test_new_plants()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -112,7 +113,7 @@ func _test_yield_and_speech() -> void:
 	got = harvest.take(vine[1], 1000.0)
 	_check(got["ok"] and got["item"] == "cipo", "cipó dá cipó")
 	_check(harvest.spoken_name(_find(world, WorldGen.Thing.CIPO)[1]) in ["trepadeira", ""], "trepadeira para quem não conhece")
-	var grass: Vector2i = _find(world, WorldGen.Thing.FIBRA)[1]
+	var grass: Vector2i = _find(world, WorldGen.Thing.FIBRA, "capim")[1]
 	_check(harvest.spoken_name(grass) == "capim" and Plants.species_at(world, grass) == "capim", "a fibra solta é capim")
 	got = harvest.take(grass, 1000.0)
 	_check(got["ok"] and got["item"] == "fibra", "capim dá fibra")
@@ -167,3 +168,35 @@ func _test_migration_and_food() -> void:
 	_check(state.eat(1, "frutas_amora")["ok"], "come amora")
 	_check(state.roast(1, "raiz_batata", 2, [state.players[1]["pos"]])["ok"], "assa batata")
 	_check(int(state.inventory_of(1).get("raiz_assada", 0)) == 3, "batata assada vira raiz assada")
+
+
+func _test_new_plants() -> void:
+	var world := WorldGen.new(42)
+	var harvest := Harvest.new(world)
+	var mushroom := _find(world, WorldGen.Thing.COGUMELO)
+	_check(not mushroom.is_empty(), "deveria haver cogumelo")
+	_check(harvest.spoken_name(mushroom[1]) == "cogumelo", "quem não conhece vê cogumelo")
+	var got := harvest.take(mushroom[1], 1000.0)
+	_check(got["ok"] and got["item"] == "cogumelo" and Economy.base_of(got["parts"].keys()[0]) == "cogumelo", "cogumelo dá cogumelo da espécie: %s" % got)
+	_check(Body.is_food(got["parts"].keys()[0]), "cogumelo se come")
+	var corn := _find(world, WorldGen.Thing.FIBRA, "milho")
+	_check(not corn.is_empty(), "deveria haver capim de milho no campo")
+	_check(harvest.spoken_name(corn[1]) == "capim", "o milho é capim para quem não conhece")
+	got = harvest.take(corn[1], 1000.0)
+	_check(got["ok"] and got["item"] == "milho" and int(got["amount"]) == 2, "milho dá 2 espigas")
+	_check(harvest.regrow_time(corn[1]) == 1800.0, "o milho volta devagar")
+	_check(Body.roast_of("milho") == "milho_assado" and Body.eat_text("milho_assado") == "uma espiga assada, ainda quente", "milho assa")
+	var carrot := _find(world, WorldGen.Thing.RAMA, "cenoura")
+	_check(not carrot.is_empty(), "deveria haver rama de cenoura")
+	_check(Plants.root_item("cenoura") == "raiz_cenoura" and Body.eat_text("raiz_cenoura") == "uma cenoura", "cenoura crua não é \"crua\"")
+	var entry := {"food": 50.0}
+	for i in 5:
+		Body.eat(entry, "raiz_cenoura")
+	_check(not entry.has("raw"), "cenoura não enjoa")
+	# No inverno, nem milho nem cogumelo.
+	var state := WorldState.new(42)
+	state.add_player(1, "Lua")
+	state.day_n = int(DayCycle.season_start_day(2))
+	var spot := _find(state.world, WorldGen.Thing.COGUMELO)
+	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
+	_check(state.collect(1, spot[1])["reason"] == "sem_frutas", "sem cogumelo na Longa Escuridão")

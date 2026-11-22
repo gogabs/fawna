@@ -538,6 +538,9 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 				WorldGen.Thing.RAMA:
 					# Rama rasteira: uma touceira baixa de folhas.
 					put(lists, "blob", base, Vector3(0.7, 0.25, 0.7), turn, 0.08, VINE_COLOR * shade)
+				WorldGen.Thing.COGUMELO:
+					# Um tufo de chapéus baixos no chão.
+					put(lists, "blob", base, Vector3(0.35, 0.18, 0.35), turn, 0.09, STONE_COLOR.lerp(Color(0.85, 0.75, 0.6), 0.6) * shade)
 				WorldGen.Thing.GALHOS:
 					# Dois ou três galhos finos caídos, cruzados no chão.
 					for k in 2 + int(r3 * 2.0):
