@@ -15,6 +15,15 @@ extends RefCounted
 ## espera um pouco (SETTLE) passa a ser tolerado e pode chegar bem perto.
 ## Barulho forte por perto (golpe, salto, uivo, faísca) espanta na hora. À
 ## noite, quando o Calado chega perto, eles relincham de alarme e fogem dele.
+##
+## Domesticar: quem já é tolerado chega bem perto de um cavalo e oferece
+## frutas (offer), uma de cada vez, esperando ele mastigar. Depois de 4 ou 5,
+## o cavalo fica junto; quem ofereceu precisa ficar quieto ao lado por
+## QUIET_TO_TAME segundos, e o cavalo passa a ser dele ("tamed"). Um susto que
+## faz a manada fugir, ou ir embora para longe, perde a confiança ganha.
+## Domesticado, o cavalo sai da manada, fica salvo no mundo com dono e nome
+## (tame_to_save), não some quando todos vão embora, e relincha manso quando
+## o dono chega perto.
 
 enum Gait { STAND, WALK, GALLOP }
 
@@ -63,7 +72,27 @@ const SPAWNS := {
 }
 
 ## Sons que o servidor manda (o cliente escolhe a variação).
-const SOUNDS := ["pasto", "bufo", "relincho", "alarme"]
+const SOUNDS := ["pasto", "bufo", "relincho", "alarme", "manso"]
+
+## Domesticar (casas e segundos; ver offer).
+const OFFER_REACH := 1.6
+const FRUITS_TO_TAME := [4, 5]
+const CHEW := 5.0  # mastigando: não aceita outra fruta antes disso
+const QUIET_TO_TAME := 10.0
+const TAME_NEAR := 3.0  # quem ofereceu fica a até isso do cavalo, quieto
+const OWNER_NICKER := 6.0  # o domesticado relincha manso com o dono a até isso
+const NICKER_EVERY := [20.0, 50.0]
+
+## Nomes que se pode dar a um cavalo (escolhidos numa lista, como o nome dos
+## povoados). Cada cavalo oferece NAME_CHOICES por vez, sorteados.
+const NAMES := [
+	"Bruma", "Cinza", "Breu", "Garoa", "Orvalho", "Sereno", "Tormenta", "Ventania",
+	"Neblina", "Geada", "Sombra", "Fuligem", "Cardo", "Urze", "Musgo", "Líquen",
+	"Ébano", "Ônix", "Âmbar", "Ocre", "Ferrugem", "Junco", "Salgueiro", "Espinho",
+	"Trovão", "Relâmpago", "Aurora", "Crepúsculo", "Eco", "Silêncio", "Errante", "Andarilho",
+	"Lume", "Brasa", "Faísca", "Tição",
+]
+const NAME_CHOICES := 6
 
 ## Pelagens: só para a vista 3D (e, mais tarde, para a fala).
 const COATS := ["cinza-cinza", "baio-escuro", "preto-fumaça", "ruão-pálido"]
@@ -93,6 +122,8 @@ var _rng := RandomNumberGenerator.new()
 var _last_players := {}  # peer -> posição no passo anterior
 var _noises := []  # [ponto] ouvidos desde o último passo
 var _pending := []  # mensagens geradas fora do passo (summon), saem no próximo
+## peer -> chave de dono (WorldState.owner_key), atualizado por quem roda.
+var peer_keys := {}
 
 
 func _init(the_world: WorldGen) -> void:
@@ -109,6 +140,9 @@ func update(now_ms: int, players: Dictionary) -> Array:
 	_update_chunks(players, out)
 	for herd_id in herds.keys():
 		_update_herd(herds[herd_id], now_ms, players, out)
+	for horse in horses.values():
+		if int(horse["herd"]) < 0:
+			_update_tame(horse, now_ms, players, out)
 	_last_players = players.duplicate()
 	_noises.clear()
 	if now_ms - _last_sync_ms >= SYNC_INTERVAL_MS:
@@ -153,6 +187,213 @@ func nearest(point: Vector2, now_ms: int) -> Dictionary:
 			best_d = d
 			best = horse
 	return best
+
+
+# --- Domesticar ----------------------------------------------------------------
+
+## "peer" oferece uma fruta ao cavalo "horse_id". Quem chama confere e gasta a
+## fruta só se der certo. Devolve { ok, reason }: reason "comeu", "pronto"
+## (comeu a última; agora é ficar quieto ao lado), "desconfia" (a manada
+## ainda não o tolera), "longe", "mastigando", "domado" (já tem dono) ou
+## "sumiu".
+func offer(peer: int, horse_id: int, now_ms: int, pos: Vector2) -> Dictionary:
+	if not horses.has(horse_id):
+		return {"ok": false, "reason": "sumiu"}
+	var horse: Dictionary = horses[horse_id]
+	if int(horse["herd"]) < 0:
+		return {"ok": false, "reason": "domado"}
+	var herd: Dictionary = herds[int(horse["herd"])]
+	var entry: Dictionary = herd["wary"].get(peer, {})
+	if not bool(entry.get("settled", false)):
+		return {"ok": false, "reason": "desconfia"}
+	if position_of(horse, now_ms).distance_to(pos) > OFFER_REACH:
+		return {"ok": false, "reason": "longe"}
+	if now_ms < int(horse["chew_until_ms"]):
+		return {"ok": false, "reason": "mastigando"}
+	if int(horse["trust_peer"]) != peer:
+		# Outra pessoa começa do zero com ele.
+		horse["trust"] = 0
+		horse["trust_peer"] = peer
+	horse["trust"] = int(horse["trust"]) + 1
+	horse["chew_until_ms"] = now_ms + int(CHEW * 1000.0)
+	horse["quiet_ms"] = 0.0
+	horse["next_graze_ms"] = now_ms + int(CHEW * 1000.0)
+	_pending_sound(horse, "pasto")
+	if int(horse["trust"]) >= int(horse["need"]):
+		_pending_sound(horse, "manso")
+		return {"ok": true, "reason": "pronto"}
+	if int(horse["trust"]) >= 2:
+		_pending_sound(horse, "manso")
+	return {"ok": true, "reason": "comeu"}
+
+
+## Quem comeu tudo e tem a pessoa quieta ao lado o bastante vira dela.
+## Devolve true se algum cavalo foi domesticado (a manada não anda nesse passo).
+func _taming(herd: Dictionary, now_ms: int, players: Dictionary, out: Array) -> bool:
+	for horse_id in herd["members"].duplicate():
+		var horse: Dictionary = horses[horse_id]
+		var peer := int(horse["trust_peer"])
+		if int(horse["trust"]) < int(horse["need"]) or not players.has(peer):
+			continue
+		var pos: Vector2 = players[peer]
+		var moved := 0.0
+		if _last_players.has(peer):
+			moved = pos.distance_to(_last_players[peer])
+		if moved >= MOVE_EPSILON or position_of(horse, now_ms).distance_to(pos) > TAME_NEAR:
+			horse["quiet_ms"] = 0.0
+			continue
+		horse["quiet_ms"] = float(horse["quiet_ms"]) + 250.0
+		if float(horse["quiet_ms"]) >= QUIET_TO_TAME * 1000.0:
+			_tame(herd, horse, peer, now_ms, out)
+			return true
+	return false
+
+
+func _tame(herd: Dictionary, horse: Dictionary, peer: int, now_ms: int, out: Array) -> void:
+	var here := position_of(horse, now_ms)
+	herd["members"].erase(horse["id"])
+	horse["herd"] = -1
+	horse["owner"] = str(peer_keys.get(peer, ""))
+	horse["name"] = ""
+	horse["from"] = here
+	horse["to"] = here
+	horse["gait"] = Gait.STAND
+	horse["trust"] = 0
+	horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY)
+	out.append([peer, "tamed", [horse["id"]]])
+	_send_named(horse, out)
+	if herd["members"].is_empty():
+		_forget_herd(herd)
+
+
+## A manada perde a confiança de "peer" (-1: de todos).
+func _lose_trust(herd: Dictionary, peer: int) -> void:
+	for horse_id in herd["members"]:
+		var horse: Dictionary = horses[horse_id]
+		if peer < 0 or int(horse["trust_peer"]) == peer:
+			horse["trust"] = 0
+			horse["trust_peer"] = -1
+			horse["quiet_ms"] = 0.0
+
+
+## Tira uma manada vazia (todos domesticados) da lista e do pedaço dela.
+func _forget_herd(herd: Dictionary) -> void:
+	herds.erase(herd["id"])
+	if _chunks.has(herd["chunk"]):
+		_chunks[herd["chunk"]].erase(herd["id"])
+
+
+## O domesticado: pasta, bufa e relincha manso quando o dono chega perto.
+func _update_tame(horse: Dictionary, now_ms: int, players: Dictionary, out: Array) -> void:
+	if int(horse["gait"]) != Gait.STAND and now_ms >= int(horse["end_ms"]):
+		horse["gait"] = Gait.STAND
+		horse["from"] = horse["to"]
+	if int(horse["next_graze_ms"]) < 0:
+		horse["next_graze_ms"] = now_ms + _ms(GRAZE_EVERY, 0.0)
+		horse["next_snort_ms"] = now_ms + _ms(SNORT_EVERY, 0.2)
+		horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY, 0.3)
+		return
+	if now_ms >= int(horse["next_graze_ms"]):
+		horse["next_graze_ms"] = now_ms + _ms(GRAZE_EVERY)
+		_sound(horse, "pasto", out)
+	if now_ms >= int(horse["next_snort_ms"]):
+		horse["next_snort_ms"] = now_ms + _ms(SNORT_EVERY)
+		_sound(horse, "bufo", out)
+	if now_ms >= int(horse["next_neigh_ms"]):
+		horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY)
+		var here := position_of(horse, now_ms)
+		for peer in players:
+			if str(peer_keys.get(peer, "")) == str(horse["owner"]) and (players[peer] as Vector2).distance_to(here) <= OWNER_NICKER:
+				_sound(horse, "manso", out)
+				break
+
+
+## O dono dá nome ao seu cavalo (um dos NAMES). Devolve true se mudou.
+func rename(peer: int, horse_id: int, new_name: String) -> bool:
+	if not horses.has(horse_id) or not NAMES.has(new_name):
+		return false
+	var horse: Dictionary = horses[horse_id]
+	if int(horse["herd"]) >= 0 or str(horse["owner"]) != str(peer_keys.get(peer, "")) or str(horse["owner"]).is_empty():
+		return false
+	horse["name"] = new_name
+	_send_named(horse, _pending)
+	return true
+
+
+## Depuração: domestica na hora o cavalo selvagem mais perto de "point".
+## Devolve o id, ou -1 se não houver nenhum a até HEARING casas.
+func debug_tame(peer: int, point: Vector2, now_ms: int) -> int:
+	var best := {}
+	var best_d := HEARING
+	for horse in horses.values():
+		var d := position_of(horse, now_ms).distance_to(point)
+		if int(horse["herd"]) >= 0 and d < best_d:
+			best_d = d
+			best = horse
+	if best.is_empty():
+		return -1
+	_tame(herds[int(best["herd"])], best, peer, now_ms, _pending)
+	return int(best["id"])
+
+
+## Os nomes que este cavalo oferece na página "page" (cada página, outros).
+static func name_choices(horse_id: int, page: int) -> Array:
+	var order := range(NAMES.size())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([horse_id, "nomes"])
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = order[i]
+		order[i] = order[j]
+		order[j] = tmp
+	var start := (page * NAME_CHOICES) % NAMES.size()
+	var out := []
+	for k in NAME_CHOICES:
+		out.append(NAMES[order[(start + k) % NAMES.size()]])
+	return out
+
+
+## Os domesticados, para salvar no mundo.
+func tame_to_save() -> Array:
+	var out := []
+	for horse in horses.values():
+		if int(horse["herd"]) < 0:
+			var at: Vector2 = horse["to"]
+			out.append({"owner": horse["owner"], "name": horse["name"], "x": at.x, "y": at.y,
+				"coat": horse["coat"], "pitch": horse["pitch"]})
+	return out
+
+
+## Traz de volta os domesticados salvos (ver tame_to_save).
+func load_tame(saved: Array) -> void:
+	for entry in saved:
+		if typeof(entry) != TYPE_DICTIONARY or str(entry.get("owner", "")).is_empty():
+			continue
+		var at := Vector2(float(entry.get("x", 0.0)), float(entry.get("y", 0.0)))
+		if not at.is_finite():
+			continue
+		var horse := {
+			"id": _next_id, "herd": -1,
+			"pitch": clampf(float(entry.get("pitch", 1.0)), 0.8, 1.2),
+			"coat": posmod(int(entry.get("coat", 0)), COATS.size()),
+			"from": at, "to": at, "start_ms": 0, "end_ms": 0, "gait": Gait.STAND,
+			"next_graze_ms": -1, "next_snort_ms": -1, "next_neigh_ms": -1,
+			"watchers": {}, "need": 0, "trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
+			"owner": str(entry["owner"]),
+			"name": str(entry.get("name", "")) if NAMES.has(str(entry.get("name", ""))) else "",
+		}
+		_next_id += 1
+		horses[horse["id"]] = horse
+
+
+## Avisa quem vê o cavalo do dono e do nome dele.
+func _send_named(horse: Dictionary, out: Array) -> void:
+	for peer in horse["watchers"]:
+		out.append([peer, "named", [horse["id"], horse["owner"], horse["name"]]])
+
+
+func _pending_sound(horse: Dictionary, kind: String) -> void:
+	_sound(horse, kind, _pending)
 
 
 # --- Pedaços com cavalos -------------------------------------------------------
@@ -219,6 +460,9 @@ func _make_herd(chunk: Vector2i, home: Vector2, biome: int, rng: RandomNumberGen
 			"gait": Gait.STAND,
 			"next_graze_ms": -1, "next_snort_ms": -1, "next_neigh_ms": -1,
 			"watchers": {},
+			"need": rng.randi_range(FRUITS_TO_TAME[0], FRUITS_TO_TAME[1]),
+			"trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
+			"owner": "", "name": "",
 		}
 		_next_id += 1
 		horses[horse["id"]] = horse
@@ -320,6 +564,8 @@ func _update_herd(herd: Dictionary, now_ms: int, players: Dictionary, out: Array
 	if threat != Vector2.INF:
 		_move_herd(herd, now_ms, threat, out)
 		return
+	if _taming(herd, now_ms, players, out):
+		return
 	var night := darkness >= 0.6
 	if not moving and now_ms >= int(herd["leave_ms"]) and herd["wary"].is_empty():
 		# De noite andam menos: ficam juntos, quietos.
@@ -351,6 +597,7 @@ func _threat(herd: Dictionary, center: Vector2, now_ms: int, players: Dictionary
 	for peer in wary.keys():
 		if not players.has(peer) or (players[peer] as Vector2).distance_to(center) > FORGET:
 			wary.erase(peer)
+			_lose_trust(herd, peer)
 	var found := Vector2.INF
 	for peer in players:
 		var pos: Vector2 = players[peer]
@@ -390,6 +637,7 @@ func _move_herd(herd: Dictionary, now_ms: int, threat: Vector2, out: Array) -> v
 	herd["leave_ms"] = now_ms + _ms(STAY) + (int(8000) if startled else 0)
 	if startled:
 		herd["calm_until_ms"] = now_ms + int(CALM_AFTER_FLEE * 1000.0)
+		_lose_trust(herd, -1)
 		_sound(horses[herd["members"][0]], "alarme" if threat in hush else "relincho", out)
 	var spots := _member_spots(target, herd["members"].size(), _rng)
 	if spots.is_empty():
@@ -534,15 +782,16 @@ func _sync_watchers(now_ms: int, players: Dictionary, out: Array) -> void:
 
 
 ## [id, tom, pelagem, de, para, segundos até sair, duração, quanto já passou,
-## andadura]. Parado, "de" e "para" são o mesmo ponto.
+## andadura, dono, nome]. Parado, "de" e "para" são o mesmo ponto; selvagem,
+## dono e nome são vazios.
 func appear_args(horse: Dictionary, now_ms: int) -> Array:
 	var gait := int(horse["gait"])
 	if gait == Gait.STAND or now_ms >= int(horse["end_ms"]):
-		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND]
+		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND, horse["owner"], horse["name"]]
 	var duration := (int(horse["end_ms"]) - int(horse["start_ms"])) / 1000.0
 	var delay := maxf((int(horse["start_ms"]) - now_ms) / 1000.0, 0.0)
 	var elapsed := maxf((now_ms - int(horse["start_ms"])) / 1000.0, 0.0)
-	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait]
+	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait, horse["owner"], horse["name"]]
 
 
 static func _chunk_of(point: Vector2) -> Vector2i:
