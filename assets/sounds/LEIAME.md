@@ -113,3 +113,39 @@ queda são gerados por código (`SoundBank.tree_knock`, `tree_creak`,
 pôr em `recursos/` com os nomes `arvore_golpe_1..4.ogg`,
 `arvore_rangido_1..3.ogg`, `arvore_queda_1..3.ogg` e `coleta_madeira_1..4.ogg`:
 o jogo passa a usá-las sozinho.
+
+## Cavalinhos-da-bruma (cavalos/)
+
+Sons dos cavalos selvagens (`client/horse_sounds.gd`), escolhidos pelo Gabs
+em várias rodadas de comparação. Recortados, limpos de ruído, em mono 48 kHz.
+Publicados com autorização do Gabs (2026-11-22).
+
+- `casco_<chão>_<n>.ogg`: uma pisada. Cada uma junta um casco gravado e uma
+  pisada do "World Sounds Audio Pack" (CC0, ver `world/`) num tom mais grave:
+  grama com `grassstep`/`brushstep`, terra com `dirtstep`, neve com
+  `deepsnowstep` (casco abafado), madeira com `bridge2step`/`creekywoodstep`.
+  Grama, terra e neve com o casco mais baixo e a cauda suavizada.
+- `galope_<chão>_<n>.ogg`: uma passada inteira de galope: quatro batidas,
+  o corpo (galope gravado, grave e baixo) e uma bufada curta de fôlego.
+- `relincho_<n>`, `bufo_<n>`, `manso_<n>` (relincho manso), `pasto_<n>`.
+
+Gravações de origem, todas no Freesound:
+
+- Relinchos: ["Horse_Whinny", de foxen10](https://freesound.org/s/149024/) (CC0),
+  ["horse's whinny", de Kubuzz](https://freesound.org/s/347036/) (CC0),
+  ["horse neigh shortened", de shadoWisp](https://freesound.org/s/269571/) (CC0),
+  ["Horse Whinny, Close, A", de InspectorJ](https://freesound.org/s/419231/) (CC BY 4.0).
+- Bufos: ["horse snort", de bruno.auzet](https://freesound.org/s/538697/) (CC0),
+  ["Horse (snort) 3", de o_ciz](https://freesound.org/s/475483/) (CC0),
+  ["horse snort, breathe, eat", de Garuda1982](https://freesound.org/s/531429/) (CC0),
+  ["horse snort 7", de ERH](https://freesound.org/s/32044/) (CC BY),
+  ["Horse Snort 2", de GoodListener](https://freesound.org/s/322454/) (CC BY).
+- Relincho manso: ["Horses, Soft Nicker", de TheKingOfGeeks360](https://freesound.org/s/861234/) (CC0),
+  ["Horse Nicker 2", de GoodListener](https://freesound.org/s/322449/) (CC BY).
+- Pastando: ["Horse Eating", de crattray1997](https://freesound.org/s/578138/) (CC BY).
+- Cascos: ["Horse Clip Clopping Downhill", de swiftoid](https://freesound.org/s/182504/) (CC0),
+  ["horse steps 01", de gastonsaenz](https://freesound.org/s/362959/) (CC BY).
+- Galope: ["Foley Horse Galloping", de StephenSaldanha](https://freesound.org/s/165532/) (CC0).
+
+Obrigado a todos. Os gravados CC BY pedem crédito: InspectorJ, ERH,
+GoodListener, crattray1997 e gastonsaenz.

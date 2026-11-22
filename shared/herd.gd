@@ -43,6 +43,9 @@ const FLEE_DISTANCE := [16.0, 24.0]
 const CALM_AFTER_FLEE := 12.0  # depois de fugir, não foge de novo tão cedo
 ## Barulho forte a até NOISE_SCARE casas espanta.
 const NOISE_SCARE := 14.0
+## Depuração (summon): de onde a manada chamada vem e onde para, em casas.
+const SUMMON_FROM := 16.0
+const SUMMON_TO := 5.0
 
 ## Sons de cada cavalo (segundos entre um e outro).
 const GRAZE_EVERY := [5.0, 14.0]
@@ -86,6 +89,7 @@ var _last_sync_ms := -SYNC_INTERVAL_MS
 var _rng := RandomNumberGenerator.new()
 var _last_players := {}  # peer -> posição no passo anterior
 var _noises := []  # [ponto] ouvidos desde o último passo
+var _pending := []  # mensagens geradas fora do passo (summon), saem no próximo
 
 
 func _init(the_world: WorldGen) -> void:
@@ -97,7 +101,8 @@ func _init(the_world: WorldGen) -> void:
 ## Devolve [peer, tipo, argumentos], com tipo "appear", "gone", "move" ou
 ## "sound".
 func update(now_ms: int, players: Dictionary) -> Array:
-	var out := []
+	var out := _pending
+	_pending = []
 	_update_chunks(players, out)
 	for herd_id in herds.keys():
 		_update_herd(herds[herd_id], now_ms, players, out)
@@ -188,6 +193,12 @@ func _spawn_chunk(chunk: Vector2i) -> Array:
 			break
 	if home == Vector2.INF:
 		return []
+	var herd_id := _make_herd(chunk, home, biome, rng)
+	return [] if herd_id < 0 else [herd_id]
+
+
+## Cria uma manada com casa em "home". Devolve o id, ou -1 se não coube.
+func _make_herd(chunk: Vector2i, home: Vector2, biome: int, rng: RandomNumberGenerator) -> int:
 	var herd := {
 		"id": _next_id, "chunk": chunk, "home": home, "members": [],
 		"leave_ms": -1, "wary": {}, "calm_until_ms": 0, "alarm_ms": 0,
@@ -210,9 +221,69 @@ func _spawn_chunk(chunk: Vector2i) -> Array:
 		horses[horse["id"]] = horse
 		herd["members"].append(horse["id"])
 	if herd["members"].is_empty():
-		return []
+		return -1
 	herds[herd["id"]] = herd
-	return [herd["id"]]
+	return herd["id"]
+
+
+## Depuração: traz a manada mais perto (ou cria uma, em qualquer bioma) para
+## perto de "point". Ela surge a SUMMON_FROM casas e vem andando até parar a
+## SUMMON_TO casas, para dar tempo de ouvir os cascos chegando. Devolve
+## quantos cavalos vieram (0 se não achou lugar).
+func summon(point: Vector2, now_ms: int) -> int:
+	var herd := {}
+	var best := INF
+	for candidate in herds.values():
+		var d := _herd_center(candidate, now_ms).distance_to(point)
+		if d < best:
+			best = d
+			herd = candidate
+	var target := Vector2.INF
+	var start := Vector2.INF
+	for attempt in 48:
+		var angle := _rng.randf() * TAU
+		var to := point + Vector2.from_angle(angle) * SUMMON_TO
+		var from := point + Vector2.from_angle(angle) * SUMMON_FROM
+		if _walkable(to) and _walkable(from) and _clear_line(from, to):
+			target = to
+			start = from
+			break
+	if target == Vector2.INF:
+		return 0
+	if herd.is_empty():
+		var chunk := _chunk_of(point)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = _rng.randi()
+		var herd_id := _make_herd(chunk, start, world.biome_at(WorldGen.cell_of(point)), rng)
+		if herd_id < 0:
+			return 0
+		if not _chunks.has(chunk):
+			_chunks[chunk] = []
+		_chunks[chunk].append(herd_id)
+		herd = herds[herd_id]
+	herd["home"] = target
+	herd["wary"].clear()
+	herd["leave_ms"] = now_ms + _ms(STAY)
+	var spots := _member_spots(target, herd["members"].size(), _rng)
+	var starts := _member_spots(start, herd["members"].size(), _rng)
+	if spots.is_empty() or starts.is_empty():
+		return 0
+	for i in herd["members"].size():
+		var horse: Dictionary = horses[herd["members"][i]]
+		var here: Vector2 = starts[i % starts.size()]
+		var to: Vector2 = spots[i % spots.size()]
+		var delay := 0.0 if i == 0 else _rng.randf_range(0.1, STAGGER)
+		horse["from"] = here
+		horse["to"] = to
+		horse["gait"] = Gait.WALK
+		horse["start_ms"] = now_ms + int(delay * 1000.0)
+		horse["end_ms"] = int(horse["start_ms"]) + int(here.distance_to(to) / WALK_SPEED * 1000.0) + 200
+		# Quem já via o cavalo recebe a andada nova; quem não via fica sabendo
+		# na próxima sincronização.
+		var args := [horse["id"], here, to, delay, (int(horse["end_ms"]) - int(horse["start_ms"])) / 1000.0, 0.0, Gait.WALK]
+		for peer in horse["watchers"]:
+			_pending.append([peer, "move", args])
+	return herd["members"].size()
 
 
 func _remove_herd(herd_id: int, out: Array) -> void:

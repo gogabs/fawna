@@ -9,9 +9,10 @@ extends RefCounted
 ##
 ## Gravações em assets/sounds/cavalos/ entram no lugar dos sons gerados,
 ## sorteadas a cada vez entre as que existirem:
-##   casco_<chão>_<n>   (chão: grama, terra, neve, madeira, agua)
-##   galope_<chão>_<n>  (sem elas, o galope usa os cascos, mais fortes)
+##   casco_<chão>_<n>   uma pisada (chão: grama, terra, neve, madeira, agua)
+##   galope_<chão>_<n>  uma passada inteira de galope, com corpo e fôlego
 ##   pasto_<n>, bufo_<n>, relincho_<n>, alarme_<n>, manso_<n>
+## Sem alarme gravado, o alarme usa os relinchos.
 
 const RATE := 32000
 const DIR := "res://assets/sounds/cavalos/"
@@ -27,22 +28,34 @@ static func clear() -> void:
 	_files.clear()
 
 
-## Bufo, relincho, alarme ou pasto: uma das variações, sorteada.
+## Bufo, relincho, alarme, manso ou pasto: uma das variações, sorteada. Sem
+## gravação de alarme, o alarme usa os relinchos gravados.
 static func voice(kind: String) -> AudioStream:
 	var recorded := _recorded(kind)
+	if recorded.is_empty() and kind == "alarme":
+		recorded = _recorded("relincho")
 	if not recorded.is_empty():
 		return recorded[randi() % recorded.size()]
 	return generated(kind, randi() % VARIANTS)
 
 
-## Uma batida de casco (andando, um par de batidas; galopando, três).
-static func hoof(surface: String, gallop: bool) -> AudioStream:
+## Andando, uma pisada; galopando, uma passada inteira. Evita repetir
+## "last" (a última que esse cavalo tocou).
+static func hoof(surface: String, gallop: bool, last: AudioStream = null) -> AudioStream:
 	var recorded := _recorded(("galope_" if gallop else "casco_") + surface)
 	if recorded.is_empty() and gallop:
 		recorded = _recorded("casco_" + surface)
 	if not recorded.is_empty():
-		return recorded[randi() % recorded.size()]
+		var pick: AudioStream = recorded[randi() % recorded.size()]
+		if pick == last and recorded.size() > 1:
+			pick = recorded[(recorded.find(pick) + 1) % recorded.size()]
+		return pick
 	return generated(("galope_" if gallop else "casco_") + surface, randi() % VARIANTS)
+
+
+## Há cascos gravados para esse chão? (Os gerados têm outro volume.)
+static func has_hooves(surface: String) -> bool:
+	return not _recorded("casco_" + surface).is_empty()
 
 
 ## O som gerado (sem olhar gravações). Usado também pelos testes.

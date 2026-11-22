@@ -9,15 +9,26 @@ extends Node
 ## reaproveitadas (o Steam Audio às vezes não pega fontes criadas na hora).
 
 const STEP_SECONDS := 0.25
-const VOICES := 10
+const VOICES := 16
 const REACH := Herd.HEARING
 const STEP_REACH := 22.0  # casas: mais longe que isso, os cascos não tocam
-## Cadência dos cascos (batidas por segundo) e o volume de cada som. Tudo
-## bem baixinho, como o resto do mundo.
-const WALK_STEPS := 1.7
-const GALLOP_STEPS := 2.3
+## Cadência dos cascos. Andando, quatro pisadas por passada, com balanço
+## longo-curto (segundos entre uma e outra); galopando, uma passada inteira
+## (as quatro batidas, o corpo e o fôlego já vêm no arquivo) a cada
+## GALLOP_STRIDE. O andamento flutua devagar, sem passar dos limites, para não
+## soar como metrônomo nem correr ou arrastar demais.
+const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
+const WALK_TEMPO := [0.9, 1.1]
+const GALLOP_STRIDE := 0.42
+const GALLOP_TEMPO := [0.93, 1.08]
+## Bufadas de vez em quando enquanto andam ou galopam (segundos).
+const WALK_SNORTS := [4.0, 8.0]
+const GALLOP_SNORTS := [2.5, 5.0]
+## Volume de cada som. Tudo bem baixinho, como o resto do mundo. Os cascos
+## gravados estão 14 dB abaixo nos arquivos (para caber o pico sem distorcer);
+## com +4 dB ficam na mesma proporção das bufadas que o Gabs aprovou.
 const HORSES_DB := -10.0
-const SOUND_DB := {"casco": -14.0, "galope": -10.0, "pasto": -18.0, "bufo": -10.0, "relincho": -6.0, "alarme": -4.0}
+const SOUND_DB := {"casco": 4.0, "galope": 4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
 
@@ -26,7 +37,7 @@ var _step := 0.0
 
 var _audio: SpatialAudio
 var _world: WorldGen
-var _horses := {}  # id -> { pitch, coat, from: Vector2, to: Vector2, start, duration, gait, next_step }
+var _horses := {}  # id -> { pitch, coat, from: Vector2, to: Vector2, start, duration, gait, next_step, beat, drift, next_snort, last_hoof }
 var _voices := []  # [{ player, horse, height, started }]
 var _clock := 0.0
 
@@ -103,7 +114,8 @@ func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2
 	_horses[id] = {
 		"pitch": pitch, "coat": coat, "from": from, "to": to,
 		"start": _clock + delay - elapsed, "duration": duration, "gait": gait,
-		"next_step": _clock + randf() * 0.5,
+		"next_step": _clock + randf() * 0.5, "beat": 0, "drift": 0.0,
+		"next_snort": _clock + _snort_gap(gait) * 0.5, "last_hoof": null,
 	}
 
 
@@ -126,6 +138,8 @@ func horse_moved(id: int, from: Vector2, to: Vector2, delay: float, duration: fl
 	horse["duration"] = duration
 	horse["gait"] = gait
 	horse["next_step"] = maxf(float(horse["start"]), _clock)
+	horse["beat"] = 0
+	horse["next_snort"] = maxf(float(horse["start"]), _clock) + _snort_gap(gait) * 0.5
 
 
 @rpc("authority", "call_local", "reliable")
@@ -177,7 +191,8 @@ func horse_count() -> int:
 	return _horses.size()
 
 
-## Toca os cascos de quem está andando, no ritmo da andadura.
+## Toca os cascos de quem está andando, no ritmo da andadura, e uma bufada
+## de vez em quando.
 func _client_steps() -> void:
 	if _voices.is_empty():
 		return
@@ -189,14 +204,41 @@ func _client_steps() -> void:
 		var horse: Dictionary = _horses[id]
 		if _clock < float(horse["next_step"]):
 			continue
-		var rate := GALLOP_STEPS if gait == Herd.Gait.GALLOP else WALK_STEPS
-		horse["next_step"] = _clock + (1.0 / rate) * randf_range(0.92, 1.08)
+		var gallop := gait == Herd.Gait.GALLOP
+		horse["next_step"] = _clock + _next_gap(horse, gallop)
 		var point := horse_point(id)
 		if point.distance_to(me) > STEP_REACH:
 			continue
 		var surface := _surface_at(point)
-		var kind := "galope" if gait == Herd.Gait.GALLOP else "casco"
-		_play(id, HorseSounds.hoof(surface, gait == Herd.Gait.GALLOP), SOUND_DB[kind], float(horse["pitch"]) * randf_range(0.95, 1.05), HOOF_HEIGHT)
+		var recorded := HorseSounds.has_hooves(surface)
+		var kind := ("galope" if gallop else "casco") + ("" if recorded else "_gerado")
+		var stream := HorseSounds.hoof(surface, gallop, horse["last_hoof"])
+		horse["last_hoof"] = stream
+		# Cascos gravados: só um tiquinho do tom do cavalo, senão muda o ritmo.
+		var pitch := (1.0 + (float(horse["pitch"]) - 1.0) * 0.3) * randf_range(0.98, 1.02) if recorded else float(horse["pitch"]) * randf_range(0.95, 1.05)
+		var jitter := randf_range(-1.0, 1.0) if gallop else randf_range(-3.0, 1.5)
+		_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
+		if _clock >= float(horse["next_snort"]):
+			horse["next_snort"] = _clock + _snort_gap(gait)
+			_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"] + (1.0 if gallop else 0.0), float(horse["pitch"]), HEAD_HEIGHT)
+
+
+## Quanto falta para a próxima pisada (andando) ou passada (galopando).
+func _next_gap(horse: Dictionary, gallop: bool) -> float:
+	var drift := (float(horse["drift"]) + randfn(0.0, 0.03)) * 0.9
+	horse["drift"] = drift
+	if gallop:
+		var tempo := clampf(1.0 + drift, GALLOP_TEMPO[0], GALLOP_TEMPO[1])
+		return GALLOP_STRIDE * tempo + randfn(0.0, 0.01)
+	var beat: int = horse["beat"]
+	horse["beat"] = beat + 1
+	var walk_tempo := clampf(1.0 + drift, WALK_TEMPO[0], WALK_TEMPO[1])
+	return maxf(0.08, float(WALK_GAPS[beat % WALK_GAPS.size()]) * walk_tempo + randfn(0.0, 0.03))
+
+
+func _snort_gap(gait: int) -> float:
+	var span: Array = GALLOP_SNORTS if gait == Herd.Gait.GALLOP else WALK_SNORTS
+	return randf_range(span[0], span[1])
 
 
 func _surface_at(point: Vector2) -> String:

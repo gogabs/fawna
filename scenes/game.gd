@@ -1853,6 +1853,9 @@ func _run_debug(id: int, action: String, arg: String) -> String:
 			_dirty = true
 			survival.send_to(id)
 			return "Fome %d, calor %d." % [roundi(entry["food"]), roundi(entry["warmth"])]
+		"cavalos":
+			var come: int = horses.herd.summon(state.players[id]["pos"], Time.get_ticks_msec()) if horses.herd != null else 0
+			return "%d cavalos vêm vindo." % come if come > 0 else "Não achei lugar para os cavalos aqui."
 		"sozinho":
 			horrors.debug_set_spawning(arg == "ligar")
 			return "O Calado %s sozinho." % ("volta a aparecer" if arg == "ligar" else "não aparece mais")
@@ -2634,6 +2637,7 @@ func _debug_items() -> Array:
 		{"label": "Estação", "open": _debug_season_items},
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Chamar cavalos para perto", "run": _debug_ask.bind("cavalos", "")},
 		{"label": "Fome e frio", "open": _debug_body_items},
 		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},

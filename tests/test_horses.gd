@@ -19,7 +19,9 @@ func _init() -> void:
 		_test_noise(world, spot)
 		_test_walks_on_ground(world, spot)
 		_test_despawn(world, spot)
+		_test_summon(world, spot)
 	_test_sounds()
+	_test_recorded()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--exportar="):
 			_export(arg.get_slice("=", 1))
@@ -181,6 +183,29 @@ func _test_despawn(world: WorldGen, spot: Vector2) -> void:
 	_check(herd.horse_count() > 0, "manada existe com alguém perto")
 	herd.update(250, {1: spot + Vector2(400, 400)})
 	_check(herd.nearest(spot, 250).is_empty() or herd.position_of(herd.nearest(spot, 250), 250).distance_to(spot) > 60.0, "manada some quando todos vão embora")
+
+
+func _test_summon(world: WorldGen, spot: Vector2) -> void:
+	var herd := Herd.new(world)
+	var me := _approach_from(herd, spot, 30.0)
+	herd.update(0, {1: me})
+	var came := herd.summon(me, 250)
+	_check(came >= Herd.GROUP[0], "a depuração chama uma manada (%d)" % came)
+	var out := _run(herd, {1: me}, 500, 20.0)
+	var center := herd.nearest(me, 20500)
+	_check(not center.is_empty() and herd.position_of(center, 20500).distance_to(me) < Herd.SUMMON_TO + Herd.SPREAD + 1.0, "a manada chamada para perto de quem chamou")
+	_check(_gallops(out) == 0, "chegar chamada não espanta a manada")
+	# Longe de qualquer pradaria também funciona (cria uma manada ali).
+	var other := Herd.new(world)
+	_check(other.summon(Vector2(0.5, 0.5) + Vector2(3000, -3000), 0) >= 0, "chamar em qualquer lugar não quebra")
+
+
+func _test_recorded() -> void:
+	for surface in ["grama", "terra", "neve", "madeira"]:
+		_check(HorseSounds.has_hooves(surface), "cascos gravados: %s" % surface)
+		_check(not HorseSounds._recorded("galope_" + surface).is_empty(), "galope gravado: %s" % surface)
+	for kind in ["relincho", "bufo", "manso", "pasto", "alarme"]:
+		_check(HorseSounds.voice(kind) != null, "voz: %s" % kind)
 
 
 func _test_sounds() -> void:
