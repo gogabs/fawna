@@ -15,6 +15,10 @@ const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâne
 const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
 ## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa.
 const HRTF_GAIN_DB := 6.0
+## Reforço de lado por cima do HRTF: o panorama do Godot com força 2 deixa um
+## som bem do lado só naquele ouvido (com 1, só 6 dB a mais). Medido no PC do
+## Gabs; acima de 2 o panorama do Godot fica errático (3 deu 6 dB, 4 deu 0).
+const HRTF_PANNING := 2.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -12.0
@@ -438,6 +442,7 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 	if using_hrtf and hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
+		player.panning_strength = HRTF_PANNING
 		volume_db += HRTF_GAIN_DB
 	else:
 		player = AudioStreamPlayer3D.new()
