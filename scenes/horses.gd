@@ -44,8 +44,10 @@ const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_
 ## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
 ## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
 ## arquivos, contra HOOF_PEAK_DB) e somado a RIDDEN_DB: o Gabs quis trote e
-## galope um pouco acima dos passos.
-const RIDDEN_DB := {"casco": 0.0, "trote": 3.0, "galope": 3.0}
+## galope um pouco acima dos passos. HOOF_PEAK_DB foi medido com a camada do
+## casco em +9 dB; ela desceu para +4,5 (estava alto) e a tabela ficou, para a
+## redução valer também montado.
+const RIDDEN_DB := {"casco": -4.0, "trote": -1.0, "galope": 1.0}  # 0/3/3 ficou alto: meio do caminho
 const RIDDEN_VOICES := 3
 const STEP_PEAK_DB := -11.5
 const HOOF_PEAK_DB := {
