@@ -89,8 +89,8 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 O Caminheiro tem três submenus: **Locais** (os povoados com nome),
 **Construções** (só as da região em que você está) e **Recursos** (Arbustos, Argila,
 Árvores, Bambu, Capim, Cogumelos, Pedras, Ramas, Sílex, Trepadeiras; o
-Forrageador tem também Espécies de plantas, com Frutas, Fibra e cada espécie,
-como "Pé de batata (rama)"), que acende o cristal rumo ao coletável mais próximo
+Forrageador tem também Espécies de plantas, com cada espécie, como "Pé de
+batata (rama)"), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
 está: "Você chegou às pedras, atrás e à direita, 2 metros."
 

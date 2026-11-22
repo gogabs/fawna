@@ -2932,13 +2932,8 @@ const CAMINHEIRO_RESOURCES := [
 ## trepadeira, capim): a espécie se descobre ao colher. Árvores leva também
 ## aos galhos caídos, que ficam ao pé delas. Cogumelos ainda não existem: a
 ## busca sempre diz que não há nenhum por perto.
-## O Forrageador tem ainda "Espécies de plantas": estes grupos, pelo que a
-## planta dá, e cada espécie (Plants). Os destinos podem ter nomes de espécie
-## (String) junto das coisas do mundo.
-const FORAGER_RESOURCES := [
-	["Frutas", ["amora", "pitanga", "baga", "maracuja"], "as frutas"],
-	["Fibra, em arbustos e capim", ["embira", "sisal", "capim"], "a fibra"],
-]
+## O Forrageador tem ainda "Espécies de plantas", com cada espécie (Plants):
+## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
 ## na região de agora ou na vizinha, sem depender de limites de região.
@@ -3080,12 +3075,10 @@ func _caminheiro_resources() -> Array:
 	return items
 
 
-## Forrageador: os grupos (Frutas, Fibra) e cada espécie de planta, com a
-## categoria entre parênteses ("Pé de batata (rama)"), para ir direto a ela.
+## Forrageador: cada espécie de planta, com a categoria entre parênteses
+## ("Pé de batata (rama)"), para ir direto a ela.
 func _caminheiro_species() -> Array:
 	var items := []
-	for entry: Array in FORAGER_RESOURCES:
-		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 	for species: String in Plants.ORDER:
 		var spoken := Plants.name_of(species)
 		var label := "%s (%s)" % [spoken.left(1).to_upper() + spoken.substr(1), Plants.category_name(species)]
