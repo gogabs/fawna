@@ -25,7 +25,7 @@ extends RefCounted
 ## (tame_to_save), não some quando todos vão embora, e relincha manso quando
 ## o dono chega perto.
 
-enum Gait { STAND, WALK, GALLOP }
+enum Gait { STAND, WALK, GALLOP, TROT }  # TROT só montado
 
 ## Distâncias em casas, tempos em segundos.
 const GROUP := [3, 6]
@@ -88,7 +88,7 @@ const NICKER_EVERY := [20.0, 50.0]
 ## ele se afasta mais que FOLLOW_FAR; de longe (GALLOP_AFTER) vem a galope, e
 ## se o dono sumir para mais longe que FOLLOW_JUMP (teleporte, desmaio), surge
 ## ao lado dele. Montado, vai junto de quem monta, andando ou a galope conforme
-## a velocidade (RIDE_GALLOP).
+## a velocidade (RIDE_TROT, RIDE_GALLOP).
 const FOLLOW_NEAR := 1.4
 const FOLLOW_FAR := 3.2
 const FOLLOW_SPEED := 2.2  # um pouco mais rápido que a criatura (1,8)
@@ -96,7 +96,8 @@ const GALLOP_AFTER := 10.0
 const FOLLOW_JUMP := 40.0
 const FOLLOW_RETARGET := 1.5  # dono andou isso desde o último alvo: recalcula
 const EAT_TIME := [4.0, 8.0]
-const RIDE_GALLOP := 2.6
+const RIDE_TROT := 2.5
+const RIDE_GALLOP := 3.7
 const MOUNT_REACH := 2.0
 
 ## Nome dos cavalos: um prefixo e um sufixo que juntos formam um nome
@@ -375,7 +376,8 @@ func _carry(horse: Dictionary, pos: Vector2, now_ms: int, out: Array) -> void:
 	var step_s := 0.25
 	var gait := Gait.STAND
 	if moved >= MOVE_EPSILON * 0.5:
-		gait = Gait.GALLOP if moved / step_s >= RIDE_GALLOP else Gait.WALK
+		var speed := moved / step_s
+		gait = Gait.GALLOP if speed >= RIDE_GALLOP else (Gait.TROT if speed >= RIDE_TROT else Gait.WALK)
 	if gait == Gait.STAND and int(horse["gait"]) == Gait.STAND:
 		return
 	horse["from"] = here

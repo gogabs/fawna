@@ -348,9 +348,17 @@ func _test_follow_and_ride(world: WorldGen, spot: Vector2) -> void:
 		t += 250
 	_check(_gallops(messages) >= 6, "montado e rápido, galopa")
 	_check(herd.position_of(horse, t).distance_to(rider) < 1.2, "montado, vai junto de quem monta")
+	var trots := 0
+	for i in 8:
+		rider += Vector2(0.75, 0)  # 3 casas/s
+		for m in herd.update(t, {1: rider}):
+			if m[1] == "move" and int(m[2][6]) == Herd.Gait.TROT:
+				trots += 1
+		t += 250
+	_check(trots >= 6, "montado a 3 casas/s, trota")
 	var walks := 0
 	for i in 8:
-		rider += Vector2(0.5, 0)  # 2 casas/s
+		rider += Vector2(0.475, 0)  # 1,9 casa/s
 		for m in herd.update(t, {1: rider}):
 			if m[1] == "move" and int(m[2][6]) == Herd.Gait.WALK:
 				walks += 1

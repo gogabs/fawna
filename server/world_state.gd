@@ -74,7 +74,7 @@ var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
 ## Quem está montado (id -> true), mantido pelo nó dos cavalos.
 var riding := {}
-const RIDE_MAX_SPEED := 4.4  # casas por segundo: o galope montado (game.gd RIDE_GALLOP)
+const RIDE_MAX_SPEED := 4.6  # casas por segundo: o galope montado (game.gd RIDE_SPEEDS, 4,3)
 ## Habilidades ativas (tecla H; ver Abilities).
 var _ability_ready := {}  # id -> ms em que dá para usar de novo
 var dashing := {}  # id -> { "until": ms, "tired_until": ms } (disparada)

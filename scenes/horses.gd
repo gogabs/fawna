@@ -18,6 +18,8 @@ const STEP_REACH := 22.0  # casas: mais longe que isso, os cascos não tocam
 ## GALLOP_STRIDE. O andamento flutua devagar, sem passar dos limites, para não
 ## soar como metrônomo nem correr ou arrastar demais.
 const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
+## Trote (só montado): duas batidas por passada, diagonais, bem marcadas.
+const TROT_GAPS := [0.29, 0.31]
 const WALK_TEMPO := [0.9, 1.1]
 const GALLOP_STRIDE := 0.55  # era 0,42: as passadas emendavam umas nas outras
 ## Galopando, a manada vai no mesmo compasso (cada cavalo até GALLOP_SPREAD
@@ -37,6 +39,10 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## 6 dB, os cascos mais 4 e o galope mais 8.
 const HORSES_DB := -16.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
+## O cavalo em que você monta soa embaixo de você, sem posição no espaço, perto
+## do volume dos seus passos (game.gd FOOTSTEP_DB) mais isto. Os arquivos de
+## galope são mais fortes que os de passo.
+const RIDDEN_DB := {"casco": -1.0, "trote": 1.0, "galope": -5.0}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
 ## Força do panorama estéreo nas fontes dos cavalos (ver set_wide). Medido
@@ -322,9 +328,11 @@ func mount_result(id: int, result: String) -> void:
 	match result:
 		"montou":
 			_set_rider(id, get_parent().my_owner_key())
+			get_parent().ride_reset()
 			Speech.say("Você monta em %s." % horse_name)
 		"desmontou":
 			_set_rider(id, "")
+			get_parent().ride_reset()
 			Speech.say("Você desmonta de %s." % horse_name)
 		"longe":
 			Speech.say("Chegue mais perto do cavalo.")
@@ -576,9 +584,14 @@ func _client_steps() -> void:
 		# Cascos gravados: só um tiquinho do tom do cavalo, senão muda o ritmo.
 		var pitch := (1.0 + (float(horse["pitch"]) - 1.0) * 0.3) * randf_range(0.98, 1.02) if recorded else float(horse["pitch"]) * randf_range(0.95, 1.05)
 		var jitter := randf_range(-1.0, 1.0) if gallop else randf_range(-3.0, 1.5)
-		if gallop and not heard.has(id):
-			jitter += GALLOP_BACK_DB
-		_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
+		if id == _riding:
+			# Montado: embaixo de você, no volume dos seus passos.
+			var ridden := "galope" if gallop else ("trote" if gait == Herd.Gait.TROT else "casco")
+			get_parent()._play(stream, false, get_parent().FOOTSTEP_DB + RIDDEN_DB[ridden] + jitter * 0.5)
+		else:
+			if gallop and not heard.has(id):
+				jitter += GALLOP_BACK_DB
+			_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
 		if _clock >= float(horse["next_snort"]):
 			horse["next_snort"] = _clock + _snort_gap(gait)
 			_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"] + (1.0 if gallop else 0.0), float(horse["pitch"]), HEAD_HEIGHT)
@@ -621,6 +634,8 @@ func _next_gap(horse: Dictionary, gallop: bool) -> float:
 	var beat: int = horse["beat"]
 	horse["beat"] = beat + 1
 	var walk_tempo := clampf(1.0 + drift, WALK_TEMPO[0], WALK_TEMPO[1])
+	if int(horse["gait"]) == Herd.Gait.TROT:
+		return float(TROT_GAPS[beat % TROT_GAPS.size()]) * walk_tempo + randfn(0.0, 0.01)
 	return maxf(0.08, float(WALK_GAPS[beat % WALK_GAPS.size()]) * walk_tempo + randfn(0.0, 0.03))
 
 
