@@ -193,7 +193,7 @@ func _test_summon(world: WorldGen, spot: Vector2) -> void:
 	_check(came >= Herd.GROUP[0], "a depuração chama uma manada (%d)" % came)
 	var out := _run(herd, {1: me}, 500, 20.0)
 	var center := herd.nearest(me, 20500)
-	_check(not center.is_empty() and herd.position_of(center, 20500).distance_to(me) < Herd.SUMMON_TO + Herd.SPREAD + 1.0, "a manada chamada para perto de quem chamou")
+	_check(not center.is_empty() and herd.position_of(center, 20500).distance_to(me) < Herd.SUMMON_TO + 1.0, "a manada chamada para perto de quem chamou")
 	_check(_gallops(out) == 0, "chegar chamada não espanta a manada")
 	# Longe de qualquer pradaria também funciona (cria uma manada ali).
 	var other := Herd.new(world)

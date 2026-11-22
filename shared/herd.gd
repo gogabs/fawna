@@ -25,7 +25,10 @@ const GALLOP_SPEED := 4.5
 const STAY := [20.0, 60.0]  # pastando num lugar antes de andar
 const HOP := [4.0, 10.0]  # distância de uma andada normal
 const HOME_RADIUS := 18.0  # a manada não se afasta mais que isso de casa
-const SPREAD := 2.6  # casas: cada cavalo para perto do alvo da manada
+## Casas: cada cavalo para a até SPREAD do alvo da manada, e a pelo menos
+## APART de outro. Juntos demais, o som de todos parecia vir de um ponto só.
+const SPREAD := 6.0
+const APART := 2.2
 const STAGGER := 1.2  # segundos: nem todos saem juntos andando
 
 ## Quem chega a ALERT casas é notado (bufo de alerta). Se continuar se
@@ -45,7 +48,7 @@ const CALM_AFTER_FLEE := 12.0  # depois de fugir, não foge de novo tão cedo
 const NOISE_SCARE := 14.0
 ## Depuração (summon): de onde a manada chamada vem e onde para, em casas.
 const SUMMON_FROM := 16.0
-const SUMMON_TO := 5.0
+const SUMMON_TO := 8.0
 
 ## Sons de cada cavalo (segundos entre um e outro).
 const GRAZE_EVERY := [5.0, 14.0]
@@ -439,12 +442,24 @@ func _pick_target(herd: Dictionary, from: Vector2, threat: Vector2) -> Vector2:
 func _member_spots(target: Vector2, count: int, rng: RandomNumberGenerator) -> Array:
 	var spots := []
 	for i in count:
-		for attempt in 12:
-			var r := 0.0 if i == 0 else rng.randf_range(0.8, SPREAD)
+		var fallback := Vector2.INF
+		for attempt in 16:
+			var r := 0.0 if i == 0 else rng.randf_range(APART, SPREAD)
 			var point := target + Vector2.from_angle(rng.randf() * TAU) * r
-			if _walkable(point):
-				spots.append(point)
+			if not _walkable(point):
+				continue
+			if fallback == Vector2.INF:
+				fallback = point
+			var crowded := false
+			for other: Vector2 in spots:
+				if other.distance_to(point) < APART:
+					crowded = true
+					break
+			if not crowded:
+				fallback = point
 				break
+		if fallback != Vector2.INF:
+			spots.append(fallback)
 	return spots
 
 
