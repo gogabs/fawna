@@ -43,6 +43,13 @@ func _initialize() -> void:
 	world.add_child(camera)
 	camera.position = Vector3(0, 0.2, 0)
 	camera.make_current()
+	if "--outra-camera" in OS.get_cmdline_user_args():
+		# Como no jogo com gráficos: a câmera dos olhos é a atual, não a do som.
+		var eyes := Camera3D.new()
+		world.add_child(eyes)
+		eyes.position = Vector3(0, 1.6, 0)
+		eyes.make_current()
+		print("[diag] com outra câmera atual (como a vista 3D do jogo)")
 	var listener := AudioListener3D.new()
 	camera.add_child(listener)
 	listener.make_current()

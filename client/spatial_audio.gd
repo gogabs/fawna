@@ -99,6 +99,8 @@ func _ready() -> void:
 		player.name = "Monte_%d" % i
 		_pile_players.append(player)
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
+	if "--diag-hrtf" in OS.get_cmdline_user_args():
+		get_tree().create_timer(5.0).timeout.connect(_diag_hrtf)
 
 
 func setup(world: WorldGen, harvest: Harvest = null) -> void:
@@ -483,3 +485,51 @@ func _log_resonance_state() -> void:
 	if server.has_method("is_simulating"):
 		print("[audio] Steam Audio simulando: %s" % ("sim" if server.is_simulating() else "não (os sons com HRTF vão sair mudos)"))
 
+
+
+## Teste do HRTF dentro do jogo (--diag-hrtf): toca um ruído alto a 6 m à
+## esquerda e depois à direita do ouvinte, numa fonte igual às do jogo e sem o
+## panorama do Godot, e mede quanto cada ouvido recebe no Master.
+func _diag_hrtf() -> void:
+	var capture := AudioEffectCapture.new()
+	capture.buffer_length = 4.0
+	var master := AudioServer.get_bus_index("Master")
+	AudioServer.add_bus_effect(master, capture)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = 48000
+	var data := PackedByteArray()
+	data.resize(48000 * 2)
+	for i in 48000:
+		data.encode_s16(i * 2, int(randf_range(-0.3, 0.3) * 32767))
+	stream.data = data
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_end = 48000
+	var player := _new_player(stream, 0.0)
+	player.panning_strength = 0.0
+	add_child(player)
+	var server = Engine.get_singleton("ResonanceServer") if Engine.has_singleton("ResonanceServer") else null
+	print("[diag-jogo] câmera atual: %s, fontes no nó de áudio: %d, classe: %s" % [get_viewport().get_camera_3d().name if get_viewport().get_camera_3d() else "nenhuma", get_child_count(), player.get_class()])
+	for side in [-1.0, 1.0]:
+		var yaw := facing_yaw()
+		var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+		player.global_position = _camera.global_position + right * side * 6.0
+		if not player.playing:
+			player.play()
+		await get_tree().create_timer(0.6).timeout
+		capture.clear_buffer()
+		await get_tree().create_timer(1.2).timeout
+		var buffer := capture.get_buffer(capture.get_frames_available())
+		var left_e := 0.0
+		var right_e := 0.0
+		for v in buffer:
+			left_e += v.x * v.x
+			right_e += v.y * v.y
+		var gate = server.is_spatial_audio_output_ready() if server != null else "sem Steam Audio"
+		var src_gate = player.call("is_spatial_output_ready") if player.has_method("is_spatial_output_ready") else "?"
+		print("[diag-jogo] %s: diferença esquerdo-direito %+.1f dB (portão: %s, fonte pronta: %s)" % ["esquerda" if side < 0 else "direita", 10.0 * log(maxf(left_e, 1e-12) / maxf(right_e, 1e-12)) / log(10.0), gate, src_gate])
+	player.queue_free()
+	for i in AudioServer.get_bus_effect_count(master):
+		if AudioServer.get_bus_effect(master, i) == capture:
+			AudioServer.remove_bus_effect(master, i)
+			break
