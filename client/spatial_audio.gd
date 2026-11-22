@@ -13,7 +13,6 @@ extends Node3D
 const METERS_PER_CELL := WorldGen.METERS_PER_CELL
 const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâneo
 const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
-const SCENE_CUSTOM_GODOT_PHYSICS := 3  # ResonanceRuntimeConfig.scene_type
 ## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa.
 const HRTF_GAIN_DB := 6.0
 const AMBIENT_RADIUS := 6  # casas
@@ -458,26 +457,12 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 func _setup_resonance() -> void:
 	if not ClassDB.class_exists("ResonanceRuntime") or not ClassDB.class_exists("ResonancePlayer"):
 		return
-	var config := _new_resonance_object("ResonanceRuntimeConfig") as Resource
-	_player_config = _new_resonance_object("ResonancePlayerConfig") as Resource
+	var config := ResonanceSetup.new_object("ResonanceRuntimeConfig") as Resource
+	_player_config = ResonanceSetup.new_object("ResonancePlayerConfig") as Resource
 	if config == null or _player_config == null:
 		push_warning("Nexus Resonance incompleto; usando o áudio 3D do Godot.")
 		return
-	config.set("direct_binaural", true)
-	# Sem geometria, a cena padrão do Steam Audio fica com 0 triângulos, a
-	# simulação nunca começa e todo ResonancePlayer sai mudo. A cena "Custom"
-	# (raios da física do Godot) faz a simulação rodar mesmo sem geometria.
-	config.set("scene_type", SCENE_CUSTOM_GODOT_PHYSICS)
-	config.set("realtime_rays", 0)
-	config.set("pathing_enabled", false)
-	# Mesmo sem reflexões, o Steam Audio reserva e processa a cauda de reverb
-	# de cada fonte com a duração daqui (padrão 2 s), na thread principal: com
-	# umas 60 fontes, isso dava quadros de 150 ms (7 por segundo), e os passos
-	# saíam lentos e aos trancos. Com 0,1 s o jogo volta a mais de 100 quadros.
-	config.set("realtime_simulation_duration", 0.1)
-	# O padrão do addon é 32 fontes; bússola, vozes, pássaros, ambiente e o
-	# Caminheiro passam disso, e as fontes que ficam sem vaga saem mudas.
-	config.set("max_simulation_sources", MAX_SIMULATION_SOURCES)
+	ResonanceSetup.configure_runtime(config, MAX_SIMULATION_SOURCES)
 	var runtime: Node = ClassDB.instantiate("ResonanceRuntime")
 	runtime.name = "ResonanceRuntime"
 	runtime.set("runtime", config)
@@ -486,17 +471,7 @@ func _setup_resonance() -> void:
 	var listener: Node3D = ClassDB.instantiate("ResonanceListener")
 	_camera.add_child(listener)
 
-	_player_config.set("reflections_enabled", false)
-	_player_config.set("simulation_occlusion_enabled", false)
-	_player_config.set("air_absorption_enabled", false)
-	# Reflexões desligadas: zera também a mistura delas, senão o addon avisa
-	# a cada som que não recebeu parâmetros de reflexão.
-	for prop in _player_config.get_property_list():
-		var prop_name: String = prop["name"]
-		if prop_name.contains("reflection") and prop_name.contains("mix"):
-			_player_config.set(prop_name, 0.0)
-	_player_config.set("min_distance", METERS_PER_CELL)
-	_player_config.set("max_distance", METERS_PER_CELL * (AMBIENT_RADIUS + 2))
+	ResonanceSetup.configure_player(_player_config, METERS_PER_CELL, METERS_PER_CELL * (AMBIENT_RADIUS + 2))
 	using_hrtf = true
 	get_tree().create_timer(2.0).timeout.connect(_log_resonance_state)
 
@@ -508,14 +483,3 @@ func _log_resonance_state() -> void:
 	if server.has_method("is_simulating"):
 		print("[audio] Steam Audio simulando: %s" % ("sim" if server.is_simulating() else "não (os sons com HRTF vão sair mudos)"))
 
-
-## Cria uma classe do Nexus Resonance pelo nome. Algumas são nativas
-## (GDExtension) e outras são scripts com class_name, como as configs.
-## Não usamos os nomes direto no código para o jogo funcionar sem o addon.
-static func _new_resonance_object(class_name_str: String) -> Object:
-	if ClassDB.class_exists(class_name_str):
-		return ClassDB.instantiate(class_name_str)
-	for entry in ProjectSettings.get_global_class_list():
-		if entry["class"] == class_name_str:
-			return load(entry["path"]).new()
-	return null
