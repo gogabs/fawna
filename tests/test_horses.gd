@@ -184,7 +184,7 @@ func _test_despawn(world: WorldGen, spot: Vector2) -> void:
 
 
 func _test_sounds() -> void:
-	for kind in ["relincho", "alarme", "bufo", "pasto"]:
+	for kind in ["relincho", "alarme", "bufo", "pasto", "manso"]:
 		for v in HorseSounds.VARIANTS:
 			var s := HorseSounds.generated(kind, v) as AudioStreamWAV
 			_check(s != null and s.data.size() > 2000, "som gerado: %s %d" % [kind, v])
@@ -196,7 +196,7 @@ func _test_sounds() -> void:
 
 func _export(folder: String) -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
-	for kind in ["relincho", "alarme", "bufo", "pasto"]:
+	for kind in ["relincho", "alarme", "bufo", "pasto", "manso"]:
 		for v in HorseSounds.VARIANTS:
 			(HorseSounds.generated(kind, v) as AudioStreamWAV).save_to_wav("%s/%s_%d.wav" % [folder, kind, v])
 	for surface in HorseSounds.SURFACES:

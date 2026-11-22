@@ -11,7 +11,7 @@ extends RefCounted
 ## sorteadas a cada vez entre as que existirem:
 ##   casco_<chão>_<n>   (chão: grama, terra, neve, madeira, agua)
 ##   galope_<chão>_<n>  (sem elas, o galope usa os cascos, mais fortes)
-##   pasto_<n>, bufo_<n>, relincho_<n>, alarme_<n>
+##   pasto_<n>, bufo_<n>, relincho_<n>, alarme_<n>, manso_<n>
 
 const RATE := 32000
 const DIR := "res://assets/sounds/cavalos/"
@@ -64,6 +64,8 @@ static func generated(kind: String, variant: int) -> AudioStream:
 				buf = _with_tail(_neigh(rng, true), 0.6)
 			"bufo":
 				buf = _with_tail(_snort(rng), 0.3)
+			"manso":
+				buf = _with_tail(_nicker(rng), 0.3)
 			"pasto":
 				buf = _graze(rng)
 			_:
@@ -164,6 +166,32 @@ static func _snort(rng: RandomNumberGenerator) -> PackedFloat32Array:
 		b1 = b0
 		b0 = y
 		buf[i] += (y * 6.0 + input * 0.08) * env * lips * 0.7
+	return buf
+
+
+## Relincho manso (de confiança): de boca fechada, grave, em pulsinhos
+## rápidos que vão rareando, quase um ronronar.
+static func _nicker(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var dur := rng.randf_range(0.7, 1.1)
+	var buf := _buffer(dur + 0.05)
+	var count := int(dur * RATE)
+	var f0 := rng.randf_range(105.0, 135.0)
+	var rate := rng.randf_range(11.0, 14.0)
+	var phase := 0.0
+	var pulse_phase := 0.0
+	var low := 0.0
+	var lower := 0.0
+	for i in count:
+		var x := float(i) / count
+		var t := float(i) / RATE
+		phase = fmod(phase + f0 * (1.0 - 0.15 * x) / RATE, 1.0)
+		pulse_phase += rate * (1.0 - 0.45 * x) / RATE
+		var pulse := pow(maxf(0.0, sin(TAU * pulse_phase)), 3.0)
+		var raw := (2.0 * phase - 1.0) * 0.7 + rng.randf_range(-1.0, 1.0) * 0.25
+		low = lerpf(raw, low, 0.85)  # boca fechada: só o grave passa
+		lower = lerpf(low, lower, 0.995)
+		var env := minf(1.0, t / 0.03) * pow(1.0 - x, 0.8)
+		buf[i] += (low - lower) * pulse * env * 1.2
 	return buf
 
 
