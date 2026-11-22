@@ -135,7 +135,7 @@ func _sync_horses(delta: float) -> void:
 			node.rotation.y = lerp_angle(node.rotation.y, atan2(-heading.x, -heading.y), minf(1.0, delta * 6.0))
 		node.position = goal
 		# Pernas balançam andando; de cabeça baixa, pastando, quando parado.
-		var hz := HORSE_TROT_HZ * (1.8 if gait == Herd.Gait.GALLOP else (1.4 if gait == Herd.Gait.TROT else 1.0))
+		var hz: float = HORSE_TROT_HZ * (1.8 if gait == Herd.Gait.GALLOP else (1.4 if gait == Herd.Gait.TROT else 1.0)) * _horses_node.horse_tempo(id)
 		var swing := sin(_time * TAU * hz + id) * (0.5 if gait == Herd.Gait.GALLOP else 0.3) if gait != Herd.Gait.STAND else 0.0
 		for i in 4:
 			var leg: Node3D = node.get_node("Perna%d" % i)

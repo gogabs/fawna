@@ -21,6 +21,7 @@ const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
 ## Trote (só montado): duas batidas por passada, diagonais, bem marcadas.
 const TROT_GAPS := [0.29, 0.31]
 const RIDE_GRACE := 0.35  # segundos
+const RIDE_BACK_TEMPO := 1.25  # de ré, o trote soa 25% mais lento (a velocidade também é menor)
 const WALK_TEMPO := [0.9, 1.1]
 const GALLOP_STRIDE := 0.55  # era 0,42: as passadas emendavam umas nas outras
 ## Galopando, a manada vai no mesmo compasso (cada cavalo até GALLOP_SPREAD
@@ -559,6 +560,11 @@ func horse_gait(id: int) -> int:
 	return int(horse["gait"]) if t > 0.0 and t < duration + grace else Herd.Gait.STAND
 
 
+## Ritmo da animação das pernas (1 = normal): de ré montado, mais lento.
+func horse_tempo(id: int) -> float:
+	return 1.0 / RIDE_BACK_TEMPO if id == _riding and get_parent().riding_back() else 1.0
+
+
 ## Os cavalos conhecidos (id -> pelagem), para a vista 3D.
 func horse_coats() -> Dictionary:
 	var out := {}
@@ -591,6 +597,7 @@ func _client_steps() -> void:
 		if id == _riding and int(horse.get("ridden_gait", -1)) != gait:
 			# Mudou de andar montado: o ritmo recomeça já (o galope, na batida).
 			horse["ridden_gait"] = gait
+			horse["id_riding"] = true
 			horse["gait"] = gait
 			horse["beat"] = 0
 			horse["next_step"] = INF if gait == Herd.Gait.GALLOP else _clock
@@ -664,7 +671,8 @@ func _next_gap(horse: Dictionary, gallop: bool) -> float:
 	horse["beat"] = beat + 1
 	var walk_tempo := clampf(1.0 + drift, WALK_TEMPO[0], WALK_TEMPO[1])
 	if int(horse["gait"]) == Herd.Gait.TROT:
-		return float(TROT_GAPS[beat % TROT_GAPS.size()]) * walk_tempo + randfn(0.0, 0.01)
+		var back := RIDE_BACK_TEMPO if horse.get("id_riding", false) and get_parent().riding_back() else 1.0
+		return float(TROT_GAPS[beat % TROT_GAPS.size()]) * walk_tempo * back + randfn(0.0, 0.01)
 	return maxf(0.08, float(WALK_GAPS[beat % WALK_GAPS.size()]) * walk_tempo + randfn(0.0, 0.03))
 
 

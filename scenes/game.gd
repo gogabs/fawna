@@ -158,7 +158,7 @@ var _dash_until := 0
 ## RIDE_HOLD_MS) sobe um andar; S segurado desce um a cada RIDE_BRAKE_MS até
 ## parar, e parado, segurar S dá ré enquanto segura. A e D não fazem nada:
 ## para ir para os lados, gira. Bateu em algo, para.
-const RIDE_SPEEDS := [1.0, 0.0, 1.9, 3.0, 4.3]  # casas/s, de -1 (ré) a 3 (galope)
+const RIDE_SPEEDS := [2.4, 0.0, 1.9, 3.0, 4.3]  # casas/s, de -1 (ré, um pouco mais lenta que o trote) a 3 (galope)
 const RIDE_HOLD_MS := 900
 const RIDE_BRAKE_MS := 500
 const RIDE_KEY_HELD := 1 << 60
@@ -2035,7 +2035,12 @@ func _ride_motion() -> Vector2:
 func ride_gait() -> int:
 	if not _ride_moving or _ride_level == 0:
 		return Herd.Gait.STAND
-	return [Herd.Gait.WALK, Herd.Gait.STAND, Herd.Gait.WALK, Herd.Gait.TROT, Herd.Gait.GALLOP][_ride_level + 1]
+	return [Herd.Gait.TROT, Herd.Gait.STAND, Herd.Gait.WALK, Herd.Gait.TROT, Herd.Gait.GALLOP][_ride_level + 1]
+
+
+## Montado e de ré: o trote dos cascos fica mais lento (RIDE_BACK_TEMPO).
+func riding_back() -> bool:
+	return _ride_level < 0
 
 
 ## Montou ou desmontou: o cavalo começa parado.

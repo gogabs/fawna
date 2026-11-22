@@ -96,7 +96,7 @@ const GALLOP_AFTER := 10.0
 const FOLLOW_JUMP := 40.0
 const FOLLOW_RETARGET := 1.5  # dono andou isso desde o último alvo: recalcula
 const EAT_TIME := [4.0, 8.0]
-const RIDE_TROT := 2.5
+const RIDE_TROT := 2.2  # a ré montada (2,4) já soa como trote
 const RIDE_GALLOP := 3.7
 const MOUNT_REACH := 2.0
 
