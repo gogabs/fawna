@@ -197,6 +197,9 @@ func _process(delta: float) -> void:
 		if _connect_waited >= Net.CONNECT_TIMEOUT:
 			_back_to_menu("Não foi possível conectar ao servidor: sem resposta em %d segundos. Confira o endereço e a conexão e tente de novo." % int(Net.CONNECT_TIMEOUT))
 			return
+	# O Forrageador reconhece as espécies das plantas de longe (só a fala muda).
+	if harvest != null:
+		harvest.knows_plants = Species.has_tag(_my_species(), "forrageador")
 	if state != null:
 		_save_timer += delta
 		if _save_timer >= SAVE_INTERVAL:
@@ -1565,6 +1568,10 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Você não tem uma tocha na mão não dominante.")
 		"golpear":
 			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
+		"cavar":
+			Speech.say("A raiz está embaixo da rama. Empunhe a enxada e cave com J.")
+		"sem_frutas":
+			Speech.say("Na Longa Escuridão esta planta não dá fruta.")
 		"cheio":
 			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
 		"nao_tem":
@@ -2408,7 +2415,7 @@ func _use_ability() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando a terra com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; a tocha só freia o frio. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com muita fome ou frio você fica lento; sem nada, desfalece e acorda no ponto seguro mais próximo. Espaço: coletar fibra ou frutas de um arbusto, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; a tocha só freia o frio. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com muita fome ou frio você fica lento; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -2425,10 +2432,10 @@ func _say_radar() -> void:
 		if cell == WorldGen.NO_CELL or (_caminheiro.active and cell == _tracked_resource):
 			continue
 		if seen_cells.has(cell):
-			continue  # Frutas e Fibra podem achar o mesmo arbusto: uma linha só
+			continue  # dois destinos podem achar a mesma coisa: uma linha só
 		seen_cells[cell] = true
 		var offset := WorldGen.cell_center(cell) - _pos
-		found.append([offset.length(), "Arbusto" if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS] else entry[0], offset])
+		found.append([offset.length(), _radar_label(cell, entry[0]), offset])
 	for build: Dictionary in builds.all():
 		var distance := Builds.reach_distance(build, _pos)
 		if distance > RADAR_RADIUS:
@@ -2783,7 +2790,9 @@ func _bag_items() -> Array:
 		var item: String = entry[0]
 		var label := Bag.entry_label(item, entry[1], inventory)
 		var keys := Bag.keys_of(inventory, item)
-		var soon := int(survival.spoiling.get(item, 0))
+		var soon := 0
+		for key: String in keys:
+			soon += int(survival.spoiling.get(key, 0))
 		if soon > 0:
 			label += ", %d passando" % soon if soon < int(entry[1]) else ", passando"
 		if keys.size() == 1 and keys[0] == item:
@@ -2800,7 +2809,11 @@ func _bag_items() -> Array:
 func _bag_sizes(base: String) -> Array:
 	var items := []
 	for key: String in Bag.keys_of(inventory, base):
-		items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _bag_item_actions.bind(key)})
+		var label := "%s, %d" % [Bag.display_name(key), int(inventory[key])]
+		var soon := int(survival.spoiling.get(key, 0))
+		if soon > 0:
+			label += ", %d passando" % soon if soon < int(inventory[key]) else ", passando"
+		items.append({"label": label, "open": _bag_item_actions.bind(key)})
 	return items
 
 
@@ -2811,7 +2824,7 @@ func _bag_item_actions(item: String) -> Array:
 		return actions  # o item acabou: o menu devolve o foco ao pai
 	if Body.is_food(item):
 		actions.append({"label": "Comer", "run": _eat.bind(item)})
-	if Body.ROASTS.has(item):
+	if not Body.roast_of(item).is_empty():
 		actions.append({"label": "Assar 1", "run": _roast.bind(item, 1)})
 		if amount > 1:
 			actions.append({"label": "Assar todas, %d" % amount, "run": _roast.bind(item, amount)})
@@ -2908,14 +2921,23 @@ const CAMINHEIRO_RESOURCES := [
 	["Madeira", [WorldGen.Thing.GALHOS, WorldGen.Thing.ARVORE], "a madeira"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
-	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
-	["Frutas", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
-	["Fibra vegetal", [WorldGen.Thing.FIBRA, WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "a fibra vegetal"],
+	["Arbustos", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
+	["Ramas", [WorldGen.Thing.RAMA], "a rama"],
+	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
+	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 ]
-## Frutas e Fibra vegetal também levam aos arbustos, que são todos iguais: o
-## jogo não diz qual dá o quê (só ao coletar). Madeira leva aos galhos caídos
-## ou às árvores, o que estiver mais perto.
+## Quem não é Forrageador vê só a categoria da planta (arbusto, rama,
+## trepadeira): a espécie se descobre ao colher. Madeira leva aos galhos
+## caídos ou às árvores, o que estiver mais perto.
+## O Forrageador acha também pelo que a planta dá, e por espécie (Plants):
+## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
+const FORAGER_RESOURCES := [
+	["Frutas", ["amora", "pitanga", "baga", "maracuja"], "as frutas"],
+	["Fibra, em arbustos e capim", [WorldGen.Thing.FIBRA, "embira", "sisal"], "a fibra"],
+	["Cipó", ["cipo"], "o cipó"],
+	["Castanheiras", ["castanheira"], "a castanheira"],
+]
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
 ## na região de agora ou na vizinha, sem depender de limites de região.
@@ -2979,6 +3001,15 @@ func _neighbor_region_items() -> Array:
 	return items
 
 
+## Rótulo de um recurso no radar: as plantas pelo nome falado (a categoria,
+## ou a espécie para o Forrageador); o resto, pelo rótulo do Caminheiro.
+func _radar_label(cell: Vector2i, label: String) -> String:
+	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO]:
+		var spoken := harvest.spoken_name(cell)
+		return spoken.left(1).to_upper() + spoken.substr(1)
+	return label
+
+
 ## Os montes da região de agora, do mais perto ao mais longe, para escolher
 ## qual rastrear: "Pilha com pedras e madeiras, 12 metros".
 func _caminheiro_piles() -> Array:
@@ -3024,7 +3055,7 @@ func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 func _resource_pick_label(cell: Vector2i) -> String:
 	var text := harvest.spoken_name(cell)
 	var thing := world.thing_at(cell)
-	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA, WorldGen.Thing.GALHOS]:
+	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.FIBRA, WorldGen.Thing.GALHOS]:
 		text += " no chão"
 	return text[0].to_upper() + text.substr(1)
 
@@ -3043,6 +3074,20 @@ func _caminheiro_resources() -> Array:
 	var items := []
 	for entry: Array in CAMINHEIRO_RESOURCES:
 		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
+	if Species.has_tag(_my_species(), "forrageador"):
+		for entry: Array in FORAGER_RESOURCES:
+			items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
+		items.append({"label": "Espécies de plantas", "open": _caminheiro_species})
+	return items
+
+
+## Forrageador: cada espécie de planta, para ir direto a ela.
+func _caminheiro_species() -> Array:
+	var items := []
+	for species: String in Plants.ORDER:
+		var spoken := Plants.name_of(species)
+		var article := "a " if spoken.begins_with("pitangueira") or spoken.begins_with("embira") or spoken.begins_with("castanheira") else "o "
+		items.append({"label": spoken.left(1).to_upper() + spoken.substr(1), "run": _track_resource.bind([species], article + spoken), "stay": true})
 	return items
 
 
@@ -3054,10 +3099,15 @@ func _track_resource(things: Array, place: String) -> String:
 	return _track(resource_destination(world, cell, _pos), place, cell)
 
 
+## Coisas do mundo que são plantas com espécie (Plants.species_at).
+const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE]
+
+
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas
-## pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
+## (ou espécies de planta) pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
 ## nenhum no raio.
 static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int) -> Vector2i:
+	var by_species := things.any(func(t): return t is String)
 	var here := WorldGen.cell_of(pos)
 	var best := WorldGen.NO_CELL
 	var best_distance := INF
@@ -3066,7 +3116,8 @@ static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: 
 			if dx * dx + dy * dy > radius * radius:
 				continue
 			var cell := here + Vector2i(dx, dy)
-			if not things.has(the_world.thing_at(cell)):
+			var thing := the_world.thing_at(cell)
+			if not things.has(thing) and not (by_species and PLANT_THINGS.has(thing) and things.has(Plants.species_at(the_world, cell))):
 				continue
 			if the_harvest != null and not the_harvest.is_available(cell):
 				continue
@@ -3700,7 +3751,9 @@ func _run_auto_commands() -> void:
 					_interact()
 					await get_tree().create_timer(0.35).timeout
 			"COMER":  # testes: come uma fruta da bolsa
-				_eat("frutas")
+				var fruits := Bag.keys_of(inventory, "frutas")
+				if not fruits.is_empty():
+					_eat(fruits[0])
 			"CAVAR":  # testes, só quem hospeda: empunha uma enxada e cava 6 vezes à frente
 				if state != null:
 					state.inventory_of(my_id)["enxada"] = 1
@@ -3711,7 +3764,8 @@ func _run_auto_commands() -> void:
 						_swing()
 						await get_tree().create_timer(0.6).timeout
 			"ASSAR":  # testes: assa todas as raízes (precisa de fogueira acesa perto)
-				_roast("raiz", 99)
+				for key: String in Bag.keys_of(inventory, "raiz"):
+					_roast(key, 99)
 			"JOGAR":  # testes: larga uma pedra grande (do KIT) no chão
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":

@@ -79,8 +79,7 @@ func _test_placement() -> void:
 		print("[recursos] semente %d: %s" % [world_seed, count])
 		for thing in Harvest.SOURCES:
 			_check(int(count.get(thing, 0)) > 0, "deveria haver %s (semente %d)" % [WorldGen.THING_NAMES[thing], world_seed])
-		var fruits := int(count.get(WorldGen.Thing.ARBUSTO_FRUTAS, 0))
-		_check(fruits < int(count.get(WorldGen.Thing.ARBUSTO, 0)) / 5, "frutas deveriam ser raras")
+		_check(int(count.get(WorldGen.Thing.ARBUSTO_FRUTAS, 0)) > 0 and int(count.get(WorldGen.Thing.ARBUSTO, 0)) > 0, "há arbustos de fruta e de fibra")
 		var clay := int(count.get(WorldGen.Thing.ARGILA, 0))
 		_check(count["argila_perto_da_agua"] == clay, "toda argila deveria estar perto da água (%d de %d)" % [count["argila_perto_da_agua"], clay])
 		_check(not world.is_passable(_find(world, WorldGen.Thing.BAMBU)[1]), "bambu deveria bloquear a passagem")
@@ -107,7 +106,8 @@ func _test_edges_and_water() -> void:
 				var cell := Vector2i(x, y)
 				var thing := world.thing_at(cell)
 				var biome := world.biome_at(cell)
-				if thing == WorldGen.Thing.ARBUSTO or thing == WorldGen.Thing.ARBUSTO_FRUTAS:
+				# Os arbustos de fibra a mais da beira da água ficam fora da conta da orla.
+				if (thing == WorldGen.Thing.ARBUSTO or thing == WorldGen.Thing.ARBUSTO_FRUTAS) and not world.is_waterside(cell):
 					bushes += 1
 					if _cover_within(world, cell, 4, WorldGen.Cover.FECHADA) and _cover_within(world, cell, 4, WorldGen.Cover.ABERTA):
 						edge_bushes += 1

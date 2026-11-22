@@ -5,7 +5,7 @@ extends SceneTree
 const NAMES := {
 	WorldGen.Thing.BAMBU: "Bambu", WorldGen.Thing.ARBUSTO: "Fibra(arbusto)", WorldGen.Thing.ARVORE: "Madeira(árvore)",
 	WorldGen.Thing.PEDRAS: "Pedras", WorldGen.Thing.ARGILA: "Argila", WorldGen.Thing.ARBUSTO_FRUTAS: "Frutas",
-	WorldGen.Thing.CIPO: "Cipó", WorldGen.Thing.FIBRA: "Fibra", WorldGen.Thing.SILEX: "Sílex", WorldGen.Thing.GALHOS: "Galhos",
+	WorldGen.Thing.CIPO: "Cipó", WorldGen.Thing.FIBRA: "Fibra", WorldGen.Thing.SILEX: "Sílex", WorldGen.Thing.GALHOS: "Galhos", WorldGen.Thing.RAMA: "Ramas",
 }
 
 

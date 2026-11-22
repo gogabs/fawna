@@ -221,7 +221,8 @@ func request_dig(cell: Vector2i) -> void:
 	if result["ok"]:
 		game._dirty = true
 		var left_over: Dictionary = result["left_over"]
-		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "desenterrou", "raiz", int(result["amount"]), {}, {}, result["kept"], left_over)
+		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "desenterrou", "raiz", int(result["amount"]), {result["item"]: int(result["amount"])}, {}, result["kept"], left_over)
+		game.resource_changed.rpc(result["cell"], game.state.harvest.info(result["cell"]), "coleta", id)
 		if not left_over.is_empty():
 			game.ground_changed.rpc(result["pile_cell"], game.state.ground.items_at(result["pile_cell"]), "sobrou", id, left_over)
 	dug.rpc_id(id, str(result.get("reason", "")))
@@ -261,7 +262,7 @@ func body_state(new_food: float, new_warmth: float) -> void:
 @rpc("authority", "call_local", "reliable")
 func ate(item: String, event := "comeu") -> void:
 	_play(BodySounds.eat(), BODY_DB)
-	var text := "Você come %s." % Body.FOODS.get(item, {}).get("eat", Economy.names_of(item)[0])
+	var text := "Você come %s." % Body.eat_text(item)
 	if event == "enjoou":
 		text += " O estômago revira: crua demais. Melhor assar na fogueira."
 	Speech.say(text, false)
@@ -304,9 +305,7 @@ func dug(reason: String) -> void:
 	_play(BodySounds.dig(), BODY_DB + 4.0)
 	match reason:
 		"terreno":
-			Speech.say("Esta terra não dá raízes.")
-		"cavado":
-			Speech.say("Você já revirou esta terra há pouco.")
+			Speech.say("Não há rama ao alcance. A raiz só sai de uma rama.")
 
 
 @rpc("authority", "call_local", "reliable")

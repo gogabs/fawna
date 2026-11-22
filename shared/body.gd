@@ -67,11 +67,16 @@ const SHELTER_DAYS := 0.25
 ## Comida: quanto cada item sacia (fome) e aquece (calor), em pontos da
 ## reserva, como se diz ao comer ("Você come uma fruta.") e em quantos dias de
 ## jogo estraga na bolsa ("keeps"). "raw": crua, enjoa se comer muitas seguidas.
+## As espécies ("frutas_amora", "raiz_batata") valem como o grupo, a não ser
+## que tenham linha própria aqui; "eat" sai do nome da espécie ("uma amora",
+## "um cará cru").
 const FOODS := {
 	"frutas": {"food": 10.0, "warmth": 0.0, "eat": "uma fruta", "keeps": 2.0},
 	"raiz": {"food": 5.0, "warmth": 0.0, "eat": "uma raiz crua", "keeps": 6.0, "raw": true},
 	"raiz_assada": {"food": 20.0, "warmth": 8.0, "eat": "uma raiz assada, ainda quente", "keeps": 3.0},
 	"castanha": {"food": 8.0, "warmth": 0.0, "eat": "uma castanha", "keeps": 144.0},
+	# A mandioca crua estraga depressa.
+	"raiz_mandioca": {"food": 5.0, "warmth": 0.0, "keeps": 3.0, "raw": true},
 }
 ## O que a comida vira quando estraga: só serve para jogar fora.
 const SPOILED := "estragada"
@@ -84,13 +89,11 @@ const SPOILING_SOON := 0.5
 const RAW_LIMIT := 3.0
 const RAW_DECAY := 6.0
 const RAW_SICK := 10.0
-## Raízes: cavar com a enxada (J) na terra destes biomas. Cada golpe tem
-## ROOT_CHANCE de achar de 1 a 2 (no inverno, um terço da chance); a mesma
-## casa só rende de novo depois de ROOT_RETRY segundos.
-const ROOT_BIOMES := [WorldGen.Biome.PRADARIA, WorldGen.Biome.BREJO, WorldGen.Biome.BOSQUE]
-const ROOT_CHANCE := 0.35
-const ROOT_WINTER_FACTOR := 1.0 / 3.0
-const ROOT_RETRY := 600.0
+## Raízes: só saem de uma rama (Plants), com a enxada empunhada (J). Cada
+## rama pede ROOT_DIG_HITS golpes e dá ROOT_AMOUNT raízes (uma só na Longa
+## Escuridão); depois some e rebrota (Harvest.SOURCES).
+const ROOT_DIG_HITS := 3
+const ROOT_AMOUNT := 2
 ## Castanhas: só no Declínio, no chão embaixo de parte das árvores
 ## (NUT_TREES), NUT_AMOUNT por árvore, uma vez por ano.
 const NUT_SEASON := 1
@@ -98,7 +101,7 @@ const NUT_TREES := 0.4
 const NUT_AMOUNT := 3
 ## Assar: a até ROAST_REACH casas de uma fogueira acesa, a raiz crua vira assada.
 const ROAST_REACH := 2.5
-const ROASTS := {"raiz": "raiz_assada"}
+const ROASTS := {"raiz": "raiz_assada"}  # vale para toda espécie de raiz
 
 ## Frases dos limiares, faladas só ao piorar. [fome, calor] por nível 1 a 3.
 const HUNGER_LINES := [
@@ -156,7 +159,29 @@ static func work_factor(entry: Dictionary) -> float:
 
 
 static func is_food(item: String) -> bool:
-	return FOODS.has(item)
+	return not food_info(item).is_empty()
+
+
+## A linha de FOODS deste item: a dele, ou a do grupo (frutas_amora -> frutas).
+static func food_info(item: String) -> Dictionary:
+	return FOODS.get(item, FOODS.get(Economy.base_of(item), {}))
+
+
+## No que este item vira ao assar ("" se não assa).
+static func roast_of(item: String) -> String:
+	return str(ROASTS.get(item, ROASTS.get(Economy.base_of(item), "")))
+
+
+## Como se diz ao comer: "uma fruta", "uma amora", "um cará cru".
+static func eat_text(item: String) -> String:
+	var info := food_info(item)
+	if Economy.base_of(item) == item and info.has("eat"):
+		return str(info["eat"])
+	var feminine := Economy.is_feminine(item)
+	var text := ("uma " if feminine else "um ") + str(Economy.names_of(item)[0])
+	if bool(info.get("raw", false)):
+		text += " crua" if feminine else " cru"
+	return text
 
 
 ## Pontos de fome perdidos por segundo de verdade.
@@ -212,9 +237,9 @@ static func exert(entry: Dictionary, times := 1) -> void:
 ## Come um item. Devolve "" se não for comida, "comeu" ou "enjoou" (crua
 ## demais: em vez de saciar, tira RAW_SICK de fome).
 static func eat(entry: Dictionary, item: String) -> String:
-	if not FOODS.has(item):
+	var food := food_info(item)
+	if food.is_empty():
 		return ""
-	var food: Dictionary = FOODS[item]
 	if bool(food.get("raw", false)):
 		var raw := float(entry.get("raw", 0.0))
 		entry["raw"] = raw + 1.0
@@ -242,7 +267,7 @@ static func settle_raw(entry: Dictionary, days: float) -> void:
 # pegar de volta não refrescar nada.
 
 static func keeps(item: String) -> float:
-	return float(FOODS.get(item, {}).get("keeps", 0.0))
+	return float(food_info(item).get("keeps", 0.0))
 
 
 ## Acerta os lotes com o que a bolsa tem de fato.
@@ -325,7 +350,7 @@ static func nut_tree(cell: Vector2i) -> bool:
 
 ## Está cheio demais para comer isto? (Não se come de barriga cheia.)
 static func is_full(entry: Dictionary, item: String) -> bool:
-	return float(entry.get("food", START)) + float(FOODS.get(item, {}).get("food", 0.0)) * 0.5 > MAX
+	return float(entry.get("food", START)) + float(food_info(item).get("food", 0.0)) * 0.5 > MAX
 
 
 ## A frase de quando uma reserva piora até "level" (1-3); "" no nível 0.
