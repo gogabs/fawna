@@ -87,9 +87,10 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
 O Caminheiro tem três submenus: **Locais** (os povoados com nome),
-**Construções** (só as da região em que você está) e **Recursos** (Bambu, Madeira,
-Pedras, Argila, Arbustos, Ramas, Trepadeiras, Fibra vegetal, Sílex; o
-Forrageador tem também Frutas, Fibra, Cipó, Castanheiras e cada espécie de planta), que acende o cristal rumo ao coletável mais próximo
+**Construções** (só as da região em que você está) e **Recursos** (Arbustos, Argila,
+Árvores, Bambu, Capim, Cogumelos, Pedras, Ramas, Sílex, Trepadeiras; o
+Forrageador tem também Espécies de plantas, com Frutas, Fibra e cada espécie,
+como "Pé de batata (rama)"), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
 está: "Você chegou às pedras, atrás e à direita, 2 metros."
 
@@ -168,6 +169,7 @@ A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais 
    - **Galhos caídos** (no chão do bosque, ao pé das árvores): dão 2 madeiras, cada uma média ou pequena, e rebrotam em 10 minutos. Lenha e madeira são uma coisa só: toda madeira serve para construir e para queimar, e a grande queima mais.
    - **Arbusto** (na orla da mata, onde ela encosta em campo aberto, clareiras incluídas; longe dali só um ou outro): no campo aberto é **de fruta** (pé de amora, pitangueira; nas terras geladas, baga-de-cinza), que dá 2 frutas e farfalha baixinho, com gotinhas; do lado da mata e na beira da água é **de fibra** (embira, sisal-do-brejo), que dá 1 fibra vegetal. Todos parecem iguais: quem não é Forrageador só descobre a espécie ao colher.
    - **Rama** (uma ou outra no campo, no brejo e no bosque): em cima, só folhas; embaixo, a raiz (batata no campo, cará no brejo, mandioca no bosque). Não sai com a mão: com a enxada empunhada, 3 golpes de J tiram 2 raízes (uma só na Longa Escuridão), e a rama volta em 20 minutos. O Javali também acha raízes fuçando.
+   - **Capim** de fibra (nas matas fechadas e na beira da água): dá 2 fibras vegetais.
    - **Trepadeira** (nas matas fechadas): cipó-de-amarra, que dá cipó, ou maracujá-do-mato, que dá uma fruta.
    - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
    - **Pedras** soltas, pelo mundo todo e bem mais comuns na beira dos riachos e lagoas. Dão 3 pedras, cada uma grande, média ou pequena (1/3 de chance cada); na beira da água saem mais pequenas (60% pequenas, 25% médias, 15% grandes). Não têm som próprio.

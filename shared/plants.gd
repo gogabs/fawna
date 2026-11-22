@@ -31,10 +31,18 @@ const SPECIES := {
 	"maracuja": {"name": ["maracujá-do-mato", "maracujás-do-mato"], "category": "trepadeira", "fruit": "maracuja"},
 	# Árvores de fruto.
 	"castanheira": {"name": ["castanheira", "castanheiras"], "category": "arvore"},
+	# Capim: por enquanto só o de fibra, na mata fechada e na beira da água.
+	"capim": {"name": ["capim-de-fibra", "capins-de-fibra"], "category": "capim", "item": "fibra"},
 }
 
+## Nome falado de cada categoria, como todos a veem (o mesmo de
+## WorldGen.THING_NAMES), para "Pé de batata (rama)".
+const CATEGORY_NAMES := {"arbusto": "arbusto", "raiz": "rama", "trepadeira": "trepadeira", "arvore": "árvore", "capim": "capim"}
+## Espécies de nome masculino ("o pé de amora"); o resto é feminino.
+const MASCULINE := ["amora", "baga", "batata", "mandioca", "cara", "cipo", "maracuja", "sisal", "capim"]
+
 ## Ordem em que as espécies aparecem no Caminheiro do Forrageador.
-const ORDER := ["amora", "pitanga", "baga", "maracuja", "embira", "sisal", "batata", "mandioca", "cara", "cipo", "castanheira"]
+const ORDER := ["amora", "pitanga", "baga", "maracuja", "embira", "sisal", "capim", "batata", "mandioca", "cara", "cipo", "castanheira"]
 
 ## Fração das trepadeiras que são de maracujá (o resto é cipó). Nas terras
 ## geladas não há maracujá.
@@ -61,6 +69,8 @@ static func species_at(world: WorldGen, cell: Vector2i) -> String:
 			return "maracuja" if not cold and world.cell_random(cell, "especie") < PASSION_SHARE else "cipo"
 		WorldGen.Thing.ARVORE:
 			return "castanheira" if Body.nut_tree(cell) else ""
+		WorldGen.Thing.FIBRA:
+			return "capim"
 	return ""
 
 
@@ -102,3 +112,13 @@ static func yield_at(world: WorldGen, cell: Vector2i, amount: int) -> Dictionary
 ## Nome falado da espécie: "pé de amora".
 static func name_of(species: String, plural := false) -> String:
 	return str(SPECIES[species]["name"][1 if plural else 0])
+
+
+## Com artigo, para "rumo ao pé de amora": "o pé de amora", "a embira".
+static func with_article(species: String) -> String:
+	return ("o " if MASCULINE.has(species) else "a ") + name_of(species)
+
+
+## Categoria falada: "rama", "arbusto".
+static func category_name(species: String) -> String:
+	return str(CATEGORY_NAMES[SPECIES[species]["category"]])

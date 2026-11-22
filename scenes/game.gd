@@ -2917,26 +2917,27 @@ func _stow() -> String:
 ## Recursos que o Caminheiro sabe achar: rótulo no menu, coisas do mundo que
 ## contam e como se fala do destino (com artigo, para "rumo ao bambu").
 const CAMINHEIRO_RESOURCES := [
-	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
-	["Madeira", [WorldGen.Thing.GALHOS, WorldGen.Thing.ARVORE], "a madeira"],
-	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
-	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
 	["Arbustos", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
+	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
+	["Árvores", [WorldGen.Thing.ARVORE, WorldGen.Thing.GALHOS], "a árvore"],
+	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
+	["Capim", [WorldGen.Thing.FIBRA], "o capim"],
+	["Cogumelos", [], "os cogumelos"],
+	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Ramas", [WorldGen.Thing.RAMA], "a rama"],
-	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
-	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
+	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
 ]
 ## Quem não é Forrageador vê só a categoria da planta (arbusto, rama,
-## trepadeira): a espécie se descobre ao colher. Madeira leva aos galhos
-## caídos ou às árvores, o que estiver mais perto.
-## O Forrageador acha também pelo que a planta dá, e por espécie (Plants):
-## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
+## trepadeira, capim): a espécie se descobre ao colher. Árvores leva também
+## aos galhos caídos, que ficam ao pé delas. Cogumelos ainda não existem: a
+## busca sempre diz que não há nenhum por perto.
+## O Forrageador tem ainda "Espécies de plantas": estes grupos, pelo que a
+## planta dá, e cada espécie (Plants). Os destinos podem ter nomes de espécie
+## (String) junto das coisas do mundo.
 const FORAGER_RESOURCES := [
 	["Frutas", ["amora", "pitanga", "baga", "maracuja"], "as frutas"],
-	["Fibra, em arbustos e capim", [WorldGen.Thing.FIBRA, "embira", "sisal"], "a fibra"],
-	["Cipó", ["cipo"], "o cipó"],
-	["Castanheiras", ["castanheira"], "a castanheira"],
+	["Fibra, em arbustos e capim", ["embira", "sisal", "capim"], "a fibra"],
 ]
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
@@ -3004,7 +3005,7 @@ func _neighbor_region_items() -> Array:
 ## Rótulo de um recurso no radar: as plantas pelo nome falado (a categoria,
 ## ou a espécie para o Forrageador); o resto, pelo rótulo do Caminheiro.
 func _radar_label(cell: Vector2i, label: String) -> String:
-	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO]:
+	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA]:
 		var spoken := harvest.spoken_name(cell)
 		return spoken.left(1).to_upper() + spoken.substr(1)
 	return label
@@ -3055,7 +3056,7 @@ func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 func _resource_pick_label(cell: Vector2i) -> String:
 	var text := harvest.spoken_name(cell)
 	var thing := world.thing_at(cell)
-	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.FIBRA, WorldGen.Thing.GALHOS]:
+	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.GALHOS]:
 		text += " no chão"
 	return text[0].to_upper() + text.substr(1)
 
@@ -3075,19 +3076,20 @@ func _caminheiro_resources() -> Array:
 	for entry: Array in CAMINHEIRO_RESOURCES:
 		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 	if Species.has_tag(_my_species(), "forrageador"):
-		for entry: Array in FORAGER_RESOURCES:
-			items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 		items.append({"label": "Espécies de plantas", "open": _caminheiro_species})
 	return items
 
 
-## Forrageador: cada espécie de planta, para ir direto a ela.
+## Forrageador: os grupos (Frutas, Fibra) e cada espécie de planta, com a
+## categoria entre parênteses ("Pé de batata (rama)"), para ir direto a ela.
 func _caminheiro_species() -> Array:
 	var items := []
+	for entry: Array in FORAGER_RESOURCES:
+		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
 	for species: String in Plants.ORDER:
 		var spoken := Plants.name_of(species)
-		var article := "a " if spoken.begins_with("pitangueira") or spoken.begins_with("embira") or spoken.begins_with("castanheira") else "o "
-		items.append({"label": spoken.left(1).to_upper() + spoken.substr(1), "run": _track_resource.bind([species], article + spoken), "stay": true})
+		var label := "%s (%s)" % [spoken.left(1).to_upper() + spoken.substr(1), Plants.category_name(species)]
+		items.append({"label": label, "run": _track_resource.bind([species], Plants.with_article(species)), "stay": true})
 	return items
 
 
@@ -3100,7 +3102,7 @@ func _track_resource(things: Array, place: String) -> String:
 
 
 ## Coisas do mundo que são plantas com espécie (Plants.species_at).
-const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE]
+const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE, WorldGen.Thing.FIBRA]
 
 
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas

@@ -112,6 +112,12 @@ func _test_yield_and_speech() -> void:
 	got = harvest.take(vine[1], 1000.0)
 	_check(got["ok"] and got["item"] == "cipo", "cipó dá cipó")
 	_check(harvest.spoken_name(_find(world, WorldGen.Thing.CIPO)[1]) in ["trepadeira", ""], "trepadeira para quem não conhece")
+	var grass: Vector2i = _find(world, WorldGen.Thing.FIBRA)[1]
+	_check(harvest.spoken_name(grass) == "capim" and Plants.species_at(world, grass) == "capim", "a fibra solta é capim")
+	got = harvest.take(grass, 1000.0)
+	_check(got["ok"] and got["item"] == "fibra", "capim dá fibra")
+	_check(Plants.category_name("batata") == "rama" and Plants.with_article("batata") == "o pé de batata"
+		and Plants.with_article("embira") == "a embira", "categoria e artigo")
 	var passion := _find(world, WorldGen.Thing.CIPO, "maracuja")
 	got = harvest.take(passion[1], 1000.0)
 	_check(got["ok"] and got["parts"] == {"frutas_maracuja": 1}, "maracujá dá maracujá: %s" % got)

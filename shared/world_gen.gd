@@ -103,7 +103,7 @@ const THING_NAMES := {
 	Thing.CHARCO: "charco",
 	Thing.ARVORE: "árvore",
 	Thing.CIPO: "trepadeira",
-	Thing.FIBRA: "fibra vegetal",
+	Thing.FIBRA: "capim",
 	Thing.SILEX: "sílex",
 	Thing.GALHOS: "galhos",
 	Thing.RAMA: "rama",
