@@ -19,7 +19,14 @@ const STEP_REACH := 22.0  # casas: mais longe que isso, os cascos não tocam
 ## soar como metrônomo nem correr ou arrastar demais.
 const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
 const WALK_TEMPO := [0.9, 1.1]
-const GALLOP_STRIDE := 0.42
+const GALLOP_STRIDE := 0.55  # era 0,42: as passadas emendavam umas nas outras
+## Galopando, a manada vai no mesmo compasso (cada cavalo até GALLOP_SPREAD
+## segundos atrás da batida comum), e só os GALLOP_HEARD mais perto soam
+## cheios; os outros ficam GALLOP_BACK_DB mais baixos, de fundo. Fora de fase,
+## as passadas de todos viravam uma maçaroca contínua.
+const GALLOP_SPREAD := 0.06
+const GALLOP_HEARD := 2
+const GALLOP_BACK_DB := -8.0
 const GALLOP_TEMPO := [0.93, 1.08]
 ## Bufadas de vez em quando enquanto andam ou galopam (segundos).
 const WALK_SNORTS := [4.0, 8.0]
@@ -49,6 +56,8 @@ var _clock := 0.0
 ## Cascos e vozes com panorama largo. Pelo Steam Audio do jeito que está, o
 ## lado vinha só do panorama fraco do Godot: nada soava bem à esquerda.
 var wide := true
+var _gallop_next := 0.0  # próxima batida comum do galope
+var _gallop_drift := 0.0
 
 
 func start_server(world: WorldGen) -> void:
@@ -162,7 +171,7 @@ func horse_moved(id: int, from: Vector2, to: Vector2, delay: float, duration: fl
 	horse["start"] = _clock + delay - elapsed
 	horse["duration"] = duration
 	horse["gait"] = gait
-	horse["next_step"] = maxf(float(horse["start"]), _clock)
+	horse["next_step"] = INF if gait == Herd.Gait.GALLOP else maxf(float(horse["start"]), _clock)
 	horse["beat"] = 0
 	horse["next_snort"] = maxf(float(horse["start"]), _clock) + _snort_gap(gait) * 0.5
 
@@ -222,6 +231,8 @@ func _client_steps() -> void:
 	if _voices.is_empty():
 		return
 	var me: Vector2 = get_parent()._pos
+	var heard := _nearest_galloping(me)
+	_gallop_clock()
 	for id: int in _horses:
 		var gait := horse_gait(id)
 		if gait == Herd.Gait.STAND:
@@ -230,7 +241,8 @@ func _client_steps() -> void:
 		if _clock < float(horse["next_step"]):
 			continue
 		var gallop := gait == Herd.Gait.GALLOP
-		horse["next_step"] = _clock + _next_gap(horse, gallop)
+		# Galopando, quem marca a próxima passada é o compasso comum.
+		horse["next_step"] = INF if gallop else _clock + _next_gap(horse, false)
 		var point := horse_point(id)
 		if point.distance_to(me) > STEP_REACH:
 			continue
@@ -242,10 +254,39 @@ func _client_steps() -> void:
 		# Cascos gravados: só um tiquinho do tom do cavalo, senão muda o ritmo.
 		var pitch := (1.0 + (float(horse["pitch"]) - 1.0) * 0.3) * randf_range(0.98, 1.02) if recorded else float(horse["pitch"]) * randf_range(0.95, 1.05)
 		var jitter := randf_range(-1.0, 1.0) if gallop else randf_range(-3.0, 1.5)
+		if gallop and not heard.has(id):
+			jitter += GALLOP_BACK_DB
 		_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
 		if _clock >= float(horse["next_snort"]):
 			horse["next_snort"] = _clock + _snort_gap(gait)
 			_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"] + (1.0 if gallop else 0.0), float(horse["pitch"]), HEAD_HEIGHT)
+
+
+## A batida comum do galope: quando chega, marca a passada de cada cavalo
+## galopando, com um atraso pequeno e fixo de cada um.
+func _gallop_clock() -> void:
+	if _clock < _gallop_next:
+		return
+	_gallop_drift = (_gallop_drift + randfn(0.0, 0.03)) * 0.9
+	var tempo := clampf(1.0 + _gallop_drift, GALLOP_TEMPO[0], GALLOP_TEMPO[1])
+	var beat := maxf(_gallop_next, _clock)
+	_gallop_next = beat + GALLOP_STRIDE * tempo + randfn(0.0, 0.01)
+	for id: int in _horses:
+		if horse_gait(id) == Herd.Gait.GALLOP:
+			_horses[id]["next_step"] = beat + float(posmod(id * 37, 7)) / 6.0 * GALLOP_SPREAD
+
+
+## Os ids dos GALLOP_HEARD cavalos galopando mais perto de "me".
+func _nearest_galloping(me: Vector2) -> Array:
+	var near := []
+	for id: int in _horses:
+		if horse_gait(id) == Herd.Gait.GALLOP:
+			near.append([horse_point(id).distance_squared_to(me), id])
+	near.sort()
+	var ids := []
+	for i in mini(GALLOP_HEARD, near.size()):
+		ids.append(near[i][1])
+	return ids
 
 
 ## Quanto falta para a próxima pisada (andando) ou passada (galopando).
