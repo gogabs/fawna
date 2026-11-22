@@ -65,10 +65,40 @@ const FIRE_DAYS := 0.067
 const SHELTER_DAYS := 0.25
 
 ## Comida: quanto cada item sacia (fome) e aquece (calor), em pontos da
-## reserva, e como se diz ao comer ("Você come uma fruta.").
+## reserva, como se diz ao comer ("Você come uma fruta.") e em quantos dias de
+## jogo estraga na bolsa ("keeps"). "raw": crua, enjoa se comer muitas seguidas.
 const FOODS := {
-	"frutas": {"food": 10.0, "warmth": 0.0, "eat": "uma fruta"},
+	"frutas": {"food": 10.0, "warmth": 0.0, "eat": "uma fruta", "keeps": 2.0},
+	"raiz": {"food": 5.0, "warmth": 0.0, "eat": "uma raiz crua", "keeps": 6.0, "raw": true},
+	"raiz_assada": {"food": 20.0, "warmth": 8.0, "eat": "uma raiz assada, ainda quente", "keeps": 3.0},
+	"castanha": {"food": 8.0, "warmth": 0.0, "eat": "uma castanha", "keeps": 144.0},
 }
+## O que a comida vira quando estraga: só serve para jogar fora.
+const SPOILED := "estragada"
+## No frio (Longa Escuridão ou terras geladas), a comida estraga na metade da velocidade.
+const COLD_SPOIL := 0.5
+## Na bolsa, avisa que está passando quando falta menos que isto (dias) para estragar.
+const SPOILING_SOON := 0.5
+## Crua demais: cada raiz crua soma 1 a "raw", que cai RAW_DECAY por dia. Com
+## RAW_LIMIT ou mais, a próxima enjoa: tira RAW_SICK de fome em vez de saciar.
+const RAW_LIMIT := 3.0
+const RAW_DECAY := 6.0
+const RAW_SICK := 10.0
+## Raízes: cavar com a enxada (J) na terra destes biomas. Cada golpe tem
+## ROOT_CHANCE de achar de 1 a 2 (no inverno, um terço da chance); a mesma
+## casa só rende de novo depois de ROOT_RETRY segundos.
+const ROOT_BIOMES := [WorldGen.Biome.PRADARIA, WorldGen.Biome.BREJO, WorldGen.Biome.BOSQUE]
+const ROOT_CHANCE := 0.35
+const ROOT_WINTER_FACTOR := 1.0 / 3.0
+const ROOT_RETRY := 600.0
+## Castanhas: só no Declínio, no chão embaixo de parte das árvores
+## (NUT_TREES), NUT_AMOUNT por árvore, uma vez por ano.
+const NUT_SEASON := 1
+const NUT_TREES := 0.4
+const NUT_AMOUNT := 3
+## Assar: a até ROAST_REACH casas de uma fogueira acesa, a raiz crua vira assada.
+const ROAST_REACH := 2.5
+const ROASTS := {"raiz": "raiz_assada"}
 
 ## Frases dos limiares, faladas só ao piorar. [fome, calor] por nível 1 a 3.
 const HUNGER_LINES := [
@@ -179,13 +209,118 @@ static func exert(entry: Dictionary, times := 1) -> void:
 	entry["food"] = clampf(float(entry.get("food", START)) - EFFORT * times, 0.0, MAX)
 
 
-## Come um item: devolve false se não for comida.
-static func eat(entry: Dictionary, item: String) -> bool:
+## Come um item. Devolve "" se não for comida, "comeu" ou "enjoou" (crua
+## demais: em vez de saciar, tira RAW_SICK de fome).
+static func eat(entry: Dictionary, item: String) -> String:
 	if not FOODS.has(item):
-		return false
-	entry["food"] = clampf(float(entry.get("food", START)) + float(FOODS[item]["food"]), 0.0, MAX)
-	entry["warmth"] = clampf(float(entry.get("warmth", START)) + float(FOODS[item]["warmth"]), 0.0, MAX)
-	return true
+		return ""
+	var food: Dictionary = FOODS[item]
+	if bool(food.get("raw", false)):
+		var raw := float(entry.get("raw", 0.0))
+		entry["raw"] = raw + 1.0
+		if raw >= RAW_LIMIT:
+			entry["food"] = clampf(float(entry.get("food", START)) - RAW_SICK, 0.0, MAX)
+			return "enjoou"
+	entry["food"] = clampf(float(entry.get("food", START)) + float(food["food"]), 0.0, MAX)
+	entry["warmth"] = clampf(float(entry.get("warmth", START)) + float(food["warmth"]), 0.0, MAX)
+	return "comeu"
+
+
+## O enjoo da comida crua passa com o tempo.
+static func settle_raw(entry: Dictionary, days: float) -> void:
+	if entry.has("raw"):
+		entry["raw"] = maxf(0.0, float(entry["raw"]) - RAW_DECAY * days)
+		if float(entry["raw"]) <= 0.0:
+			entry.erase("raw")
+
+
+# --- Estrago --------------------------------------------------------------------
+# Cada comida da bolsa tem lotes, do mais velho ao mais novo: [quantidade, dias
+# que ainda faltam]. A bolsa continua sendo item -> quantidade; os lotes andam
+# junto (reconcile) e o que entra de novo começa fresco. Comer gasta do mais
+# velho; o que sai de outro jeito (jogar, perder) sai do mais novo, para jogar e
+# pegar de volta não refrescar nada.
+
+static func keeps(item: String) -> float:
+	return float(FOODS.get(item, {}).get("keeps", 0.0))
+
+
+## Acerta os lotes com o que a bolsa tem de fato.
+static func reconcile(lots: Dictionary, inv: Dictionary) -> void:
+	for item: String in lots.keys():
+		if int(inv.get(item, 0)) <= 0 or keeps(item) <= 0.0:
+			lots.erase(item)
+	for item: String in inv:
+		if keeps(item) <= 0.0:
+			continue
+		var list: Array = lots.get(item, [])
+		var have := 0
+		for lot: Array in list:
+			have += int(lot[0])
+		var want := int(inv[item])
+		if want > have:
+			list.append([want - have, keeps(item)])
+		while want < have and not list.is_empty():
+			var last: Array = list[-1]
+			var cut := mini(have - want, int(last[0]))
+			last[0] = int(last[0]) - cut
+			have -= cut
+			if int(last[0]) <= 0:
+				list.pop_back()
+		lots[item] = list
+
+
+## Tira "amount" do lote mais velho (ao comer).
+static func take_oldest(lots: Dictionary, item: String, amount := 1) -> void:
+	var list: Array = lots.get(item, [])
+	while amount > 0 and not list.is_empty():
+		var cut := mini(amount, int(list[0][0]))
+		list[0][0] = int(list[0][0]) - cut
+		amount -= cut
+		if int(list[0][0]) <= 0:
+			list.pop_front()
+
+
+## Passa o tempo nos lotes ("days" de jogo, já com o fator do frio). O que
+## estraga sai da bolsa e vira SPOILED. Devolve item -> quantidade estragada.
+static func age(lots: Dictionary, inv: Dictionary, days: float) -> Dictionary:
+	reconcile(lots, inv)
+	var spoiled := {}
+	for item: String in lots.keys():
+		var list: Array = lots[item]
+		for lot: Array in list:
+			lot[1] = float(lot[1]) - days
+		while not list.is_empty() and float(list[0][1]) <= 0.0:
+			var gone := int(list[0][0])
+			list.pop_front()
+			spoiled[item] = int(spoiled.get(item, 0)) + gone
+			inv[item] = int(inv.get(item, 0)) - gone
+			if int(inv[item]) <= 0:
+				inv.erase(item)
+			inv[SPOILED] = int(inv.get(SPOILED, 0)) + gone
+		if list.is_empty():
+			lots.erase(item)
+	return spoiled
+
+
+## Quantas de cada comida estão para passar (item -> quantidade), para a Bolsa.
+static func spoiling_soon(lots: Dictionary) -> Dictionary:
+	var out := {}
+	for item: String in lots:
+		for lot: Array in lots[item]:
+			if float(lot[1]) < SPOILING_SOON:
+				out[item] = int(out.get(item, 0)) + int(lot[0])
+	return out
+
+
+## Fator do estrago: no frio, mais devagar.
+static func spoil_factor(season: int, biome: int) -> float:
+	return COLD_SPOIL if season == 2 or COLD_BIOMES.has(biome) else 1.0
+
+
+## Esta árvore dá castanhas? (Parte delas, fixo pela casa.)
+static func nut_tree(cell: Vector2i) -> bool:
+	return float(posmod(hash(cell * 7919), 1000)) / 1000.0 < NUT_TREES
 
 
 ## Está cheio demais para comer isto? (Não se come de barriga cheia.)

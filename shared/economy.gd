@@ -22,6 +22,10 @@ const ITEM_NAMES := {
 	"cipo": ["cipó", "cipós"],
 	"fibra": ["fibra vegetal", "fibras vegetais"],
 	"resina": ["resina", "resinas"],
+	"raiz": ["raiz", "raízes"],
+	"raiz_assada": ["raiz assada", "raízes assadas"],
+	"castanha": ["castanha", "castanhas"],
+	"estragada": ["comida estragada", "comidas estragadas"],
 }
 
 ## Tamanhos, do maior para o menor, com o nome falado [singular, plural]

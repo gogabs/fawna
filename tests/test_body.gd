@@ -15,6 +15,9 @@ func _init() -> void:
 	_test_species()
 	_test_faint_loss()
 	_test_bar()
+	_test_spoil()
+	_test_raw_and_roast()
+	_test_seasonal_food()
 	if _failures == 0:
 		print("OK: todos os testes passaram")
 	quit(1 if _failures > 0 else 0)
@@ -148,3 +151,70 @@ func _test_bar() -> void:
 	_check(Body.bar_step(20.0) == 4 and Body.bar_step(0.0) == 5, "20 é a 4, vazio a 5")
 	_check(Body.bar_pan(0) == 1.0 and Body.bar_pan(5) == -1.0, "cheia à direita, vazia à esquerda")
 	_check(absf(Body.bar_pan(1) - 0.6) < 0.001, "80 soa perto da direita")
+
+
+func _test_spoil() -> void:
+	var lots := {}
+	var inv := {"frutas": 3, "pedra_grande": 1}
+	Body.reconcile(lots, inv)
+	_check(lots["frutas"] == [[3, 2.0]], "frutas novas ganham um lote fresco: %s" % str(lots))
+	_check(not lots.has("pedra_grande"), "pedra não estraga")
+	Body.age(lots, inv, 1.0)
+	inv["frutas"] = 5
+	Body.reconcile(lots, inv)
+	_check(lots["frutas"].size() == 2 and lots["frutas"][1] == [2, 2.0], "as que chegam depois são outro lote")
+	inv["frutas"] = 4
+	Body.reconcile(lots, inv)
+	_check(int(lots["frutas"][1][0]) == 1, "jogar fora tira do lote mais novo")
+	Body.take_oldest(lots, "frutas")
+	_check(int(lots["frutas"][0][0]) == 2, "comer tira do mais velho")
+	inv["frutas"] = 3
+	var spoiled := Body.age(lots, inv, 1.2)
+	_check(int(spoiled.get("frutas", 0)) == 2, "o lote velho estraga: %s" % str(spoiled))
+	_check(int(inv["frutas"]) == 1 and int(inv[Body.SPOILED]) == 2, "vira comida estragada na bolsa: %s" % str(inv))
+	_check(Body.spoiling_soon(lots).is_empty(), "o que sobrou ainda está fresco")
+	Body.age(lots, inv, 0.6)
+	_check(int(Body.spoiling_soon(lots).get("frutas", 0)) == 1, "perto do fim, está passando")
+	_check(Body.spoil_factor(2, WorldGen.Biome.BOSQUE) == 0.5 and Body.spoil_factor(0, WorldGen.Biome.BOSQUE) == 1.0, "no inverno estraga mais devagar")
+
+
+func _test_raw_and_roast() -> void:
+	var entry := {"food": 50.0, "warmth": 50.0}
+	for i in 3:
+		_check(Body.eat(entry, "raiz") == "comeu", "raiz crua %d sacia" % (i + 1))
+	_check(Body.eat(entry, "raiz") == "enjoou", "a quarta raiz crua seguida enjoa")
+	_check(entry["food"] == 55.0, "enjoo tira fome: %f" % entry["food"])
+	Body.settle_raw(entry, 1.0)
+	_check(not entry.has("raw"), "o enjoo passa com o tempo")
+	var state := WorldState.new(42)
+	state.add_player(9, "Lia")
+	var inv := state.inventory_of(9)
+	inv["raiz"] = 3
+	_check(state.roast(9, "raiz", 3, [])["reason"] == "sem_fogo", "sem fogueira não assa")
+	var near: Vector2 = state.players[9]["pos"] + Vector2(1, 0)
+	var result := state.roast(9, "raiz", 2, [near])
+	_check(result["ok"] and int(inv["raiz"]) == 1 and int(inv["raiz_assada"]) == 2, "assa 2 raízes: %s" % str(inv))
+	_check(state.roast(9, "frutas", 1, [near])["reason"] == "nao_assa", "fruta não se assa")
+
+
+func _test_seasonal_food() -> void:
+	var state := WorldState.new(42)
+	state.add_player(2, "Rui")
+	state.day_n = int(DayCycle.season_start_day(1))
+	_check(state.season() == 1, "dia do Declínio")
+	var tree := WorldGen.NO_CELL
+	var origin := WorldGen.cell_of(state.players[2]["pos"])
+	for r in range(1, 200):
+		for dx in range(-r, r + 1):
+			for dy in [-r, r]:
+				var c := origin + Vector2i(dx, dy)
+				if tree == WorldGen.NO_CELL and state.world.thing_at(c) == WorldGen.Thing.ARVORE and Body.nut_tree(c):
+					tree = c
+		if tree != WorldGen.NO_CELL:
+			break
+	_check(tree != WorldGen.NO_CELL, "acha uma árvore de castanhas")
+	state.teleport(2, WorldGen.cell_center(tree) + Vector2(1.2, 0))
+	var nut := state.collect(2, tree)
+	_check(nut["ok"] and nut["item"] == "castanha" and int(state.inventory_of(2).get("castanha", 0)) == Body.NUT_AMOUNT, "Espaço na árvore no Declínio dá castanhas: %s" % str(nut))
+	state._last_collect.clear()
+	_check(state.collect(2, tree).get("item", "") != "castanha", "a mesma árvore só dá castanhas uma vez por ano")

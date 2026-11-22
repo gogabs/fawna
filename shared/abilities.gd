@@ -20,7 +20,7 @@ const DATA := {
 }
 
 ## Ao fuçar: o que se acha e as quantidades.
-const DIG_FINDS := [["argila", 1, 2, 0.6], ["silex", 1, 1, 0.4]]
+const DIG_FINDS := [["argila", 1, 2, 0.45], ["silex", 1, 1, 0.3], ["raiz", 1, 3, 0.25]]
 const CHANNEL_MOVE_LIMIT := 0.6  # andar mais que isso cancela o que se faz parado
 
 
