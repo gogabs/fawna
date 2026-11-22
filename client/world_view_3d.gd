@@ -80,7 +80,7 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null, daytime: Node = null) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null, daytime: Node = null, horses: Node = null) -> void:
 	_world = world
 	_daytime = daytime
 	_audio = audio
@@ -122,11 +122,11 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		_obras.name = "Obras3D"
 		add_child(_obras)
 		_obras.setup(world, builds, players, my_id, _shapes, _materials)
-	if birds != null or horrors != null:
+	if birds != null or horrors != null or horses != null:
 		var wildlife := WildlifeView3D.new()
 		wildlife.name = "Bichos3D"
 		add_child(wildlife)
-		wildlife.setup(birds, horrors, _shapes)
+		wildlife.setup(birds, horrors, _shapes, horses)
 		_wildlife = wildlife
 
 

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scenes/game.gd" id="1_game"]
 [ext_resource type="Script" path="res://client/game_view.gd" id="2_view"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://scenes/horrors.gd" id="5_horrors"]
 [ext_resource type="Script" path="res://scenes/daytime.gd" id="6_daytime"]
 [ext_resource type="Script" path="res://scenes/survival.gd" id="7_survival"]
+[ext_resource type="Script" path="res://scenes/horses.gd" id="8_horses"]
 
 [node name="Game" type="Node"]
 script = ExtResource("1_game")
@@ -22,6 +23,9 @@ script = ExtResource("3_audio")
 
 [node name="Birds" type="Node" parent="."]
 script = ExtResource("4_birds")
+
+[node name="Horses" type="Node" parent="."]
+script = ExtResource("8_horses")
 
 [node name="Horrors" type="Node" parent="."]
 script = ExtResource("5_horrors")

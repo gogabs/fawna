@@ -47,6 +47,9 @@ var body := {}
 var lots := {}
 ## casa da árvore -> ano (DayCycle) em que as castanhas dela foram catadas.
 var nuts := {}
+## Cavalos domesticados (Herd.tame_to_save): quem os simula é o nó Horses; o
+## jogo copia para cá antes de salvar.
+var tame_horses := []
 ## casa -> ms da última raiz cavada ali com a enxada.
 var _rooted := {}  # casa da rama -> golpes de enxada já dados nela
 var _food_rng := RandomNumberGenerator.new()
@@ -397,6 +400,24 @@ func eat(id: int, item: String) -> Dictionary:
 	if int(inv[item]) <= 0:
 		inv.erase(item)
 	return {"ok": true, "item": item, "event": Body.eat(entry, item)}
+
+
+## Tira 1 "item" da bolsa sem comer (ex.: fruta dada a um cavalo). Comida sai
+## do lote mais velho. Devolve false se não tinha.
+func give_away(id: int, item: String) -> bool:
+	if not players.has(id):
+		return false
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return false
+	if Body.is_food(item):
+		var food_lots := lots_of(id)
+		Body.reconcile(food_lots, inv)
+		Body.take_oldest(food_lots, item)
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	return true
 
 
 ## Assa na fogueira acesa ao alcance (Body.ROASTS) até "amount" itens crus.
@@ -1279,6 +1300,7 @@ func to_save() -> Dictionary:
 		"resin": resin.to_save(),
 		"builds": builds.to_save(),
 		"ground": ground.to_save(),
+		"horses": tame_horses,
 	}
 
 
@@ -1354,6 +1376,9 @@ static func from_save(data: Dictionary) -> WorldState:
 	var dropped = data.get("ground", [])
 	if typeof(dropped) == TYPE_ARRAY:
 		state.ground.load_save(dropped)
+	var tamed = data.get("horses", [])
+	if typeof(tamed) == TYPE_ARRAY:
+		state.tame_horses = tamed
 	var built = data.get("builds", {})
 	if typeof(built) == TYPE_DICTIONARY:
 		state.builds.load_save(built)
