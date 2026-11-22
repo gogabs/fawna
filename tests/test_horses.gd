@@ -268,8 +268,8 @@ func _test_taming(world: WorldGen, spot: Vector2) -> void:
 				tamed += 1
 	_check(tamed == 1, "quieto ao lado, o cavalo vira seu")
 	_check(int(horse["herd"]) < 0 and horse["owner"] == "Lua", "domesticado tem dono e sai da manada")
-	_check(herd.rename(1, id, "Bruma") and horse["name"] == "Bruma", "o dono dá nome")
-	_check(not herd.rename(1, id, "Fulano"), "nome fora da lista é recusado")
+	_check(herd.rename(1, id, "Bramion") and horse["name"] == "Bramion", "o dono dá nome")
+	_check(not herd.rename(1, id, "Fulano"), "nome fora das listas é recusado")
 	herd.peer_keys[2] = "Sol"
 	_check(not herd.rename(2, id, "Cinza"), "só o dono dá nome")
 	# Todo mundo vai embora: o domesticado fica.
@@ -283,7 +283,10 @@ func _test_taming(world: WorldGen, spot: Vector2) -> void:
 	herd2.hear_noise(setup2[2])
 	herd2.update(int(setup2[3]) + 250, {1: setup2[2]})
 	_check(int(other["trust"]) == 0, "susto que espanta a manada perde a confiança")
-	_check(Herd.name_choices(7, 0) != Herd.name_choices(7, 1) and Herd.name_choices(7, 0).size() == Herd.NAME_CHOICES, "outros nomes na página seguinte")
+	_check(Herd.name_prefixes(7, 0) != Herd.name_prefixes(7, 1) and Herd.name_prefixes(7, 0).size() == Herd.NAME_CHOICES, "outros prefixos na página seguinte")
+	var p0: int = Herd.name_prefixes(7, 0)[0]
+	var s0: int = Herd.name_suffixes(7, p0, 0)[0]
+	_check(Herd.is_name(Herd.compose_name(p0, s0)), "prefixo e sufixo formam um nome válido")
 
 
 func _test_tame_save(world: WorldGen, spot: Vector2) -> void:
@@ -292,13 +295,13 @@ func _test_tame_save(world: WorldGen, spot: Vector2) -> void:
 	herd.peer_keys[1] = "Lua"
 	var id := herd.debug_tame(1, spot, 0)
 	_check(id >= 0, "depuração domestica o cavalo mais perto")
-	herd.rename(1, id, "Garoa")
+	herd.rename(1, id, "Velura")
 	var saved := herd.tame_to_save()
-	_check(saved.size() == 1 and saved[0]["name"] == "Garoa" and saved[0]["owner"] == "Lua", "domesticado vai para o save")
+	_check(saved.size() == 1 and saved[0]["name"] == "Velura" and saved[0]["owner"] == "Lua", "domesticado vai para o save")
 	var back := Herd.new(world)
 	back.load_tame(JSON.parse_string(JSON.stringify(saved)))
 	var found := back.nearest(Vector2(saved[0]["x"], saved[0]["y"]), 0)
-	_check(not found.is_empty() and found["name"] == "Garoa" and found["owner"] == "Lua" and int(found["herd"]) < 0, "domesticado volta do save com nome e dono")
+	_check(not found.is_empty() and found["name"] == "Velura" and found["owner"] == "Lua" and int(found["herd"]) < 0, "domesticado volta do save com nome e dono")
 
 
 func _test_recorded() -> void:

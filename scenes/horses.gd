@@ -178,7 +178,7 @@ func request_offer(horse_id: int) -> void:
 	offer_result.rpc_id(id, str(result["reason"]))
 
 
-## O dono escolhe o nome do seu cavalo (um de Herd.NAMES).
+## O dono escolhe o nome do seu cavalo (prefixo + sufixo, Herd.is_name).
 @rpc("any_peer", "call_local", "reliable")
 func request_name(horse_id: int, new_name: String) -> void:
 	if not multiplayer.is_server() or herd == null:
@@ -285,7 +285,7 @@ func horse_tamed(id: int) -> void:
 	if _horses.has(id):
 		_horses[id]["owner"] = get_parent().my_owner_key()
 		_play(id, HorseSounds.voice("manso"), SOUND_DB["manso"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
-	Speech.say("O cavalo encosta o focinho em você. Agora ele é seu. " + get_parent().open_menu("Nome do cavalo", name_items.bind(id, 0)))
+	Speech.say("O cavalo encosta o focinho em você. Agora ele é seu. " + get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0)))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -293,12 +293,23 @@ func named_result(horse_name: String) -> void:
 	Speech.say("Seu cavalo se chama %s." % horse_name)
 
 
-## A lista de nomes para o cavalo "id" (página "page"), mais "Outros nomes".
+## Primeira lista: os prefixos (página "page"), mais "Outros prefixos".
 func name_items(id: int, page: int) -> Array:
 	var items := []
-	for choice: String in Herd.name_choices(id, page):
-		items.append({"label": choice, "run": _ask_name.bind(id, choice), "close": true})
-	items.append({"label": "Outros nomes", "open": name_items.bind(id, page + 1)})
+	for prefix: int in Herd.name_prefixes(id, page):
+		items.append({"label": str(Herd.PREFIXES[prefix]), "open": _suffix_items.bind(id, prefix, 0)})
+	items.append({"label": "Outros prefixos", "open": name_items.bind(id, page + 1)})
+	return items
+
+
+## Segunda lista: o nome inteiro com cada sufixo ("Bramion"); confirmar
+## manda o nome ao servidor.
+func _suffix_items(id: int, prefix: int, page: int) -> Array:
+	var items := []
+	for suffix: int in Herd.name_suffixes(id, prefix, page):
+		var full := Herd.compose_name(prefix, suffix)
+		items.append({"label": full, "run": _ask_name.bind(id, full), "close": true})
+	items.append({"label": "Outros sufixos", "open": _suffix_items.bind(id, prefix, page + 1)})
 	return items
 
 
@@ -330,7 +341,7 @@ func interact(id: int) -> String:
 	var horse_name: String = horse["name"]
 	if owner == get_parent().my_owner_key():
 		if horse_name.is_empty():
-			return get_parent().open_menu("Nome do cavalo", name_items.bind(id, 0))
+			return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0))
 		return "%s, seu cavalo." % horse_name
 	return "%s, cavalo de %s." % [horse_name, owner] if not horse_name.is_empty() else "Cavalo de %s." % owner
 

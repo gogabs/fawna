@@ -83,14 +83,18 @@ const TAME_NEAR := 3.0  # quem ofereceu fica a até isso do cavalo, quieto
 const OWNER_NICKER := 6.0  # o domesticado relincha manso com o dono a até isso
 const NICKER_EVERY := [20.0, 50.0]
 
-## Nomes que se pode dar a um cavalo (escolhidos numa lista, como o nome dos
-## povoados). Cada cavalo oferece NAME_CHOICES por vez, sorteados.
-const NAMES := [
-	"Bruma", "Cinza", "Breu", "Garoa", "Orvalho", "Sereno", "Tormenta", "Ventania",
-	"Neblina", "Geada", "Sombra", "Fuligem", "Cardo", "Urze", "Musgo", "Líquen",
-	"Ébano", "Ônix", "Âmbar", "Ocre", "Ferrugem", "Junco", "Salgueiro", "Espinho",
-	"Trovão", "Relâmpago", "Aurora", "Crepúsculo", "Eco", "Silêncio", "Errante", "Andarilho",
-	"Lume", "Brasa", "Faísca", "Tição",
+## Nome dos cavalos: um prefixo e um sufixo que juntos formam um nome
+## inventado (Bram + ion = Bramion), escolhidos em duas listas, como o nome
+## dos povoados. Os prefixos terminam em consoante e os sufixos começam em
+## vogal, para qualquer par soar bem. Cada cavalo oferece NAME_CHOICES de cada
+## por vez, sorteados.
+const PREFIXES := [
+	"Bram", "Cin", "Gar", "Ser", "Vel", "Mor", "Tor", "Ul", "Ner", "Ast",
+	"Corv", "Fal", "Lum", "Sard", "Breg", "Ív", "Hal", "Esp", "Ruv", "Zan",
+]
+const SUFFIXES := [
+	"a", "ena", "ion", "aro", "uz", "ela", "ino", "ava", "ego", "ir",
+	"ura", "ante", "ália", "orn", "ês", "ilo", "ada", "eu",
 ]
 const NAME_CHOICES := 6
 
@@ -308,9 +312,10 @@ func _update_tame(horse: Dictionary, now_ms: int, players: Dictionary, out: Arra
 				break
 
 
-## O dono dá nome ao seu cavalo (um dos NAMES). Devolve true se mudou.
+## O dono dá nome ao seu cavalo (prefixo + sufixo, ver compose_name).
+## Devolve true se mudou.
 func rename(peer: int, horse_id: int, new_name: String) -> bool:
-	if not horses.has(horse_id) or not NAMES.has(new_name):
+	if not horses.has(horse_id) or not is_name(new_name):
 		return false
 	var horse: Dictionary = horses[horse_id]
 	if int(horse["herd"]) >= 0 or str(horse["owner"]) != str(peer_keys.get(peer, "")) or str(horse["owner"]).is_empty():
@@ -336,20 +341,40 @@ func debug_tame(peer: int, point: Vector2, now_ms: int) -> int:
 	return int(best["id"])
 
 
-## Os nomes que este cavalo oferece na página "page" (cada página, outros).
-static func name_choices(horse_id: int, page: int) -> Array:
-	var order := range(NAMES.size())
+## Os prefixos que este cavalo oferece na página "page" (índices em PREFIXES).
+static func name_prefixes(horse_id: int, page: int) -> Array:
+	return _shuffled_page(PREFIXES.size(), [horse_id, "prefixos"], page)
+
+
+## Os sufixos oferecidos junto do prefixo escolhido (índices em SUFFIXES).
+static func name_suffixes(horse_id: int, prefix: int, page: int) -> Array:
+	return _shuffled_page(SUFFIXES.size(), [horse_id, prefix, "sufixos"], page)
+
+
+static func compose_name(prefix: int, suffix: int) -> String:
+	return str(PREFIXES[prefix]) + str(SUFFIXES[suffix])
+
+
+## É um nome que se forma com as listas?
+static func is_name(text: String) -> bool:
+	for p in PREFIXES.size():
+		if text.begins_with(PREFIXES[p]) and SUFFIXES.has(text.substr(str(PREFIXES[p]).length())):
+			return true
+	return false
+
+
+static func _shuffled_page(count: int, key: Array, page: int) -> Array:
+	var order := range(count)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([horse_id, "nomes"])
-	for i in range(order.size() - 1, 0, -1):
+	rng.seed = hash(key)
+	for i in range(count - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = order[i]
 		order[i] = order[j]
 		order[j] = tmp
-	var start := (page * NAME_CHOICES) % NAMES.size()
 	var out := []
 	for k in NAME_CHOICES:
-		out.append(NAMES[order[(start + k) % NAMES.size()]])
+		out.append(order[(page * NAME_CHOICES + k) % count])
 	return out
 
 
@@ -380,7 +405,7 @@ func load_tame(saved: Array) -> void:
 			"next_graze_ms": -1, "next_snort_ms": -1, "next_neigh_ms": -1,
 			"watchers": {}, "need": 0, "trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
 			"owner": str(entry["owner"]),
-			"name": str(entry.get("name", "")) if NAMES.has(str(entry.get("name", ""))) else "",
+			"name": str(entry.get("name", "")) if is_name(str(entry.get("name", ""))) else "",
 		}
 		_next_id += 1
 		horses[horse["id"]] = horse
