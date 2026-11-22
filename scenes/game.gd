@@ -2638,7 +2638,7 @@ func _debug_items() -> Array:
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
 		{"label": "Chamar cavalos para perto", "run": _debug_ask.bind("cavalos", "")},
-		{"label": "Som dos cavalos: %s" % ("estéreo largo (trocar para HRTF)" if horses.wide else "HRTF (trocar para estéreo largo)"), "run": _debug_horse_panning},
+		{"label": "Som dos cavalos: %s" % ("estéreo largo (trocar para o normal)" if horses.wide else "normal (trocar para estéreo largo)"), "run": _debug_horse_panning},
 		{"label": "Fome e frio", "open": _debug_body_items},
 		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
@@ -2659,10 +2659,10 @@ func _debug_position() -> String:
 	return "x %.0f, y %.0f, região %d, %d" % [_pos.x, _pos.y, _region.x, _region.y]
 
 
-## Só no seu computador: troca o som dos cavalos entre estéreo largo e HRTF.
+## Só no seu computador: troca o panorama dos cavalos entre largo e o normal.
 func _debug_horse_panning() -> String:
 	horses.set_wide(not horses.wide)
-	return "Som dos cavalos: %s." % ("estéreo largo" if horses.wide else "HRTF")
+	return "Som dos cavalos: %s." % ("estéreo largo" if horses.wide else "panorama normal")
 
 
 func _debug_fps() -> String:

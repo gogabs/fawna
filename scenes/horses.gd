@@ -32,10 +32,11 @@ const HORSES_DB := -16.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
-## Panorama estéreo do Godot no lugar do HRTF (ver set_wide): bem aberto, e
-## a distância casada com a do Steam Audio (que ainda soma HRTF_GAIN_DB).
+## Força do panorama estéreo nas fontes dos cavalos (ver set_wide). Medido
+## no PC do Gabs: com 1 (padrão), um som bem do lado fica só 6 dB mais alto
+## naquele ouvido; com 2, fica só nele. Acima de 2 o resultado não é
+## confiável (3 voltou a 6 dB, 4 deu 0), então não subir sem medir.
 const WIDE_PANNING := 2.0
-const WIDE_UNIT_SIZE := 3.0  # metros
 
 var herd: Herd  # só no servidor
 var _step := 0.0
@@ -45,8 +46,8 @@ var _world: WorldGen
 var _horses := {}  # id -> { pitch, coat, from: Vector2, to: Vector2, start, duration, gait, next_step, beat, drift, next_snort, last_hoof }
 var _voices := []  # [{ player, horse, height, started }]
 var _clock := 0.0
-## Cascos e vozes com panorama largo (Godot) em vez do HRTF. O HRTF deixava
-## tudo perto do meio: nada soava bem à esquerda, mesmo estando lá.
+## Cascos e vozes com panorama largo. Pelo Steam Audio do jeito que está, o
+## lado vinha só do panorama fraco do Godot: nada soava bem à esquerda.
 var wide := true
 
 
@@ -74,15 +75,13 @@ func _make_voices() -> void:
 	if _audio == null:
 		return
 	for i in VOICES:
-		var player := _audio.make_far_voice(REACH, not wide)
+		# Sempre a mesma fonte de antes (que soa); só o panorama muda.
+		var player := _audio.make_far_voice(REACH)
 		if player == null:
 			return
 		player.name = "Cavalo_%d" % i
-		var hrtf := _audio.using_hrtf and not wide
-		if not hrtf:
-			player.panning_strength = WIDE_PANNING
-			player.unit_size = WIDE_UNIT_SIZE
-		_voices.append({"player": player, "horse": -1, "height": 0.0, "started": 0.0, "hrtf": hrtf})
+		player.panning_strength = WIDE_PANNING if wide else 1.0
+		_voices.append({"player": player, "horse": -1, "height": 0.0, "started": 0.0, "hrtf": _audio.using_hrtf})
 
 
 func forget_peer(peer: int) -> void:
