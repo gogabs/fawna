@@ -5,14 +5,13 @@ extends RefCounted
 ##
 ## Alguns recursos têm tamanhos (subtipos): cada tamanho é um item separado
 ## na bolsa, com a chave "<recurso>_<tamanho>" (ex.: "pedra_grande",
-## "lenha_pequena"). As receitas gastam essas chaves. Na fala e no menu da
+## "madeira_pequena"). As receitas gastam essas chaves. Na fala e no menu da
 ## Bolsa eles aparecem agrupados: "Pedra, 3 grandes, 1 pequena".
 
 ## Nome falado de cada item: [singular, plural]. O que cada coisa do mundo
 ## dá ao ser coletada fica em Harvest.SOURCES.
 const ITEM_NAMES := {
 	"bambu": ["bambu", "bambus"],
-	"lenha": ["lenha", "lenhas"],
 	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
@@ -29,7 +28,7 @@ const ITEM_NAMES := {
 }
 
 ## Tamanhos, do maior para o menor, com o nome falado [singular, plural]
-## (todos os recursos com tamanho são femininos: lenha, pedra).
+## (todos os recursos com tamanho são femininos: madeira, pedra).
 const SIZE_ORDER := ["grande", "media", "pequena"]
 const SIZE_NAMES := {
 	"grande": ["grande", "grandes"],
@@ -37,12 +36,27 @@ const SIZE_NAMES := {
 	"pequena": ["pequena", "pequenas"],
 }
 
-## Que tamanhos cada recurso pode ter. Lenha grande só vem das árvores; os
-## arbustos dão lenha média e pequena.
+## Que tamanhos cada recurso pode ter. Madeira grande (a tora) só vem da
+## árvore derrubada; a média e a pequena são os galhos catados no chão perto
+## das árvores. Toda madeira serve para construir e para queimar.
 const SIZES := {
-	"lenha": ["grande", "media", "pequena"],
+	"madeira": ["grande", "media", "pequena"],
 	"pedra": ["grande", "media", "pequena"],
 }
+
+
+## Chave de um item de um save antigo -> a chave de hoje. A lenha virou
+## madeira do mesmo tamanho (a lenha sem tamanho, de antes deles, vira média),
+## e a madeira de antes, que só saía das árvores, vira madeira grande. Pedra
+## sem tamanho vira média.
+static func migrate(item: String) -> String:
+	if item == "lenha" or item == "pedra":
+		return ("madeira" if item == "lenha" else "pedra") + "_media"
+	if item == "madeira":
+		return "madeira_grande"
+	if item.begins_with("lenha_"):
+		return "madeira_" + item.substr(6)
+	return item
 
 
 ## "pedra_grande" -> "pedra". Itens sem tamanho voltam como estão.
@@ -101,7 +115,7 @@ static func sizes_text(base: String, items: Dictionary, joiner := ", ") -> Strin
 	return joiner.join(parts)
 
 
-## O que se acabou de coletar: "3 pedras: 1 grande e 2 pequenas", "2 lenhas
+## O que se acabou de coletar: "3 pedras: 1 grande e 2 pequenas", "2 madeiras
 ## médias", "1 argila".
 static func collected_text(base: String, amount: int, parts: Dictionary) -> String:
 	var sizes := 0
@@ -121,7 +135,7 @@ static func collected_text(base: String, amount: int, parts: Dictionary) -> Stri
 
 
 ## Tudo o que uma coleta rendeu: o item principal (com seus tamanhos) e os
-## extras: "2 madeiras e 2 lenhas grandes".
+## extras: "3 bambus e 1 argila".
 static func haul_text(base: String, amount: int, parts: Dictionary, extras: Dictionary) -> String:
 	var main := collected_text(base, amount, parts)
 	if extras.is_empty():

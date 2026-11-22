@@ -44,9 +44,9 @@ static func apply_limit(limit: int) -> void:
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
-	"lenha_pequena": 1,
-	"lenha_media": 2,
-	"lenha_grande": 4,
+	"madeira_pequena": 1,
+	"madeira_media": 2,
+	"madeira_grande": 4,
 	"pedra_pequena": 1,
 	"pedra_media": 3,
 	"pedra_grande": 6,
@@ -116,7 +116,7 @@ const NAMES := {
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira", "faca", "tocha", "fibra", "resina"]
+const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "madeira", "madeira_grande", "madeira_media", "madeira_pequena", "frutas", "faca", "tocha", "fibra", "resina"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".

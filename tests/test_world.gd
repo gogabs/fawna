@@ -254,15 +254,15 @@ func _find_next_to(state: WorldState, thing: WorldGen.Thing) -> Array:
 func _test_collect() -> void:
 	var state := WorldState.new(42)
 	state.add_player(1, "Lua")
-	var spot := _find_next_to(state, WorldGen.Thing.ARBUSTO)
-	_check(not spot.is_empty(), "deveria haver arbusto com gravetos acessível")
+	var spot := _find_next_to(state, WorldGen.Thing.GALHOS)
+	_check(not spot.is_empty(), "deveria haver galhos caídos acessíveis")
 	state.players[1]["pos"] = WorldGen.cell_center(spot[0])
 	var far: Vector2i = spot[1] + Vector2i(5, 5)
 	_check(not state.collect(1, far)["ok"], "não deveria coletar longe")
-	_check(state.collect(1, spot[1])["ok"], "deveria coletar os gravetos ao lado")
+	_check(state.collect(1, spot[1])["ok"], "deveria coletar os galhos ao lado")
 	_check(not state.collect(1, spot[1])["ok"], "deveria haver uma pausa entre coletas")
-	_check(Bag.count(state.inventories["Lua"], "lenha") == 2, "2 lenhas na bolsa")
-	_check(int(state.inventories["Lua"].get("lenha_grande", 0)) == 0, "arbusto não dá lenha grande")
+	_check(Bag.count(state.inventories["Lua"], "madeira") == 2, "2 madeiras na bolsa")
+	_check(int(state.inventories["Lua"].get("madeira_grande", 0)) == 0, "galhos não dão madeira grande")
 
 func _test_save_roundtrip() -> void:
 	var state := WorldState.new(99)

@@ -11,19 +11,18 @@ extends RefCounted
 ## ajudar em qualquer obra.
 ##
 ## Os materiais usam os subtipos da bolsa: pedra_grande, pedra_media,
-## pedra_pequena, lenha_media, lenha_pequena (lenha_grande só vem das
-## árvores, junto com a madeira).
+## pedra_pequena, madeira_grande (a tora, só da árvore derrubada),
+## madeira_media e madeira_pequena (galhos catados no chão).
 
 ## Nome falado de cada material: [singular, plural].
 const MATERIAL_NAMES := {
 	"pedra_grande": ["pedra grande", "pedras grandes"],
 	"pedra_media": ["pedra média", "pedras médias"],
 	"pedra_pequena": ["pedra pequena", "pedras pequenas"],
-	"lenha_grande": ["lenha grande", "lenhas grandes"],
-	"lenha_media": ["lenha média", "lenhas médias"],
-	"lenha_pequena": ["lenha pequena", "lenhas pequenas"],
+	"madeira_grande": ["madeira grande", "madeiras grandes"],
+	"madeira_media": ["madeira média", "madeiras médias"],
+	"madeira_pequena": ["madeira pequena", "madeiras pequenas"],
 	"bambu": ["bambu", "bambus"],
-	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
 	"silex": ["sílex", "sílex"],
@@ -54,7 +53,7 @@ const BUILDS := {
 		"fire": true,
 		"stages": [
 			{"name": "o anel de pedras", "materials": {"pedra_media": 4, "pedra_pequena": 4}, "work": 3},
-			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3, "silex": 1}, "work": 2},
+			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 3, "silex": 1}, "work": 2},
 		],
 	},
 	"abrigo": {
@@ -65,9 +64,9 @@ const BUILDS := {
 		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 12},
 			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
+			{"name": "o telhado", "materials": {"bambu": 12, "madeira_media": 6}, "work": 12},
 		],
 	},
 	# Barracão com porta e dois móveis dentro (Builds.furniture_cells): a bancada,
@@ -82,10 +81,10 @@ const BUILDS := {
 		"size": {"min": 5, "max": 8, "default": 5, "reference": 5},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 12},
 			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
-			{"name": "a bancada e as prateleiras", "materials": {"madeira": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
+			{"name": "o telhado", "materials": {"bambu": 12, "madeira_media": 6}, "work": 12},
+			{"name": "a bancada e as prateleiras", "materials": {"madeira_grande": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
 		],
 	},
 	"armazem": {
@@ -95,9 +94,9 @@ const BUILDS := {
 		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 4, "argila": 6}, "work": 8, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 10},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 10},
 			{"name": "as paredes", "materials": {"bambu": 14, "argila": 6}, "work": 14, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 10, "lenha_media": 4}, "work": 10},
+			{"name": "o telhado", "materials": {"bambu": 10, "madeira_media": 4}, "work": 10},
 		],
 	},
 }
@@ -139,14 +138,14 @@ const WEED_HITS := 2
 ## Ferramenta de cada fase de preparo.
 const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
-## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada lenha queima e o máximo
-## que a fogueira guarda. A lenha da última etapa da fogueira já é o
+## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada madeira queima e o máximo
+## que a fogueira guarda. A madeira da última etapa da fogueira já é o
 ## primeiro combustível.
 const SPARKS_TO_LIGHT := 4
-const FUEL_SECONDS := {"lenha_pequena": 180.0, "lenha_media": 420.0, "lenha_grande": 900.0}
+const FUEL_SECONDS := {"madeira_pequena": 180.0, "madeira_media": 420.0, "madeira_grande": 900.0}
 const MAX_FUEL := 3600.0
-## Ao alimentar, gasta primeiro a lenha que queima mais.
-const FUEL_ORDER := ["lenha_grande", "lenha_media", "lenha_pequena"]
+## Ao alimentar, gasta primeiro a madeira que queima mais.
+const FUEL_ORDER := ["madeira_grande", "madeira_media", "madeira_pequena"]
 
 ## Armas: feitas na hora com o que está na bolsa. Vão para a bolsa e podem
 ## ser empunhadas (Bag.WIELDABLE).
@@ -154,7 +153,7 @@ const WEAPONS := {
 	"lanca": {"name": ["lança de bambu", "lanças de bambu"], "article": "a",
 		"materials": {"bambu": 1, "silex": 1}},
 	"clava": {"name": ["clava de pedra", "clavas de pedra"], "article": "a",
-		"materials": {"lenha_media": 1, "pedra_media": 1}},
+		"materials": {"madeira_media": 1, "pedra_media": 1}},
 }
 const WEAPON_ORDER := ["lanca", "clava"]
 
@@ -170,10 +169,10 @@ const TOOLS := {
 		]},
 	# Dois sílex: um vira a lâmina, o outro se perde nas lascas.
 	"faca": {"name": ["faca bruta de sílex", "facas brutas de sílex"], "article": "a",
-		"materials": {"silex": 2, "lenha_pequena": 1},
+		"materials": {"silex": 2, "madeira_pequena": 1},
 		"steps": [
 			{"say": "Você lasca o sílex contra a pedra, até sair um fio.", "knocks": 6, "sound": "pedra"},
-			{"say": "Você afeiçoa o cabo de lenha.", "knocks": 3, "sound": "madeira"},
+			{"say": "Você afeiçoa o cabo de madeira.", "knocks": 3, "sound": "madeira"},
 			{"say": "Você prende a lâmina no cabo.", "knocks": 2, "sound": "encaixe"},
 		]},
 }
@@ -183,9 +182,9 @@ const TOOL_ORDER := ["enxada", "faca"]
 ## oficina liga aqui). Mesmo formato das ferramentas; Crafting.recipe as acha.
 const WORKSHOP := {
 	"tocha": {"name": ["tocha", "tochas"], "article": "a",
-		"materials": {"lenha_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
+		"materials": {"madeira_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
 		"steps": [
-			{"say": "Você enrola a fibra na ponta da lenha.", "knocks": 4, "sound": "madeira"},
+			{"say": "Você enrola a fibra na ponta da madeira.", "knocks": 4, "sound": "madeira"},
 			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
 			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
 		]},

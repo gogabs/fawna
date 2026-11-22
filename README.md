@@ -87,8 +87,8 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
 O Caminheiro tem três submenus: **Locais** (os povoados com nome),
-**Construções** (só as da região em que você está) e **Recursos** (Bambu, Lenha,
-Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
+**Construções** (só as da região em que você está) e **Recursos** (Bambu, Madeira,
+Pedras, Argila, Frutas, Fibra vegetal...), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
 está: "Você chegou às pedras, atrás e à direita, 2 metros."
 
@@ -106,9 +106,9 @@ Ao passar de uma região para outra soa um sopro grave e baixinho, sem fala
 
 ### Bolsa e Equipamento
 
-A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Lenha e
+A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Madeira e
 pedra têm tamanhos (grande, média, pequena), guardados como itens separados
-(`pedra_grande`, `lenha_pequena`...) e falados juntos, só com os tamanhos que
+(`pedra_grande`, `madeira_pequena`...) e falados juntos, só com os tamanhos que
 a criatura tem: "Pedra, 3 grandes, 1 pequena". Itens sem
 ação só repetem o nome. Alguns itens têm ação: o **machado** (toda criatura
 chega ao mundo com um) tem **Empunhar**, que o tira da bolsa e o põe nas mãos.
@@ -119,14 +119,14 @@ golpeia.
 #### Carga e itens no chão
 
 A criatura aguenta uma **carga** limitada (`Bag.CAPACITY`, 24), e cada item
-pesa o seu tanto (`Bag.WEIGHTS`): fruta e lenha pequena 1, lenha média, bambu e
-argila 2, pedra média 3, pedra grande 6, machado 3. Contam a bolsa e o que está
+pesa o seu tanto (`Bag.WEIGHTS`): fruta e madeira pequena 1, madeira média, bambu e
+argila 2, pedra média 3, madeira grande 4, pedra grande 6, machado 3. Contam a bolsa e o que está
 nas mãos. Dá para levar uma fogueira inteira (23), mas um marco (25) exige mais
 de uma viagem, e quem sai carregado de pedras grandes só traz quatro. Para
 deixar mais fácil ou difícil, mude só essas duas tabelas.
 
 No fim da Bolsa há a linha "Carga, 18 de 24". Cada item abre **Jogar 1** e
-**Jogar tudo** (e Empunhar, nas armas); lenha e pedra abrem antes a lista de
+**Jogar tudo** (e Empunhar, nas armas); madeira e pedra abrem antes a lista de
 tamanhos. O que se joga cai na casa da criatura e vira um **monte no chão**, que
 qualquer criatura pode pegar com **Espaço** (leva o que couber, do mais pesado
 ao mais leve). Ao coletar com a carga quase cheia, o que não cabe também fica no
@@ -155,19 +155,20 @@ apaga o cristal.
 
 ### Fome e frio
 
-A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais depressa na Longa Escuridão. O calor só cai quando faz frio: à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas; cruzar um vau molha e esfria mais por um minuto. Uma fogueira acesa por perto devolve o calor em uns 2 minutos, e um abrigo pronto (estando dentro) aos poucos; a tocha só freia a perda. Come-se pela Bolsa. Comidas: frutas dos arbustos (na Longa Escuridão os arbustos só dão gravetos); castanhas, no Declínio, com Espaço numa parte das árvores de pé (uma vez por ano em cada); raízes, cavando com a enxada empunhada (J) na terra da pradaria, do brejo e do bosque (cada casa rende de novo depois de 10 min; no inverno a chance cai a um terço) ou fuçando. A raiz crua sacia pouco e, comida demais em seguida, enjoa; assada numa fogueira acesa ao lado (Bolsa > Raiz > Assar) sustenta e aquece. A comida estraga com o tempo (fruta em 2 dias de jogo, raiz crua em 6, assada em 3, castanha em um ano), na metade da velocidade no frio; a Bolsa diz quantas estão "passando", e a que estraga vira comida estragada. A barriga ronca e o corpo treme, mais seguido quanto pior, e uma frase avisa só quando um limiar piora (50%, 25% e vazio). Barra sonora: a cada 20 pontos que uma reserva cruza (100, 80, 60, 40, 20, 0), um toque soa no estéreo, da direita (cheia) para a esquerda (vazia); grave e amadeirado para a fome, agudo de vidro para o calor. Na tela, as barras de saciedade e calor ficam no canto de baixo à esquerda. Abaixo de 25% a criatura anda e trabalha nas obras mais devagar. Com uma reserva vazia por 1 minuto, desfalece, perde metade de cada recurso da bolsa e acorda no ponto seguro mais próximo. Os números ficam em `shared/body.gd`. Espécies: Pesado sente mais fome, Leve menos fome e mais frio, Pelagem (Troncudo e Geado) aguenta o frio, Mestre do fogo se aquece mais depressa.
+A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais depressa na Longa Escuridão. O calor só cai quando faz frio: à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas; cruzar um vau molha e esfria mais por um minuto. Uma fogueira acesa por perto devolve o calor em uns 2 minutos, e um abrigo pronto (estando dentro) aos poucos; a tocha só freia a perda. Come-se pela Bolsa. Comidas: frutas dos arbustos (na Longa Escuridão os arbustos só dão fibra); castanhas, no Declínio, com Espaço numa parte das árvores de pé (uma vez por ano em cada); raízes, cavando com a enxada empunhada (J) na terra da pradaria, do brejo e do bosque (cada casa rende de novo depois de 10 min; no inverno a chance cai a um terço) ou fuçando. A raiz crua sacia pouco e, comida demais em seguida, enjoa; assada numa fogueira acesa ao lado (Bolsa > Raiz > Assar) sustenta e aquece. A comida estraga com o tempo (fruta em 2 dias de jogo, raiz crua em 6, assada em 3, castanha em um ano), na metade da velocidade no frio; a Bolsa diz quantas estão "passando", e a que estraga vira comida estragada. A barriga ronca e o corpo treme, mais seguido quanto pior, e uma frase avisa só quando um limiar piora (50%, 25% e vazio). Barra sonora: a cada 20 pontos que uma reserva cruza (100, 80, 60, 40, 20, 0), um toque soa no estéreo, da direita (cheia) para a esquerda (vazia); grave e amadeirado para a fome, agudo de vidro para o calor. Na tela, as barras de saciedade e calor ficam no canto de baixo à esquerda. Abaixo de 25% a criatura anda e trabalha nas obras mais devagar. Com uma reserva vazia por 1 minuto, desfalece, perde metade de cada recurso da bolsa e acorda no ponto seguro mais próximo. Os números ficam em `shared/body.gd`. Espécies: Pesado sente mais fome, Leve menos fome e mais frio, Pelagem (Troncudo e Geado) aguenta o frio, Mestre do fogo se aquece mais depressa.
 
 ## Como se joga (por enquanto)
 
 1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu e as frutas têm um som baixinho e próprio, em 3D:
    - **Touceira de bambu** (no bambuzal, mais cheio na orla dele, e em moitas na beira de lagoas, riachos e charcos do brejo): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos. **O bambuzal é uma parede**: fora das trilhas todas as casas são touceiras, e ao esbarrar o jogo avisa "Bambuzal fechado" e bate os colmos. Só se passa pelas trilhas ou abrindo caminho: bambu derrubado ou recolhido deixa passar. No bambuzal o caminho aberto fica para sempre; na beira da água o bambu rebrota em 15 minutos, mas espera se houver alguém em cima.
-   - **Árvore** (bosque fechado): derrubada a machadadas (J), abre passagem para sempre; dá 2 madeiras (para as construções grandes que virão) e 2 lenhas grandes (para o fogo), itens separados. Os últimos golpes fazem o tronco ranger, e a queda se ouve de longe. Trocar de volta para "tudo lenha" é uma linha em `Harvest.SOURCES`.
-   - **Arbusto com gravetos** (na orla da mata, onde ela encosta em campo aberto, clareiras incluídas; longe dali só um ou outro): quase todo arbusto dá gravetos para lenha (2 lenhas, cada uma média ou pequena; lenha grande só virá das árvores). Não tem som próprio: soa como os outros arbustos.
+   - **Árvore** (bosque fechado): derrubada a machadadas (J), abre passagem para sempre; dá 4 madeiras grandes (as toras, para os esteios das construções e para o fogo). Os últimos golpes fazem o tronco ranger, e a queda se ouve de longe.
+   - **Galhos caídos** (no chão do bosque, ao pé das árvores): dão 2 madeiras, cada uma média ou pequena, e rebrotam em 10 minutos. Lenha e madeira são uma coisa só: toda madeira serve para construir e para queimar, e a grande queima mais.
+   - **Arbusto** (na orla da mata, onde ela encosta em campo aberto, clareiras incluídas; longe dali só um ou outro): quase todo arbusto dá 1 fibra vegetal. Não tem som próprio: soa como os outros arbustos.
    - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
    - **Pedras** soltas, pelo mundo todo e bem mais comuns na beira dos riachos e lagoas. Dão 3 pedras, cada uma grande, média ou pequena (1/3 de chance cada); na beira da água saem mais pequenas (60% pequenas, 25% médias, 15% grandes). Não têm som próprio.
-   - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.
+   - **Arbusto com frutas**, raro (uns poucos por região): em vez de fibra, dá 2 frutas. Farfalha baixinho, com gotinhas.
 
-   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, pedras em 10, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
+   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: argila em 8 minutos, galhos e pedras em 10, fibra do arbusto e bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
 2. Quem entra pela primeira vez nasce no cruzamento de trilhas do centro do mundo. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.

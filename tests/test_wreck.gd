@@ -77,7 +77,7 @@ func _test_large() -> void:
 	shed["stock"] = {"bambu": 5, "pedra_grande": 3}
 	var gone := builds.demolish(1)
 	var back: Dictionary = gone["back"]
-	# Armazém 4x4 (referência): estágios: 4 pedra_grande/6 argila; 6 madeira; 14 bambu/6 argila; 10 bambu/4 lenha.
+	# Armazém 4x4 (referência): estágios: 4 pedra_grande/6 argila; 6 madeira grande; 14 bambu/6 argila; 10 bambu/4 madeira média.
 	_check(int(back.get("pedra_grande", 0)) == 2 + 3, "metade das pedras + estoque")
 	_check(int(back.get("bambu", 0)) == 7 + 5 + 5, "metade do bambu (7 + 5) + estoque (5)")
 	var total := 0

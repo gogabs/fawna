@@ -26,7 +26,7 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO }
+enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO, GALHOS }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -105,6 +105,7 @@ const THING_NAMES := {
 	Thing.CIPO: "cipó",
 	Thing.FIBRA: "fibra vegetal",
 	Thing.SILEX: "sílex",
+	Thing.GALHOS: "galhos",
 }
 
 ## Coisas que não deixam passar.
@@ -123,7 +124,7 @@ const NO_CELL := Vector2i(-9999999, -9999999)
 ## Onde nascem os recursos coletáveis (shared/harvest.gd). Em vez de espalhados
 ## por igual, cada um tem o seu lugar, para dar para aprender onde procurar:
 ##
-## - Arbustos (gravetos para lenha ou, raros, frutas) crescem na orla: a faixa
+## - Arbustos (fibra vegetal ou, raros, frutas) crescem na orla: a faixa
 ##   em que a mata fechada (Cover.FECHADA: bosque, floresta gelada, bambuzal)
 ##   encosta em campo aberto (Cover.ABERTA: pradaria, clareira, lagoa, brejo,
 ##   deserto gelado). Mais cheios do lado de dentro da mata, e ainda alguns
@@ -221,7 +222,7 @@ const STONE_MOUNTAIN_CHANCE := 0.02  # e a montanha mais ainda
 ## Árvores: o bosque é uma mata fechada. Em cada casa fora das trilhas há essa
 ## chance de ter uma árvore; derrubar a árvore deixa a casa livre para sempre.
 const TREE_CHANCE := 0.72
-## Fração dos arbustos que dá frutas em vez de gravetos: são raros (uns poucos
+## Fração dos arbustos que dá frutas em vez de fibra: são raros (uns poucos
 ## por região).
 const FRUIT_BUSH_CHANCE := 0.07
 ## Argila: só na beira da água. Chance por casa na margem das lagoas (até
@@ -238,6 +239,8 @@ const STONE_WATER_CHANCE := 0.03
 ## floresta gelada, que é aberta entre as árvores (FROZEN_FOREST_SCALE).
 const VINE_CHANCE := 0.03
 const FIBER_CHANCE := 0.04
+## Galhos caídos: chance por casa vazia do bosque ao pé de uma árvore.
+const TWIG_CHANCE := 0.05
 const FROZEN_FOREST_SCALE := 0.2
 ## Sílex: nódulos soltos nos campos (por bioma) e, mais comuns, na beira da água.
 const FLINT_CHANCE := {Biome.PRADARIA: 0.003, Biome.DESERTO_GELADO: 0.006, Biome.MONTANHA: 0.006}
@@ -639,7 +642,23 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 		flint_chance = maxf(flint_chance, FLINT_WATER_CHANCE)
 	if flint_chance > 0.0 and cell_random(cell, "silex") < flint_chance:
 		return Thing.SILEX
+	# Galhos caídos (madeira média e pequena) no chão ao pé das árvores. Por
+	# último, também só em casas que ficariam vazias.
+	if biome == Biome.BOSQUE and cell_random(cell, "galhos") < TWIG_CHANCE and _next_to_tree(cell):
+		return Thing.GALHOS
 	return Thing.NADA
+
+
+## Alguma das 8 vizinhas tem árvore? Basta a regra da árvore (bosque e o
+## sorteio dela).
+func _next_to_tree(cell: Vector2i) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var near := cell + Vector2i(dx, dy)
+			if (dx != 0 or dy != 0) and region_biome(region_of(near)) == Biome.BOSQUE \
+					and cell_random(near, "arvore") < TREE_CHANCE:
+				return true
+	return false
 
 
 # --- Orlas: onde nascem arbustos e bambu ---------------------------------------
