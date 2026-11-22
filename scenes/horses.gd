@@ -60,8 +60,15 @@ var _gallop_next := 0.0  # próxima batida comum do galope
 var _gallop_drift := 0.0
 
 
-func start_server(world: WorldGen) -> void:
+## "tame": os domesticados salvos no mundo (Herd.tame_to_save).
+func start_server(world: WorldGen, tame: Array = []) -> void:
 	herd = Herd.new(world)
+	herd.load_tame(tame)
+
+
+## Os domesticados, para salvar (vazio fora do servidor).
+func tame_to_save() -> Array:
+	return herd.tame_to_save() if herd != null else []
 
 
 func start_client(audio: SpatialAudio, world: WorldGen) -> void:
@@ -122,8 +129,10 @@ func _server_step() -> void:
 	if game.state == null:
 		return
 	var positions := {}
+	herd.peer_keys.clear()
 	for id in game.state.players:
 		positions[id] = game.state.players[id]["pos"]
+		herd.peer_keys[id] = game.state.owner_key(id)
 	herd.darkness = game.daytime.darkness()
 	if game.horrors.horrors != null:
 		herd.hush = game.horrors.horrors.points()
@@ -132,21 +141,74 @@ func _server_step() -> void:
 		var args: Array = message[2]
 		match message[1]:
 			"appear":
-				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8])
+				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11])
 			"gone":
 				horse_gone.rpc_id(peer, args[0])
 			"move":
 				horse_moved.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6])
 			"sound":
 				horse_sounded.rpc_id(peer, args[0], args[1])
+			"named":
+				horse_named.rpc_id(peer, args[0], args[1], args[2])
+			"tamed":
+				game._dirty = true
+				horse_tamed.rpc_id(peer, args[0])
+
+
+# --- Domesticar (pedidos dos clientes, no servidor) -----------------------------
+
+## Espaço num cavalo selvagem: oferece uma fruta da bolsa.
+@rpc("any_peer", "call_local", "reliable")
+func request_offer(horse_id: int) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	if int(game.state.inventory_of(id).get("frutas", 0)) <= 0:
+		offer_result.rpc_id(id, "sem_frutas")
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var result := herd.offer(id, horse_id, Time.get_ticks_msec(), game.state.players[id]["pos"])
+	if result["ok"]:
+		game.state.give_away(id, "frutas")
+		game._dirty = true
+		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	offer_result.rpc_id(id, str(result["reason"]))
+
+
+## O dono escolhe o nome do seu cavalo (prefixo + sufixo, Herd.is_name).
+@rpc("any_peer", "call_local", "reliable")
+func request_name(horse_id: int, new_name: String) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	if herd.rename(id, horse_id, new_name):
+		game._dirty = true
+		named_result.rpc_id(id, new_name)
+
+
+## Depuração: domestica o cavalo selvagem mais perto de quem pediu.
+func debug_tame(id: int, point: Vector2) -> int:
+	if herd == null:
+		return -1
+	var game := get_parent()
+	herd.peer_keys[id] = game.state.owner_key(id)
+	# O aviso "tamed" sai no próximo passo, como no jeito normal.
+	return herd.debug_tame(id, point, Time.get_ticks_msec())
 
 
 # --- Avisos do servidor (executados nos clientes) ------------------------------
 
 @rpc("authority", "call_local", "reliable")
-func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int) -> void:
+func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int, owner: String, horse_name: String, herd_id: int) -> void:
 	_horses[id] = {
-		"pitch": pitch, "coat": coat, "from": from, "to": to,
+		"pitch": pitch, "coat": coat, "from": from, "to": to, "owner": owner, "name": horse_name, "herd": herd_id,
 		"start": _clock + delay - elapsed, "duration": duration, "gait": gait,
 		"next_step": _clock + randf() * 0.5, "beat": 0, "drift": 0.0,
 		"next_snort": _clock + _snort_gap(gait) * 0.5, "last_hoof": null,
@@ -184,6 +246,152 @@ func horse_sounded(id: int, kind: int) -> void:
 	if not Net.auto_commands.is_empty():
 		print("[teste] cavalo: %s a %.0f casas" % [sound_name, horse_point(id).distance_to(get_parent()._pos)])
 	_play(id, HorseSounds.voice(sound_name), SOUND_DB[sound_name], float(_horses[id]["pitch"]), HEAD_HEIGHT)
+
+
+@rpc("authority", "call_local", "reliable")
+func horse_named(id: int, owner: String, horse_name: String) -> void:
+	if _horses.has(id):
+		_horses[id]["owner"] = owner
+		_horses[id]["name"] = horse_name
+		_horses[id]["herd"] = -1
+
+
+## Respostas do servidor ao Espaço num cavalo (ver Herd.offer).
+const OFFER_TEXT := {
+	"comeu": "Ele come a fruta da sua mão.",
+	"pronto": "Ele come e fica junto de você. Fique quieto.",
+	"desconfia": "Ele ainda desconfia. Espere parado perto da manada.",
+	"longe": "Chegue mais perto do cavalo.",
+	"mastigando": "Ele ainda está mastigando.",
+	"sem_frutas": "Você não tem frutas.",
+	"domado": "Esse cavalo já tem dono.",
+	"sumiu": "",
+}
+
+
+@rpc("authority", "call_local", "reliable")
+func offer_result(reason: String) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] oferta: %s" % reason)
+	var text: String = OFFER_TEXT.get(reason, "")
+	if not text.is_empty():
+		Speech.say(text)
+
+
+## O cavalo virou seu: avisa e abre a escolha do nome.
+@rpc("authority", "call_local", "reliable")
+func horse_tamed(id: int) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] cavalo domesticado: %d" % id)
+	if _horses.has(id):
+		_horses[id]["owner"] = get_parent().my_owner_key()
+		_play(id, HorseSounds.voice("manso"), SOUND_DB["manso"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
+	Speech.say("O cavalo encosta o focinho em você. Agora ele é seu. " + get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0)))
+
+
+@rpc("authority", "call_local", "reliable")
+func named_result(horse_name: String) -> void:
+	Speech.say("Seu cavalo se chama %s." % horse_name)
+
+
+## Primeira lista: os prefixos (página "page"), mais "Outros prefixos".
+func name_items(id: int, page: int) -> Array:
+	var items := []
+	for prefix: int in Herd.name_prefixes(id, page):
+		items.append({"label": str(Herd.PREFIXES[prefix]), "open": _suffix_items.bind(id, prefix, 0)})
+	items.append({"label": "Outros prefixos", "open": name_items.bind(id, page + 1)})
+	return items
+
+
+## Segunda lista: o nome inteiro com cada sufixo ("Bramion"); confirmar
+## manda o nome ao servidor.
+func _suffix_items(id: int, prefix: int, page: int) -> Array:
+	var items := []
+	for suffix: int in Herd.name_suffixes(id, prefix, page):
+		var full := Herd.compose_name(prefix, suffix)
+		items.append({"label": full, "run": _ask_name.bind(id, full), "close": true})
+	items.append({"label": "Outros sufixos", "open": _suffix_items.bind(id, prefix, page + 1)})
+	return items
+
+
+func _ask_name(id: int, choice: String) -> String:
+	request_name.rpc_id(1, id, choice)
+	return ""
+
+
+## O cavalo ao alcance do Espaço (Herd.OFFER_REACH), o mais perto, ou -1.
+func reach_target(me: Vector2) -> int:
+	var best := -1
+	var best_d := Herd.OFFER_REACH
+	for id: int in _horses:
+		var d := horse_point(id).distance_to(me)
+		if d <= best_d:
+			best_d = d
+			best = id
+	return best
+
+
+## Espaço num cavalo: selvagem, oferece fruta; seu e sem nome, escolhe o nome;
+## seu, diz o nome; de outro, diz de quem é.
+func interact(id: int) -> String:
+	var horse: Dictionary = _horses[id]
+	var owner: String = horse["owner"]
+	if owner.is_empty():
+		request_offer.rpc_id(1, id)
+		return ""
+	var horse_name: String = horse["name"]
+	if owner == get_parent().my_owner_key():
+		if horse_name.is_empty():
+			return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0))
+		return "%s, seu cavalo." % horse_name
+	return "%s, cavalo de %s." % [horse_name, owner] if not horse_name.is_empty() else "Cavalo de %s." % owner
+
+
+## Para o radar (Tab): [distância, rótulo, deslocamento] dos cavalos a até
+## RADAR_REACH casas. Selvagens, uma linha por manada, no centro dela;
+## domesticados, um por um, com nome.
+const RADAR_REACH := 32.0
+
+
+func radar_entries(me: Vector2) -> Array:
+	var out := []
+	var wild := []
+	var mine: String = get_parent().my_owner_key()
+	for id: int in _horses:
+		var at := horse_point(id)
+		if at.distance_to(me) > RADAR_REACH:
+			continue
+		var horse: Dictionary = _horses[id]
+		var owner: String = horse["owner"]
+		if owner.is_empty():
+			wild.append(id)
+			continue
+		var horse_name: String = horse["name"] if not str(horse["name"]).is_empty() else "Cavalo sem nome"
+		var label := "%s, seu cavalo" % horse_name if owner == mine else "%s, cavalo de %s" % [horse_name, owner]
+		out.append([at.distance_to(me), label, at - me])
+	var by_herd := {}
+	for id: int in wild:
+		var herd_id := int(_horses[id].get("herd", id))
+		if not by_herd.has(herd_id):
+			by_herd[herd_id] = []
+		by_herd[herd_id].append(id)
+	for group: Array in by_herd.values():
+		var center := Vector2.ZERO
+		var fleeing := false
+		for id: int in group:
+			center += horse_point(id)
+			fleeing = fleeing or horse_gait(id) == Herd.Gait.GALLOP
+		center /= group.size()
+		var label := "Cavalo selvagem" if group.size() == 1 else "Manada de %d cavalos" % group.size()
+		if fleeing:
+			label += ", fugindo"
+		out.append([center.distance_to(me), label, center - me])
+	return out
+
+
+## Distância (casas) até o cavalo ao alcance, ou INF.
+func reach_distance(id: int, me: Vector2) -> float:
+	return INF if id < 0 or not _horses.has(id) else horse_point(id).distance_to(me)
 
 
 # --- Posição e som -------------------------------------------------------------
