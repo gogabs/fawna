@@ -241,6 +241,16 @@ func chunk_count() -> int:
 	return _chunks.size()
 
 
+## Aplica já as opções de vídeo (sombras, suavização de bordas e brilho),
+## para o menu do jogo mudá-las sem sair do mundo.
+func apply_quality() -> void:
+	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
+	if _env != null:
+		_env.glow_enabled = Net.glow
+	if _sun != null:
+		_sun.shadow_enabled = Net.shadows
+
+
 func _setup_environment() -> void:
 	var env := Environment.new()
 	_sky_material = WorldTextures.sky_material()
