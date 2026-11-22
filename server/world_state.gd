@@ -829,8 +829,8 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	# A rama não se arranca com a mão: a raiz sai com a enxada.
 	if thing == WorldGen.Thing.RAMA:
 		return {"ok": false, "reason": "cavar"}
-	# Na Longa Escuridão as plantas de fruta não dão nada.
-	if season() == 2 and harvest.is_available(cell) and Plants.is_fruit(Plants.species_at(world, cell)):
+	# Na Longa Escuridão frutas, milho e cogumelos não dão nada.
+	if season() == 2 and harvest.is_available(cell) and Plants.is_seasonal(Plants.species_at(world, cell)):
 		return {"ok": false, "reason": "sem_frutas"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_collect.get(id, -COLLECT_COOLDOWN_MS)) < COLLECT_COOLDOWN_MS:

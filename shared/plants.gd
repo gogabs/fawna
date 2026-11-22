@@ -26,6 +26,7 @@ const SPECIES := {
 	"batata": {"name": ["pé de batata", "pés de batata"], "category": "raiz", "root": "batata"},
 	"mandioca": {"name": ["pé de mandioca", "pés de mandioca"], "category": "raiz", "root": "mandioca"},
 	"cara": {"name": ["pé de cará", "pés de cará"], "category": "raiz", "root": "cara"},
+	"cenoura": {"name": ["pé de cenoura", "pés de cenoura"], "category": "raiz", "root": "cenoura"},
 	# Trepadeiras: nas matas fechadas.
 	"cipo": {"name": ["cipó-de-amarra", "cipós-de-amarra"], "category": "trepadeira", "item": "cipo"},
 	"maracuja": {"name": ["maracujá-do-mato", "maracujás-do-mato"], "category": "trepadeira", "fruit": "maracuja"},
@@ -33,16 +34,22 @@ const SPECIES := {
 	"castanheira": {"name": ["castanheira", "castanheiras"], "category": "arvore"},
 	# Capim: por enquanto só o de fibra, na mata fechada e na beira da água.
 	"capim": {"name": ["capim-de-fibra", "capins-de-fibra"], "category": "capim", "item": "fibra"},
+	# Capim de milho: no campo, longe da água; volta devagar.
+	"milho": {"name": ["pé de milho", "pés de milho"], "category": "capim", "item": "milho", "regrow": 1800.0, "seasonal": true},
+	# Cogumelos comuns, todos de comer (os sósias venenosos virão depois).
+	"pardo": {"name": ["chapéu-pardo", "chapéus-pardos"], "category": "cogumelo", "mushroom": "pardo"},
+	"orelha": {"name": ["orelha-de-pau", "orelhas-de-pau"], "category": "cogumelo", "mushroom": "orelha"},
+	"neve": {"name": ["cogumelo-da-neve", "cogumelos-da-neve"], "category": "cogumelo", "mushroom": "neve"},
 }
 
 ## Nome falado de cada categoria, como todos a veem (o mesmo de
 ## WorldGen.THING_NAMES), para "Pé de batata (rama)".
-const CATEGORY_NAMES := {"arbusto": "arbusto", "raiz": "rama", "trepadeira": "trepadeira", "arvore": "árvore", "capim": "capim"}
+const CATEGORY_NAMES := {"arbusto": "arbusto", "raiz": "rama", "trepadeira": "trepadeira", "arvore": "árvore", "capim": "capim", "cogumelo": "cogumelo"}
 ## Espécies de nome masculino ("o pé de amora"); o resto é feminino.
-const MASCULINE := ["amora", "baga", "batata", "mandioca", "cara", "cipo", "maracuja", "sisal", "capim"]
+const MASCULINE := ["amora", "baga", "batata", "mandioca", "cara", "cenoura", "cipo", "maracuja", "sisal", "capim", "milho", "pardo", "neve"]
 
 ## Ordem em que as espécies aparecem no Caminheiro do Forrageador.
-const ORDER := ["amora", "pitanga", "baga", "maracuja", "embira", "sisal", "capim", "batata", "mandioca", "cara", "cipo", "castanheira"]
+const ORDER := ["amora", "pitanga", "baga", "maracuja", "embira", "sisal", "capim", "milho", "batata", "cenoura", "mandioca", "cara", "pardo", "orelha", "neve", "cipo", "castanheira"]
 
 ## Fração das trepadeiras que são de maracujá (o resto é cipó). Nas terras
 ## geladas não há maracujá.
@@ -50,6 +57,11 @@ const PASSION_SHARE := 0.3
 ## Fração dos pés de fruta que são pitangueiras (o resto, amora). Nas terras
 ## geladas, só baga-de-cinza.
 const PITANGA_SHARE := 0.45
+## Fração das ramas do campo que são de cenoura (o resto, batata).
+const CARROT_SHARE := 0.4
+## Fração dos cogumelos do bosque que são orelha-de-pau (o resto, chapéu-pardo).
+## Na floresta gelada, cogumelo-da-neve; no brejo, orelha-de-pau.
+const EAR_SHARE := 0.4
 
 
 ## A espécie da planta desta casa ("" se não é planta, ou é uma árvore comum).
@@ -64,13 +76,21 @@ static func species_at(world: WorldGen, cell: Vector2i) -> String:
 		WorldGen.Thing.ARBUSTO:
 			return "sisal" if biome == WorldGen.Biome.BREJO or world.is_waterside(cell) else "embira"
 		WorldGen.Thing.RAMA:
+			if biome == WorldGen.Biome.PRADARIA and world.cell_random(cell, "especie") < CARROT_SHARE:
+				return "cenoura"
 			return root_species(biome)
+		WorldGen.Thing.COGUMELO:
+			if biome == WorldGen.Biome.FLORESTA_GELADA:
+				return "neve"
+			if biome == WorldGen.Biome.BREJO or world.cell_random(cell, "especie") < EAR_SHARE:
+				return "orelha"
+			return "pardo"
 		WorldGen.Thing.CIPO:
 			return "maracuja" if not cold and world.cell_random(cell, "especie") < PASSION_SHARE else "cipo"
 		WorldGen.Thing.ARVORE:
 			return "castanheira" if Body.nut_tree(cell) else ""
 		WorldGen.Thing.FIBRA:
-			return "capim"
+			return "milho" if biome == WorldGen.Biome.PRADARIA and not world.is_waterside(cell) else "capim"
 	return ""
 
 
@@ -95,6 +115,18 @@ static func is_fruit(species: String) -> bool:
 	return SPECIES.get(species, {}).has("fruit")
 
 
+## Some na Longa Escuridão (frutas, milho e cogumelos não dão nada)?
+static func is_seasonal(species: String) -> bool:
+	var info: Dictionary = SPECIES.get(species, {})
+	return info.has("fruit") or info.has("mushroom") or bool(info.get("seasonal", false))
+
+
+## Segundos até voltar depois de colhida, se a espécie tem tempo próprio (0: o
+## de Harvest.SOURCES).
+static func regrow_of(species: String) -> float:
+	return float(SPECIES.get(species, {}).get("regrow", 0.0))
+
+
 ## O que a planta desta casa dá ao ser colhida, no formato de Harvest.take:
 ## {item, parts}. Vazio se a espécie não muda nada do que Harvest.SOURCES diz.
 static func yield_at(world: WorldGen, cell: Vector2i, amount: int) -> Dictionary:
@@ -106,6 +138,8 @@ static func yield_at(world: WorldGen, cell: Vector2i, amount: int) -> Dictionary
 		return {"item": "frutas", "parts": {Economy.sized("frutas", str(info["fruit"])): amount}}
 	if info.has("root"):
 		return {"item": "raiz", "parts": {root_item(species): amount}}
+	if info.has("mushroom"):
+		return {"item": "cogumelo", "parts": {Economy.sized("cogumelo", str(info["mushroom"])): amount}}
 	return {"item": str(info["item"]), "parts": {}}
 
 

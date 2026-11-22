@@ -80,6 +80,9 @@ const CATEGORIES := {
 	"frutas": "comida",
 	"raiz": "comida",
 	"raiz_assada": "comida",
+	"cogumelo": "comida",
+	"milho": "comida",
+	"milho_assado": "comida",
 	"castanha": "comida",
 	"estragada": "comida",
 }

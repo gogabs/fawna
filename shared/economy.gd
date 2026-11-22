@@ -25,6 +25,9 @@ const ITEM_NAMES := {
 	"raiz_assada": ["raiz assada", "raízes assadas"],
 	"castanha": ["castanha", "castanhas"],
 	"estragada": ["comida estragada", "comidas estragadas"],
+	"cogumelo": ["cogumelo", "cogumelos"],
+	"milho": ["espiga de milho", "espigas de milho"],
+	"milho_assado": ["milho assado", "milhos assados"],
 }
 
 ## Tamanhos, do maior para o menor, com o nome falado [singular, plural]
@@ -50,7 +53,8 @@ const SIZES := {
 ## O que cada planta dá fica em Plants.
 const KINDS := {
 	"frutas": ["amora", "pitanga", "baga", "maracuja"],
-	"raiz": ["batata", "mandioca", "cara"],
+	"raiz": ["batata", "mandioca", "cara", "cenoura"],
+	"cogumelo": ["pardo", "orelha", "neve"],
 }
 ## Nome falado de cada espécie [singular, plural] e se é feminino.
 const KIND_NAMES := {
@@ -61,6 +65,10 @@ const KIND_NAMES := {
 	"batata": ["batata", "batatas", true],
 	"mandioca": ["mandioca", "mandiocas", true],
 	"cara": ["cará", "carás", false],
+	"cenoura": ["cenoura", "cenouras", true],
+	"pardo": ["chapéu-pardo", "chapéus-pardos", false],
+	"orelha": ["orelha-de-pau", "orelhas-de-pau", true],
+	"neve": ["cogumelo-da-neve", "cogumelos-da-neve", false],
 }
 
 

@@ -26,7 +26,7 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO, GALHOS, RAMA }
+enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO, GALHOS, RAMA, COGUMELO }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -107,6 +107,7 @@ const THING_NAMES := {
 	Thing.SILEX: "sílex",
 	Thing.GALHOS: "galhos",
 	Thing.RAMA: "rama",
+	Thing.COGUMELO: "cogumelo",
 }
 
 ## Coisas que não deixam passar.
@@ -232,6 +233,15 @@ const WATER_FIBER_CHANCE := 0.02
 ## bosque. A enxada só tira raiz de uma rama.
 const ROOT_PLANT_BIOMES := [Biome.PRADARIA, Biome.BREJO, Biome.BOSQUE]
 const ROOT_PLANT_CHANCE := 0.006
+## Cogumelos (Plants): no chão das matas fechadas e, menos, no brejo. No
+## bosque as árvores tomam quase todo o chão, então a chance por casa vazia é
+## maior que na floresta gelada.
+const MUSHROOM_CHANCE := 0.03
+const MUSHROOM_FROZEN_CHANCE := 0.006
+const MUSHROOM_MARSH_CHANCE := 0.004
+## Capim de milho (FIBRA no campo; Plants decide a espécie pelo lugar): uma ou
+## outra casa vazia da pradaria, longe da água.
+const CORN_CHANCE := 0.004
 ## Argila: só na beira da água. Chance por casa na margem das lagoas (até
 ## CLAY_BANK casas além da água) e na beira dos riachos.
 const CLAY_BANK := 2.5
@@ -663,6 +673,15 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 			return Thing.FIBRA
 	if ROOT_PLANT_BIOMES.has(biome) and cell_random(cell, "rama") < ROOT_PLANT_CHANCE:
 		return Thing.RAMA
+	var mushroom := 0.0
+	if cover_of(region) == Cover.FECHADA:
+		mushroom = MUSHROOM_CHANCE if biome == Biome.BOSQUE else MUSHROOM_FROZEN_CHANCE
+	elif biome == Biome.BREJO:
+		mushroom = MUSHROOM_MARSH_CHANCE
+	if mushroom > 0.0 and cell_random(cell, "cogumelo") < mushroom:
+		return Thing.COGUMELO
+	if biome == Biome.PRADARIA and cell_random(cell, "milho") < CORN_CHANCE:
+		return Thing.FIBRA
 	return Thing.NADA
 
 
