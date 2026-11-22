@@ -32,6 +32,10 @@ const HORSES_DB := -16.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
+## Panorama estéreo do Godot no lugar do HRTF (ver set_wide): bem aberto, e
+## a distância casada com a do Steam Audio (que ainda soma HRTF_GAIN_DB).
+const WIDE_PANNING := 2.0
+const WIDE_UNIT_SIZE := 3.0  # metros
 
 var herd: Herd  # só no servidor
 var _step := 0.0
@@ -41,6 +45,9 @@ var _world: WorldGen
 var _horses := {}  # id -> { pitch, coat, from: Vector2, to: Vector2, start, duration, gait, next_step, beat, drift, next_snort, last_hoof }
 var _voices := []  # [{ player, horse, height, started }]
 var _clock := 0.0
+## Cascos e vozes com panorama largo (Godot) em vez do HRTF. O HRTF deixava
+## tudo perto do meio: nada soava bem à esquerda, mesmo estando lá.
+var wide := true
 
 
 func start_server(world: WorldGen) -> void:
@@ -50,14 +57,32 @@ func start_server(world: WorldGen) -> void:
 func start_client(audio: SpatialAudio, world: WorldGen) -> void:
 	_audio = audio
 	_world = world
-	if not _voices.is_empty():
+	if _voices.is_empty():
+		_make_voices()
+
+
+## Troca entre o panorama largo e o HRTF (depuração, para comparar).
+func set_wide(on: bool) -> void:
+	wide = on
+	for voice in _voices:
+		(voice["player"] as Node).queue_free()
+	_voices.clear()
+	_make_voices()
+
+
+func _make_voices() -> void:
+	if _audio == null:
 		return
 	for i in VOICES:
-		var player := audio.make_far_voice(REACH)
+		var player := _audio.make_far_voice(REACH, not wide)
 		if player == null:
 			return
 		player.name = "Cavalo_%d" % i
-		_voices.append({"player": player, "horse": -1, "height": 0.0, "started": 0.0})
+		var hrtf := _audio.using_hrtf and not wide
+		if not hrtf:
+			player.panning_strength = WIDE_PANNING
+			player.unit_size = WIDE_UNIT_SIZE
+		_voices.append({"player": player, "horse": -1, "height": 0.0, "started": 0.0, "hrtf": hrtf})
 
 
 func forget_peer(peer: int) -> void:
@@ -267,7 +292,7 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float, height:
 	voice["height"] = height
 	player.stop()
 	player.stream = stream
-	player.volume_db = volume_db + HORSES_DB + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
+	player.volume_db = volume_db + HORSES_DB + (SpatialAudio.HRTF_GAIN_DB if voice["hrtf"] else 0.0)
 	player.pitch_scale = pitch
 	player.position = _to_3d(horse_point(id), height)
 	player.play()
