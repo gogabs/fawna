@@ -3,7 +3,7 @@ extends SceneTree
 ##   godot --headless --path . --script res://tools/contar_recursos.gd -- 24
 
 const NAMES := {
-	WorldGen.Thing.BAMBU: "Bambu", WorldGen.Thing.ARBUSTO: "Lenha(arbusto)", WorldGen.Thing.ARVORE: "Madeira(árvore)",
+	WorldGen.Thing.BAMBU: "Bambu", WorldGen.Thing.ARBUSTO: "Fibra(arbusto)", WorldGen.Thing.ARVORE: "Madeira(árvore)",
 	WorldGen.Thing.PEDRAS: "Pedras", WorldGen.Thing.ARGILA: "Argila", WorldGen.Thing.ARBUSTO_FRUTAS: "Frutas",
 	WorldGen.Thing.CIPO: "Cipó", WorldGen.Thing.FIBRA: "Fibra", WorldGen.Thing.SILEX: "Sílex", WorldGen.Thing.GALHOS: "Galhos",
 }
