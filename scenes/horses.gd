@@ -25,10 +25,11 @@ const GALLOP_TEMPO := [0.93, 1.08]
 const WALK_SNORTS := [4.0, 8.0]
 const GALLOP_SNORTS := [2.5, 5.0]
 ## Volume de cada som. Tudo bem baixinho, como o resto do mundo. Os cascos
-## gravados estão 14 dB abaixo nos arquivos (para caber o pico sem distorcer);
-## com +4 dB ficam na mesma proporção das bufadas que o Gabs aprovou.
-const HORSES_DB := -10.0
-const SOUND_DB := {"casco": 4.0, "galope": 4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
+## gravados estão 14 dB abaixo nos arquivos (para caber o pico sem distorcer).
+## No jogo, o Gabs achou tudo alto, o galope principalmente: o geral desceu
+## 6 dB, os cascos mais 4 e o galope mais 8.
+const HORSES_DB := -16.0
+const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
 
