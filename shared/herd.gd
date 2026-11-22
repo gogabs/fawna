@@ -807,16 +807,16 @@ func _sync_watchers(now_ms: int, players: Dictionary, out: Array) -> void:
 
 
 ## [id, tom, pelagem, de, para, segundos até sair, duração, quanto já passou,
-## andadura, dono, nome]. Parado, "de" e "para" são o mesmo ponto; selvagem,
+## andadura, dono, nome, manada (-1 se domesticado)]. Parado, "de" e "para" são o mesmo ponto; selvagem,
 ## dono e nome são vazios.
 func appear_args(horse: Dictionary, now_ms: int) -> Array:
 	var gait := int(horse["gait"])
 	if gait == Gait.STAND or now_ms >= int(horse["end_ms"]):
-		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND, horse["owner"], horse["name"]]
+		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND, horse["owner"], horse["name"], horse["herd"]]
 	var duration := (int(horse["end_ms"]) - int(horse["start_ms"])) / 1000.0
 	var delay := maxf((int(horse["start_ms"]) - now_ms) / 1000.0, 0.0)
 	var elapsed := maxf((now_ms - int(horse["start_ms"])) / 1000.0, 0.0)
-	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait, horse["owner"], horse["name"]]
+	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait, horse["owner"], horse["name"], horse["herd"]]
 
 
 static func _chunk_of(point: Vector2) -> Vector2i:

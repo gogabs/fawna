@@ -141,7 +141,7 @@ func _server_step() -> void:
 		var args: Array = message[2]
 		match message[1]:
 			"appear":
-				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10])
+				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11])
 			"gone":
 				horse_gone.rpc_id(peer, args[0])
 			"move":
@@ -206,9 +206,9 @@ func debug_tame(id: int, point: Vector2) -> int:
 # --- Avisos do servidor (executados nos clientes) ------------------------------
 
 @rpc("authority", "call_local", "reliable")
-func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int, owner: String, horse_name: String) -> void:
+func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int, owner: String, horse_name: String, herd_id: int) -> void:
 	_horses[id] = {
-		"pitch": pitch, "coat": coat, "from": from, "to": to, "owner": owner, "name": horse_name,
+		"pitch": pitch, "coat": coat, "from": from, "to": to, "owner": owner, "name": horse_name, "herd": herd_id,
 		"start": _clock + delay - elapsed, "duration": duration, "gait": gait,
 		"next_step": _clock + randf() * 0.5, "beat": 0, "drift": 0.0,
 		"next_snort": _clock + _snort_gap(gait) * 0.5, "last_hoof": null,
@@ -253,6 +253,7 @@ func horse_named(id: int, owner: String, horse_name: String) -> void:
 	if _horses.has(id):
 		_horses[id]["owner"] = owner
 		_horses[id]["name"] = horse_name
+		_horses[id]["herd"] = -1
 
 
 ## Respostas do servidor ao Espaço num cavalo (ver Herd.offer).
@@ -344,6 +345,48 @@ func interact(id: int) -> String:
 			return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0))
 		return "%s, seu cavalo." % horse_name
 	return "%s, cavalo de %s." % [horse_name, owner] if not horse_name.is_empty() else "Cavalo de %s." % owner
+
+
+## Para o radar (Tab): [distância, rótulo, deslocamento] dos cavalos a até
+## RADAR_REACH casas. Selvagens, uma linha por manada, no centro dela;
+## domesticados, um por um, com nome.
+const RADAR_REACH := 32.0
+
+
+func radar_entries(me: Vector2) -> Array:
+	var out := []
+	var wild := []
+	var mine: String = get_parent().my_owner_key()
+	for id: int in _horses:
+		var at := horse_point(id)
+		if at.distance_to(me) > RADAR_REACH:
+			continue
+		var horse: Dictionary = _horses[id]
+		var owner: String = horse["owner"]
+		if owner.is_empty():
+			wild.append(id)
+			continue
+		var horse_name: String = horse["name"] if not str(horse["name"]).is_empty() else "Cavalo sem nome"
+		var label := "%s, seu cavalo" % horse_name if owner == mine else "%s, cavalo de %s" % [horse_name, owner]
+		out.append([at.distance_to(me), label, at - me])
+	var by_herd := {}
+	for id: int in wild:
+		var herd_id := int(_horses[id].get("herd", id))
+		if not by_herd.has(herd_id):
+			by_herd[herd_id] = []
+		by_herd[herd_id].append(id)
+	for group: Array in by_herd.values():
+		var center := Vector2.ZERO
+		var fleeing := false
+		for id: int in group:
+			center += horse_point(id)
+			fleeing = fleeing or horse_gait(id) == Herd.Gait.GALLOP
+		center /= group.size()
+		var label := "Cavalo selvagem" if group.size() == 1 else "Manada de %d cavalos" % group.size()
+		if fleeing:
+			label += ", fugindo"
+		out.append([center.distance_to(me), label, center - me])
+	return out
 
 
 ## Distância (casas) até o cavalo ao alcance, ou INF.
