@@ -20,6 +20,7 @@ const STEP_REACH := 22.0  # casas: mais longe que isso, os cascos não tocam
 const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
 ## Trote (só montado): duas batidas por passada, diagonais, bem marcadas.
 const TROT_GAPS := [0.29, 0.31]
+const RIDE_GRACE := 0.35  # segundos
 const WALK_TEMPO := [0.9, 1.1]
 const GALLOP_STRIDE := 0.55  # era 0,42: as passadas emendavam umas nas outras
 ## Galopando, a manada vai no mesmo compasso (cada cavalo até GALLOP_SPREAD
@@ -39,10 +40,18 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## 6 dB, os cascos mais 4 e o galope mais 8.
 const HORSES_DB := -16.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
-## O cavalo em que você monta soa embaixo de você, sem posição no espaço, perto
-## do volume dos seus passos (game.gd FOOTSTEP_DB) mais isto. Os arquivos de
-## galope são mais fortes que os de passo.
-const RIDDEN_DB := {"casco": -1.0, "trote": 1.0, "galope": -5.0}
+## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
+## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
+## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
+## arquivos, contra HOOF_PEAK_DB) e somado a RIDDEN_DB: o Gabs quis trote e
+## galope um pouco acima dos passos.
+const RIDDEN_DB := {"casco": 0.0, "trote": 3.0, "galope": 3.0}
+const RIDDEN_VOICES := 3
+const STEP_PEAK_DB := -11.5
+const HOOF_PEAK_DB := {
+	"casco": {"grama": -17.9, "terra": -9.3, "neve": -14.9, "madeira": -8.2},
+	"galope": {"grama": -6.5, "terra": -5.2, "neve": -11.9, "madeira": -3.6},
+}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
 ## Força do panorama estéreo nas fontes dos cavalos (ver set_wide). Medido
@@ -65,6 +74,7 @@ var wide := true
 var _gallop_next := 0.0  # próxima batida comum do galope
 var _gallop_drift := 0.0
 var _riding := -1  # o cavalo em que estou montado (riding_mine)
+var _ridden_voices := []  # AudioStreamPlayer dos cascos do cavalo montado
 
 
 ## "tame": os domesticados salvos no mundo (Herd.tame_to_save).
@@ -280,13 +290,15 @@ func horse_moved(id: int, from: Vector2, to: Vector2, delay: float, duration: fl
 		return
 	var horse: Dictionary = _horses[id]
 	# Montado, os trechos chegam um atrás do outro: no mesmo andar, o ritmo
-	# dos cascos continua em vez de recomeçar a cada trecho.
-	var going_on := gait != Herd.Gait.STAND and horse_gait(id) == gait
+	# dos cascos continua em vez de recomeçar a cada trecho. O meu cavalo
+	# segue o meu andar (horse_gait), não os avisos.
+	var going_on := id == _riding or (gait != Herd.Gait.STAND and horse_gait(id) == gait)
 	horse["from"] = from
 	horse["to"] = to
 	horse["start"] = _clock + delay - elapsed
 	horse["duration"] = duration
-	horse["gait"] = gait
+	if id != _riding:
+		horse["gait"] = gait
 	if going_on:
 		return
 	horse["next_step"] = INF if gait == Herd.Gait.GALLOP else maxf(float(horse["start"]), _clock)
@@ -532,9 +544,17 @@ func horse_point(id: int) -> Vector2:
 func horse_gait(id: int) -> int:
 	if not _horses.has(id):
 		return Herd.Gait.STAND
+	if id == _riding:
+		# Montado, o andar vem do próprio movimento, sem esperar o servidor:
+		# um aviso atrasado (troca de região, rede) fazia os cascos travarem.
+		return get_parent().ride_gait()
 	var horse: Dictionary = _horses[id]
-	var x := (_clock - float(horse["start"])) / maxf(0.001, float(horse["duration"]))
-	return int(horse["gait"]) if x > 0.0 and x < 1.0 else Herd.Gait.STAND
+	var duration := float(horse["duration"])
+	var t := _clock - float(horse["start"])
+	# Trechos curtos (alguém montado): um pouco de folga no fim, para um aviso
+	# que atrasa não cortar o ritmo dos cascos.
+	var grace := RIDE_GRACE if duration < 0.5 else 0.0
+	return int(horse["gait"]) if t > 0.0 and t < duration + grace else Herd.Gait.STAND
 
 
 ## Os cavalos conhecidos (id -> pelagem), para a vista 3D.
@@ -565,9 +585,15 @@ func _client_steps() -> void:
 	_gallop_clock()
 	for id: int in _horses:
 		var gait := horse_gait(id)
+		var horse: Dictionary = _horses[id]
+		if id == _riding and int(horse.get("ridden_gait", -1)) != gait:
+			# Mudou de andar montado: o ritmo recomeça já (o galope, na batida).
+			horse["ridden_gait"] = gait
+			horse["gait"] = gait
+			horse["beat"] = 0
+			horse["next_step"] = INF if gait == Herd.Gait.GALLOP else _clock
 		if gait == Herd.Gait.STAND:
 			continue
-		var horse: Dictionary = _horses[id]
 		if _clock < float(horse["next_step"]):
 			continue
 		var gallop := gait == Herd.Gait.GALLOP
@@ -587,7 +613,8 @@ func _client_steps() -> void:
 		if id == _riding:
 			# Montado: embaixo de você, no volume dos seus passos.
 			var ridden := "galope" if gallop else ("trote" if gait == Herd.Gait.TROT else "casco")
-			get_parent()._play(stream, false, get_parent().FOOTSTEP_DB + RIDDEN_DB[ridden] + jitter * 0.5)
+			var peak: float = HOOF_PEAK_DB["galope" if gallop else "casco"].get(surface, -9.0) if recorded else -9.0
+			_play_ridden(stream, get_parent().FOOTSTEP_DB + STEP_PEAK_DB - peak + RIDDEN_DB[ridden] + jitter * 0.5)
 		else:
 			if gallop and not heard.has(id):
 				jitter += GALLOP_BACK_DB
@@ -674,6 +701,22 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float, height:
 	player.position = _to_3d(horse_point(id), height)
 	player.play()
 	voice["started"] = _clock
+
+
+func _play_ridden(stream: AudioStream, volume_db: float) -> void:
+	if stream == null:
+		return
+	if _ridden_voices.is_empty():
+		for i in RIDDEN_VOICES:
+			var player := AudioStreamPlayer.new()
+			player.name = "Montaria_%d" % i
+			add_child(player)
+			_ridden_voices.append(player)
+	var voice: AudioStreamPlayer = _ridden_voices.pop_front()
+	_ridden_voices.append(voice)
+	voice.stream = stream
+	voice.volume_db = volume_db
+	voice.play()
 
 
 func _free_voice() -> Dictionary:

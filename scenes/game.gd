@@ -163,6 +163,7 @@ const RIDE_HOLD_MS := 900
 const RIDE_BRAKE_MS := 500
 const RIDE_KEY_HELD := 1 << 60
 var _ride_level := 0
+var _ride_moving := false  # andou no último quadro (para os cascos)
 var _ride_w_next := -1  # ms da próxima subida com W segurado (-1 = solto)
 var _ride_s_next := -1  # ms da próxima descida com S segurado (-1 = solto)
 var _tired_until := 0
@@ -265,7 +266,8 @@ func _process(delta: float) -> void:
 	_walk(motion * delta)
 	# O ritmo dos passos acompanha a velocidade: de costas, de lado ou sobrecarregado, mais lento.
 	_step_clock += delta * clampf(motion.length() / WALK_SPEED, MIN_STEP_RATE, MAX_STEP_RATE)
-	_tick_my_steps(_pos != before, delta)
+	_ride_moving = _pos != before
+	_tick_my_steps(_ride_moving, delta)
 	_tick_other_steps(delta)
 	_update_torch_sounds()
 	_harvest_timer += delta
@@ -2027,6 +2029,13 @@ func _ride_motion() -> Vector2:
 		if _ride_level < 0:
 			_ride_level = 0
 	return Compass.forward(_heading) * (-1.0 if _ride_level < 0 else 1.0) * float(RIDE_SPEEDS[_ride_level + 1])
+
+
+## Andar do cavalo em que estou montado, pelo meu movimento (Herd.Gait).
+func ride_gait() -> int:
+	if not _ride_moving or _ride_level == 0:
+		return Herd.Gait.STAND
+	return [Herd.Gait.WALK, Herd.Gait.STAND, Herd.Gait.WALK, Herd.Gait.TROT, Herd.Gait.GALLOP][_ride_level + 1]
 
 
 ## Montou ou desmontou: o cavalo começa parado.
