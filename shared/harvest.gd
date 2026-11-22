@@ -38,6 +38,8 @@ const SOURCES := {
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
 	WorldGen.Thing.PEDRAS: {"item": "pedra", "amount": 3, "hits": 0, "regrow": 600.0},
 	WorldGen.Thing.CIPO: {"item": "cipo", "amount": 1, "hits": 0, "regrow": 1200.0},
+	# A rama não se colhe com a mão: a raiz sai com a enxada (WorldState.dig_roots).
+	WorldGen.Thing.RAMA: {"item": "raiz", "amount": 2, "hits": 0, "tool": "enxada", "regrow": 1200.0},
 	WorldGen.Thing.FIBRA: {"item": "fibra", "amount": 2, "hits": 0, "regrow": 900.0},
 	WorldGen.Thing.SILEX: {"item": "silex", "amount": 1, "hits": 0, "regrow": 1800.0},
 }
@@ -79,6 +81,9 @@ var _nodes := {}
 ## Sorteia o tamanho de cada peça recolhida (só no servidor importa). Os
 ## testes podem fixar a semente.
 var rng := RandomNumberGenerator.new()
+## Quem joga reconhece as espécies das plantas de longe (tag Forrageador)?
+## Só muda a fala (spoken_name), no cliente.
+var knows_plants := false
 
 
 func _init(new_world: WorldGen) -> void:
@@ -113,6 +118,10 @@ func spoken_name(cell: Vector2i, at := -1.0) -> String:
 		return TAKEN_NAMES.get(thing, "")
 	if needs_tool(thing) and hits_left(cell, at) == 0:
 		return "árvore caída" if thing == WorldGen.Thing.ARVORE else "bambu derrubado"
+	if knows_plants:
+		var species := Plants.species_at(world, cell)
+		if not species.is_empty():
+			return Plants.name_of(species)
 	return WorldGen.THING_NAMES[thing]
 
 
@@ -244,6 +253,10 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	_nodes[cell] = {"hits": 0, "regrow_at": at + regrow_time(cell), "struck_at": 0.0}
 	_sync(cell, at)
 	var amount := int(source["amount"])
+	# Plantas: a espécie decide o que vem (amoras, fibra, batatas...).
+	var plant := Plants.yield_at(world, cell, amount)
+	if not plant.is_empty():
+		return {"ok": true, "reason": "", "item": plant["item"], "amount": amount, "parts": plant["parts"], "extras": {}}
 	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
 		"parts": _roll_parts(cell, source["item"], amount),
 		"extras": (source.get("extras", {}) as Dictionary).duplicate()}

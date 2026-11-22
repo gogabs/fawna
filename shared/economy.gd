@@ -44,6 +44,25 @@ const SIZES := {
 	"pedra": ["grande", "media", "pequena"],
 }
 
+## Grupos por espécie, como os tamanhos: cada espécie é um item à parte
+## ("frutas_amora", "raiz_batata"), falado pelo nome dela ("2 amoras") e
+## agrupado na Bolsa ("Fruta, 2 amoras, 1 pitanga"). A ordem é a da Bolsa.
+## O que cada planta dá fica em Plants.
+const KINDS := {
+	"frutas": ["amora", "pitanga", "baga", "maracuja"],
+	"raiz": ["batata", "mandioca", "cara"],
+}
+## Nome falado de cada espécie [singular, plural] e se é feminino.
+const KIND_NAMES := {
+	"amora": ["amora", "amoras", true],
+	"pitanga": ["pitanga", "pitangas", true],
+	"baga": ["baga-de-cinza", "bagas-de-cinza", true],
+	"maracuja": ["maracujá-do-mato", "maracujás-do-mato", false],
+	"batata": ["batata", "batatas", true],
+	"mandioca": ["mandioca", "mandiocas", true],
+	"cara": ["cará", "carás", false],
+}
+
 
 ## Chave de um item de um save antigo -> a chave de hoje. A lenha virou
 ## madeira do mesmo tamanho (a lenha sem tamanho, de antes deles, vira média),
@@ -54,17 +73,35 @@ static func migrate(item: String) -> String:
 		return ("madeira" if item == "lenha" else "pedra") + "_media"
 	if item == "madeira":
 		return "madeira_grande"
+	# Frutas e raízes de antes das espécies.
+	if item == "frutas":
+		return "frutas_amora"
+	if item == "raiz":
+		return "raiz_batata"
 	if item.begins_with("lenha_"):
 		return "madeira_" + item.substr(6)
 	return item
 
 
-## "pedra_grande" -> "pedra". Itens sem tamanho voltam como estão.
+## "pedra_grande" -> "pedra", "frutas_amora" -> "frutas". Itens sem tamanho
+## nem espécie voltam como estão.
 static func base_of(item: String) -> String:
 	var cut := item.rfind("_")
-	if cut > 0 and SIZES.has(item.left(cut)) and SIZE_NAMES.has(item.substr(cut + 1)):
+	if cut > 0 and subtypes_of(item.left(cut)).has(item.substr(cut + 1)):
 		return item.left(cut)
 	return item
+
+
+## Tamanhos ou espécies de um recurso, na ordem da Bolsa ([] se não tem).
+static func subtypes_of(base: String) -> Array:
+	return SIZES.get(base, KINDS.get(base, []))
+
+
+## Nome [singular, plural] de um tamanho ou de uma espécie.
+static func subtype_names(subtype: String) -> Array:
+	if SIZE_NAMES.has(subtype):
+		return SIZE_NAMES[subtype]
+	return KIND_NAMES.get(subtype, [subtype, subtype])
 
 
 ## "pedra_grande" -> "grande"; "" se o item não tem tamanho.
@@ -78,8 +115,16 @@ static func sized(base: String, size: String) -> String:
 	return "%s_%s" % [base, size]
 
 
+## O recurso se divide em tamanhos ou espécies (itens agrupados na Bolsa)?
 static func has_sizes(base: String) -> bool:
-	return SIZES.has(base)
+	return SIZES.has(base) or KINDS.has(base)
+
+
+## Feminino? Vale para espécies ("uma amora", "um cará") e, por padrão, para
+## o resto, que é tudo feminino entre as comidas.
+static func is_feminine(item: String) -> bool:
+	var kind := size_of(item)
+	return bool(KIND_NAMES[kind][2]) if KIND_NAMES.has(kind) else true
 
 
 ## O item existe no jogo (com ou sem tamanho)?
@@ -96,6 +141,9 @@ static func names_of(item: String) -> Array:
 	var size := size_of(item)
 	if size.is_empty():
 		return names
+	# Espécie: só o nome dela ("amora"); tamanho: o recurso e o tamanho.
+	if KIND_NAMES.has(size):
+		return [KIND_NAMES[size][0], KIND_NAMES[size][1]]
 	return ["%s %s" % [names[0], SIZE_NAMES[size][0]], "%s %s" % [names[1], SIZE_NAMES[size][1]]]
 
 
@@ -108,10 +156,11 @@ static func item_text(item: String, amount: int) -> String:
 ## {"pedra_grande": 3, "pedra_pequena": 1} -> "3 grandes, 1 pequena".
 static func sizes_text(base: String, items: Dictionary, joiner := ", ") -> String:
 	var parts: PackedStringArray = []
-	for size: String in SIZE_ORDER:
+	for size: String in subtypes_of(base):
 		var amount := int(items.get(sized(base, size), 0))
 		if amount > 0:
-			parts.append("%d %s" % [amount, SIZE_NAMES[size][0] if amount == 1 else SIZE_NAMES[size][1]])
+			var names := subtype_names(size)
+			parts.append("%d %s" % [amount, names[0] if amount == 1 else names[1]])
 	return joiner.join(parts)
 
 

@@ -200,8 +200,11 @@ func _test_resources() -> void:
 	var start := _free_point(world, WorldGen.center_point() + Vector2(0, 1.5))
 	for entry: Array in GameScript.CAMINHEIRO_RESOURCES:
 		var cell: Vector2i = GameScript.nearest_collectable(world, harvest, start, entry[1], GameScript.RESOURCE_SEARCH_RADIUS)
-		if entry[0] in ["Madeira", "Cipó", "Fibra vegetal", "Argila"] and cell == WorldGen.NO_CELL:
-			continue  # árvores, cipó e fibra só nascem no bosque; argila só na beira de rios e lagos: pode não haver nenhuma no raio
+		if entry[0] == "Cogumelos":
+			_check(cell == WorldGen.NO_CELL, "Cogumelos ainda não acha nada")
+			continue
+		if entry[0] in ["Árvores", "Trepadeiras", "Ramas", "Capim", "Argila"] and cell == WorldGen.NO_CELL:
+			continue  # árvores e trepadeiras só nascem na mata; ramas, fibra e argila dependem do lugar: pode não haver nenhuma no raio
 		_check(cell != WorldGen.NO_CELL, "%s: deveria haver um por perto" % entry[0])
 		if cell == WorldGen.NO_CELL:
 			continue
@@ -221,6 +224,13 @@ func _test_resources() -> void:
 		_check(arrived == [entry[2]], "%s: deveria chegar (parou em %s)" % [entry[0], pos])
 		_check(gap <= 3.1, "%s: chega a até 3 casas do recurso (%.1f)" % [entry[0], gap])
 		guide.free()
+	# Forrageador: por espécie, só a espécie pedida.
+	for species: String in Plants.ORDER:
+		var found: Vector2i = GameScript.nearest_collectable(world, harvest, start, [species], 72)
+		if found != WorldGen.NO_CELL:
+			_check(Plants.species_at(world, found) == species, "%s: acha só essa espécie" % species)
+	var fruit: Vector2i = GameScript.nearest_collectable(world, harvest, start, ["amora", "pitanga", "baga", "maracuja"], 72)
+	_check(fruit != WorldGen.NO_CELL and Plants.is_fruit(Plants.species_at(world, fruit)), "Frutas leva a uma planta de fruta")
 	# O que já foi recolhido não conta.
 	var stones: Vector2i = GameScript.nearest_collectable(world, harvest, start, [WorldGen.Thing.PEDRAS], 72)
 	harvest.take(stones)

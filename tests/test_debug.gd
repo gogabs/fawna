@@ -40,7 +40,7 @@ func _test_kits() -> void:
 			_check(Economy.is_item(item) or Bag.WEIGHTS.has(item), "item desconhecido no pacote %s: %s" % [kit, item])
 	_check(DebugTools.kit_items("nada").is_empty(), "pacote desconhecido deveria vir vazio")
 	var all := DebugTools.kit_items("tudo")
-	_check(all.has("pedra_grande") and all.has("silex") and all.has("frutas") and all.has("tocha"), "\"tudo\" deveria somar os pacotes")
+	_check(all.has("pedra_grande") and all.has("silex") and all.has("frutas_amora") and all.has("tocha"), "\"tudo\" deveria somar os pacotes")
 	var bag := {"bambu": 2}
 	DebugTools.give(bag, "materiais")
 	_check(int(bag["bambu"]) == 12, "dar recursos soma ao que já tem (%s)" % str(bag))

@@ -39,6 +39,7 @@ const THING_COLORS := {
 	WorldGen.Thing.FIBRA: Color("c9b76a"),
 	WorldGen.Thing.SILEX: Color("5b6470"),
 	WorldGen.Thing.GALHOS: Color("7a5a3a"),
+	WorldGen.Thing.RAMA: Color("6f8f3a"),
 }
 
 var _world: WorldGen

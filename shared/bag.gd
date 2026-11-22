@@ -121,7 +121,10 @@ const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".
 static func with_article(item: String) -> String:
-	return ("a " if item in FEMININE else "o ") + spoken_name(item)
+	var feminine: bool = item in FEMININE
+	if Economy.KIND_NAMES.has(Economy.size_of(item)):
+		feminine = Economy.is_feminine(item)
+	return ("a " if feminine else "o ") + spoken_name(item)
 
 
 ## Nome do item com a primeira letra maiúscula, no singular: "Argila".
@@ -160,7 +163,7 @@ static func count(bag: Dictionary, item: String) -> int:
 		return int(bag.get(item, 0))
 	var total := int(bag.get(item, 0))
 	if Economy.has_sizes(item):
-		for size: String in Economy.SIZE_ORDER:
+		for size: String in Economy.subtypes_of(item):
 			total += int(bag.get(Economy.sized(item, size), 0))
 	return total
 
@@ -191,7 +194,7 @@ static func give_starter(bag: Dictionary, wielded: String) -> void:
 
 
 static func weight_of(item: String) -> int:
-	return int(WEIGHTS.get(item, DEFAULT_WEIGHT))
+	return int(WEIGHTS.get(item, WEIGHTS.get(Economy.base_of(item), DEFAULT_WEIGHT)))
 
 
 ## Peso de um punhado de itens (item -> quantidade).
@@ -274,7 +277,7 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 	if int(bag.get(base, 0)) > 0:
 		keys.append(base)
 	if Economy.has_sizes(base):
-		for size: String in Economy.SIZE_ORDER:
+		for size: String in Economy.subtypes_of(base):
 			if int(bag.get(Economy.sized(base, size), 0)) > 0:
 				keys.append(Economy.sized(base, size))
 	return keys

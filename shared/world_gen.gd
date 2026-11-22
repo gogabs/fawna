@@ -26,7 +26,7 @@ enum Feature { NENHUMA, CLAREIRA }
 ## aberto ou água?", juntando bioma e feição. É o que serve para achar as
 ## bordas entre floresta e campo (border_distance).
 enum Cover { FECHADA, ABERTA, AGUA }
-enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO, GALHOS }
+enum Thing { NADA, RIACHO, ARBUSTO, TRILHA, PONTE, LAGO, BAMBU, ARGILA, ARBUSTO_FRUTAS, PEDRAS, MAR, CHARCO, ARVORE, CIPO, FIBRA, SILEX, VAU, RIO, GALHOS, RAMA }
 
 const REGION_SIZE := 48  # casas (72 m)
 const CHUNK := 16
@@ -102,10 +102,11 @@ const THING_NAMES := {
 	Thing.MAR: "mar",
 	Thing.CHARCO: "charco",
 	Thing.ARVORE: "árvore",
-	Thing.CIPO: "cipó",
-	Thing.FIBRA: "fibra vegetal",
+	Thing.CIPO: "trepadeira",
+	Thing.FIBRA: "capim",
 	Thing.SILEX: "sílex",
 	Thing.GALHOS: "galhos",
+	Thing.RAMA: "rama",
 }
 
 ## Coisas que não deixam passar.
@@ -124,7 +125,8 @@ const NO_CELL := Vector2i(-9999999, -9999999)
 ## Onde nascem os recursos coletáveis (shared/harvest.gd). Em vez de espalhados
 ## por igual, cada um tem o seu lugar, para dar para aprender onde procurar:
 ##
-## - Arbustos (fibra vegetal ou, raros, frutas) crescem na orla: a faixa
+## - Arbustos (de fruta no lado de fora, no campo; de fibra do lado da mata e
+##   na beira da água; ver Plants) crescem na orla: a faixa
 ##   em que a mata fechada (Cover.FECHADA: bosque, floresta gelada, bambuzal)
 ##   encosta em campo aberto (Cover.ABERTA: pradaria, clareira, lagoa, brejo,
 ##   deserto gelado). Mais cheios do lado de dentro da mata, e ainda alguns
@@ -222,9 +224,14 @@ const STONE_MOUNTAIN_CHANCE := 0.02  # e a montanha mais ainda
 ## Árvores: o bosque é uma mata fechada. Em cada casa fora das trilhas há essa
 ## chance de ter uma árvore; derrubar a árvore deixa a casa livre para sempre.
 const TREE_CHANCE := 0.72
-## Fração dos arbustos que dá frutas em vez de fibra: são raros (uns poucos
-## por região).
-const FRUIT_BUSH_CHANCE := 0.07
+## Arbustos de fibra a mais na beira da água (lagoas, riachos, charcos), em
+## casas que ficariam vazias, e capim de fibra também ali.
+const WATER_FIBER_BUSH_CHANCE := 0.03
+const WATER_FIBER_CHANCE := 0.02
+## Ramas de raiz (Plants): uma ou outra casa vazia do campo, do brejo e do
+## bosque. A enxada só tira raiz de uma rama.
+const ROOT_PLANT_BIOMES := [Biome.PRADARIA, Biome.BREJO, Biome.BOSQUE]
+const ROOT_PLANT_CHANCE := 0.006
 ## Argila: só na beira da água. Chance por casa na margem das lagoas (até
 ## CLAY_BANK casas além da água) e na beira dos riachos.
 const CLAY_BANK := 2.5
@@ -616,7 +623,9 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 	if roll < bamboo:
 		return Thing.BAMBU
 	if roll < bamboo + _bush_chance(biome, around, x, y):
-		if cell_random(cell, "fruta") < FRUIT_BUSH_CHANCE:
+		# No campo aberto, longe da água, o arbusto é de fruta; do lado da mata
+		# e na beira da água, de fibra.
+		if cover_of(region) == Cover.ABERTA and not is_waterside(cell):
 			return Thing.ARBUSTO_FRUTAS
 		return Thing.ARBUSTO
 	if _is_clay(cell, region, biome):
@@ -646,6 +655,14 @@ func _compute_thing(cell: Vector2i, trail: int, around: PackedByteArray, x: int,
 	# último, também só em casas que ficariam vazias.
 	if biome == Biome.BOSQUE and cell_random(cell, "galhos") < TWIG_CHANCE and _next_to_tree(cell):
 		return Thing.GALHOS
+	# Plantas de fibra na beira da água e ramas de raiz: também por último.
+	if is_waterside(cell):
+		if cell_random(cell, "embira") < WATER_FIBER_BUSH_CHANCE:
+			return Thing.ARBUSTO
+		if cell_random(cell, "fibra_agua") < WATER_FIBER_CHANCE:
+			return Thing.FIBRA
+	if ROOT_PLANT_BIOMES.has(biome) and cell_random(cell, "rama") < ROOT_PLANT_CHANCE:
+		return Thing.RAMA
 	return Thing.NADA
 
 

@@ -166,13 +166,15 @@ func request_offer(horse_id: int) -> void:
 	var id: int = game._sender_id()
 	if not game.state.players.has(id):
 		return
-	if int(game.state.inventory_of(id).get("frutas", 0)) <= 0:
+	# Qualquer fruta serve (amora, pitanga...): a primeira que houver na bolsa.
+	var fruits := Bag.keys_of(game.state.inventory_of(id), "frutas")
+	if fruits.is_empty():
 		offer_result.rpc_id(id, "sem_frutas")
 		return
 	herd.peer_keys[id] = game.state.owner_key(id)
 	var result := herd.offer(id, horse_id, Time.get_ticks_msec(), game.state.players[id]["pos"])
 	if result["ok"]:
-		game.state.give_away(id, "frutas")
+		game.state.give_away(id, fruits[0])
 		game._dirty = true
 		game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
 	offer_result.rpc_id(id, str(result["reason"]))

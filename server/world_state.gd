@@ -51,7 +51,7 @@ var nuts := {}
 ## jogo copia para cá antes de salvar.
 var tame_horses := []
 ## casa -> ms da última raiz cavada ali com a enxada.
-var _rooted := {}
+var _rooted := {}  # casa da rama -> golpes de enxada já dados nela
 var _food_rng := RandomNumberGenerator.new()
 ## id -> segundos seguidos com alguma reserva em zero (para desfalecer; não se salva).
 var faint_clock := {}
@@ -258,7 +258,12 @@ func _finish_dig(id: int, work: Dictionary, now_ms: int) -> Dictionary:
 			break
 	var amount := _ability_rng.randi_range(int(pick[1]), int(pick[2]))
 	var item := str(pick[0])
-	ground.add_items(cell, {Economy.sized(item, "media") if Economy.has_sizes(item) else item: amount})
+	var key := item
+	if item == "raiz":
+		key = Plants.root_item(Plants.root_species(world.biome_at(cell)))
+	elif Economy.has_sizes(item):
+		key = Economy.sized(item, "media")
+	ground.add_items(cell, {key: amount})
 	return {"id": id, "event": "achou", "tag": "fucar", "cell": cell, "item": item, "amount": amount, "pile": ground.items_at(cell)}
 
 
@@ -421,7 +426,7 @@ func give_away(id: int, item: String) -> bool:
 func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
-	if not Body.ROASTS.has(item):
+	if Body.roast_of(item).is_empty():
 		return {"ok": false, "reason": "nao_assa", "item": item}
 	var inv := inventory_of(id)
 	var have := int(inv.get(item, 0))
@@ -436,7 +441,7 @@ func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
 	if not near:
 		return {"ok": false, "reason": "sem_fogo", "item": item}
 	var count := clampi(amount, 1, have)
-	var into: String = Body.ROASTS[item]
+	var into := Body.roast_of(item)
 	inv[item] = have - count
 	if int(inv[item]) <= 0:
 		inv.erase(item)
@@ -445,31 +450,65 @@ func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
 	return {"ok": true, "item": item, "into": into, "amount": count}
 
 
-## J com a enxada na terra à frente: cava atrás de raízes (Body.ROOT_BIOMES).
-## Devolve { ok, reason, amount, kept, left_over, pile_cell } com reason
-## "desconhecido", "sem_enxada", "terreno" (não é terra de raiz), "cavado"
-## (cavou aqui há pouco), "nada" (não achou desta vez).
-func dig_roots(id: int, cell: Vector2i, now_ms := -1) -> Dictionary:
+## J com a enxada perto de uma rama (Plants): cava a raiz. Cada rama pede
+## Body.ROOT_DIG_HITS golpes; no último, a raiz sai (Body.ROOT_AMOUNT, um só
+## na Longa Escuridão) e a rama some até rebrotar (Harvest). "cell" é a casa
+## à frente; se não for uma rama, vale a rama mais perto ao alcance.
+## Devolve { ok, reason, amount, item, kept, left_over, pile_cell } com reason
+## "desconhecido", "sem_enxada", "terreno" (nenhuma rama ao alcance) ou
+## "cavando" (golpe dado, a raiz ainda não saiu).
+func dig_roots(id: int, cell: Vector2i, _now_ms := -1) -> Dictionary:
 	if not players.has(id):
 		return {"ok": false, "reason": "desconhecido"}
 	if wielding(id) != "enxada":
 		return {"ok": false, "reason": "sem_enxada"}
 	var pos: Vector2 = players[id]["pos"]
-	if pos.distance_to(WorldGen.cell_center(cell)) > REACH + 0.6:
-		return {"ok": false, "reason": "longe"}
-	if now_ms < 0:
-		now_ms = Time.get_ticks_msec()
-	if not world.is_free(WorldGen.cell_center(cell)) or not builds.at(cell).is_empty() \
-			or world.thing_at(cell) != WorldGen.Thing.NADA or not Body.ROOT_BIOMES.has(world.biome_at(cell)):
+	var target := _rama_near(pos, cell)
+	if target == WorldGen.NO_CELL:
 		return {"ok": false, "reason": "terreno"}
-	if now_ms - int(_rooted.get(cell, -100000000)) < int(Body.ROOT_RETRY * 1000.0):
-		return {"ok": false, "reason": "cavado"}
 	Body.exert(body_of(id))
-	var chance := Body.ROOT_CHANCE * (Body.ROOT_WINTER_FACTOR if season() == 2 else 1.0)
-	if _food_rng.randf() >= chance:
-		return {"ok": false, "reason": "nada"}
-	_rooted[cell] = now_ms
-	return _give(id, {"raiz": _food_rng.randi_range(1, 2)})
+	var hits := int(_rooted.get(target, 0)) + 1
+	if hits < Body.ROOT_DIG_HITS:
+		_rooted[target] = hits
+		return {"ok": false, "reason": "cavando", "cell": target}
+	_rooted.erase(target)
+	var taken := harvest.take(target)
+	if not taken["ok"]:
+		return {"ok": false, "reason": "terreno"}
+	var amount := 1 if season() == 2 else Body.ROOT_AMOUNT
+	var item := Plants.root_item(Plants.species_at(world, target))
+	var result := _give(id, {item: amount})
+	result["item"] = item
+	result["cell"] = target
+	return result
+
+
+## A rama de pé mais perto ao alcance ("ahead" primeiro). NO_CELL se não há.
+func _rama_near(pos: Vector2, ahead: Vector2i) -> Vector2i:
+	var reach := REACH + 0.6
+	var best := WorldGen.NO_CELL
+	var best_distance := INF
+	var here := WorldGen.cell_of(pos)
+	for cell: Vector2i in [ahead] + _around(here, 2):
+		if world.thing_at(cell) != WorldGen.Thing.RAMA or not harvest.is_available(cell):
+			continue
+		var distance := pos.distance_to(WorldGen.cell_center(cell))
+		if distance > reach:
+			continue
+		if cell == ahead:
+			return cell
+		if distance < best_distance:
+			best_distance = distance
+			best = cell
+	return best
+
+
+static func _around(center: Vector2i, radius: int) -> Array:
+	var cells := []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			cells.append(center + Vector2i(dx, dy))
+	return cells
 
 
 ## Põe itens na bolsa; o que não couber fica no chão, onde a criatura está.
@@ -787,6 +826,12 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var thing := world.thing_at(cell)
 	if not Harvest.is_source(thing):
 		return {"ok": false, "reason": "nada"}
+	# A rama não se arranca com a mão: a raiz sai com a enxada.
+	if thing == WorldGen.Thing.RAMA:
+		return {"ok": false, "reason": "cavar"}
+	# Na Longa Escuridão as plantas de fruta não dão nada.
+	if season() == 2 and harvest.is_available(cell) and Plants.is_fruit(Plants.species_at(world, cell)):
+		return {"ok": false, "reason": "sem_frutas"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_collect.get(id, -COLLECT_COOLDOWN_MS)) < COLLECT_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
@@ -818,13 +863,7 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
-	# Na Longa Escuridão o arbusto não tem frutas: dá só fibra, como os outros.
-	if str(result["item"]) == "frutas" and season() == 2:
-		var bush: Dictionary = Harvest.SOURCES[WorldGen.Thing.ARBUSTO]
-		item = str(bush["item"])
-		result["item"] = item
-		result["amount"] = int(bush["amount"])
-		result["parts"] = {}
+	item = str(result["item"])
 	var parts: Dictionary = result.get("parts", {})
 	var got: Dictionary = (parts if not parts.is_empty() else {item: int(result["amount"])}).duplicate()
 	var extras: Dictionary = result.get("extras", {})
