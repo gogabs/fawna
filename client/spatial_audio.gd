@@ -417,15 +417,11 @@ func _nearest_resources(center: Vector2i) -> Array:
 ## Uma fonte que alcança longe (até "reach" casas), para os pássaros. Fica
 ## criada e é reaproveitada: o Steam Audio às vezes não pega fontes criadas
 ## no meio do jogo. Quem chama decide o som, o volume e a posição.
-##
-## Com "hrtf" falso, usa o panorama estéreo do Godot mesmo com o Steam Audio
-## ligado: perde a dica de frente e trás, mas abre bem mais para os lados (o
-## HRTF quase não separa sons graves, como cascos).
-func make_far_voice(reach: float, hrtf := true) -> AudioStreamPlayer3D:
+func make_far_voice(reach: float) -> AudioStreamPlayer3D:
 	if _camera == null:
 		return null
-	var player := _new_player(null, 0.0, hrtf)
-	if using_hrtf and hrtf:
+	var player := _new_player(null, 0.0)
+	if using_hrtf:
 		var config: Resource = _player_config.duplicate()
 		config.set("max_distance", METERS_PER_CELL * reach)
 		player.set("player_config", config)
