@@ -25,7 +25,7 @@ extends RefCounted
 ## (tame_to_save), não some quando todos vão embora, e relincha manso quando
 ## o dono chega perto.
 
-enum Gait { STAND, WALK, GALLOP }
+enum Gait { STAND, WALK, GALLOP, TROT }  # TROT só montado
 
 ## Distâncias em casas, tempos em segundos.
 const GROUP := [3, 6]
@@ -82,6 +82,23 @@ const QUIET_TO_TAME := 10.0
 const TAME_NEAR := 3.0  # quem ofereceu fica a até isso do cavalo, quieto
 const OWNER_NICKER := 6.0  # o domesticado relincha manso com o dono a até isso
 const NICKER_EVERY := [20.0, 50.0]
+
+## Seguir e montar (casas, casas por segundo, segundos). O domesticado segue o
+## dono sempre, menos enquanto come: para atrás dele, a FOLLOW_NEAR, quando
+## ele se afasta mais que FOLLOW_FAR; de longe (GALLOP_AFTER) vem a galope, e
+## se o dono sumir para mais longe que FOLLOW_JUMP (teleporte, desmaio), surge
+## ao lado dele. Montado, vai junto de quem monta, andando ou a galope conforme
+## a velocidade (RIDE_TROT, RIDE_GALLOP).
+const FOLLOW_NEAR := 1.4
+const FOLLOW_FAR := 3.2
+const FOLLOW_SPEED := 2.2  # um pouco mais rápido que a criatura (1,8)
+const GALLOP_AFTER := 10.0
+const FOLLOW_JUMP := 40.0
+const FOLLOW_RETARGET := 1.5  # dono andou isso desde o último alvo: recalcula
+const EAT_TIME := [4.0, 8.0]
+const RIDE_TROT := 2.2  # a ré montada (2,4) já soa como trote
+const RIDE_GALLOP := 3.7
+const MOUNT_REACH := 2.0
 
 ## Nome dos cavalos: um prefixo e um sufixo que juntos formam um nome
 ## inventado (Bram + ion = Bramion), escolhidos em duas listas, como o nome
@@ -165,6 +182,10 @@ func forget_peer(peer: int) -> void:
 		horse["watchers"].erase(peer)
 	for herd in herds.values():
 		herd["wary"].erase(peer)
+	for horse in horses.values():
+		if int(horse["rider"]) == peer:
+			horse["rider"] = -1
+			_send_rider(horse, _pending)
 	_last_players.erase(peer)
 
 
@@ -263,6 +284,9 @@ func _tame(herd: Dictionary, horse: Dictionary, peer: int, now_ms: int, out: Arr
 	horse["to"] = here
 	horse["gait"] = Gait.STAND
 	horse["trust"] = 0
+	horse["rider"] = -1
+	horse["eat_until_ms"] = now_ms + _ms(EAT_TIME)
+	horse["aim"] = here
 	horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY)
 	out.append([peer, "tamed", [horse["id"]]])
 	_send_named(horse, out)
@@ -287,7 +311,8 @@ func _forget_herd(herd: Dictionary) -> void:
 		_chunks[herd["chunk"]].erase(herd["id"])
 
 
-## O domesticado: pasta, bufa e relincha manso quando o dono chega perto.
+## O domesticado: segue o dono (menos comendo) ou vai junto de quem monta;
+## pasta, bufa e relincha manso quando o dono chega perto.
 func _update_tame(horse: Dictionary, now_ms: int, players: Dictionary, out: Array) -> void:
 	if int(horse["gait"]) != Gait.STAND and now_ms >= int(horse["end_ms"]):
 		horse["gait"] = Gait.STAND
@@ -296,20 +321,178 @@ func _update_tame(horse: Dictionary, now_ms: int, players: Dictionary, out: Arra
 		horse["next_graze_ms"] = now_ms + _ms(GRAZE_EVERY, 0.0)
 		horse["next_snort_ms"] = now_ms + _ms(SNORT_EVERY, 0.2)
 		horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY, 0.3)
-		return
+	var rider := int(horse["rider"])
+	if rider >= 0:
+		if players.has(rider):
+			_carry(horse, players[rider], now_ms, out)
+		else:
+			horse["rider"] = -1
+			_send_rider(horse, out)
+	else:
+		_follow_owner(horse, now_ms, players, out)
+	var standing := int(horse["gait"]) == Gait.STAND
 	if now_ms >= int(horse["next_graze_ms"]):
 		horse["next_graze_ms"] = now_ms + _ms(GRAZE_EVERY)
-		_sound(horse, "pasto", out)
+		if standing and rider < 0 and not _owner_walking(horse, players):
+			# Para para comer (só com o dono parado): enquanto isso, não segue.
+			horse["eat_until_ms"] = now_ms + _ms(EAT_TIME)
+			_sound(horse, "pasto", out)
 	if now_ms >= int(horse["next_snort_ms"]):
 		horse["next_snort_ms"] = now_ms + _ms(SNORT_EVERY)
 		_sound(horse, "bufo", out)
 	if now_ms >= int(horse["next_neigh_ms"]):
 		horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY)
-		var here := position_of(horse, now_ms)
-		for peer in players:
-			if str(peer_keys.get(peer, "")) == str(horse["owner"]) and (players[peer] as Vector2).distance_to(here) <= OWNER_NICKER:
-				_sound(horse, "manso", out)
-				break
+		var owner_peer := _owner_peer(horse)
+		if owner_peer >= 0 and rider < 0 and players.has(owner_peer) and (players[owner_peer] as Vector2).distance_to(position_of(horse, now_ms)) <= OWNER_NICKER:
+			_sound(horse, "manso", out)
+
+
+## O dono está andando agora (mudou de lugar desde o passo anterior) ou
+## longe? Então o cavalo não para para comer.
+func _owner_walking(horse: Dictionary, players: Dictionary) -> bool:
+	var peer := _owner_peer(horse)
+	if peer < 0 or not players.has(peer):
+		return false
+	# Longe do dono, também não para: primeiro vai até ele.
+	if (players[peer] as Vector2).distance_to(horse["to"]) > FOLLOW_FAR:
+		return true
+	if not _last_players.has(peer):
+		return false
+	return (players[peer] as Vector2).distance_to(_last_players[peer]) >= MOVE_EPSILON
+
+
+## O peer do dono, se estiver no mundo; senão -1.
+func _owner_peer(horse: Dictionary) -> int:
+	for peer in peer_keys:
+		if str(peer_keys[peer]) == str(horse["owner"]):
+			return int(peer)
+	return -1
+
+
+## Montado: o cavalo vai junto de quem monta, a cada passo.
+func _carry(horse: Dictionary, pos: Vector2, now_ms: int, out: Array) -> void:
+	var here: Vector2 = horse["to"]
+	var moved := here.distance_to(pos)
+	var step_s := 0.25
+	var gait := Gait.STAND
+	if moved >= MOVE_EPSILON * 0.5:
+		var speed := moved / step_s
+		gait = Gait.GALLOP if speed >= RIDE_GALLOP else (Gait.TROT if speed >= RIDE_TROT else Gait.WALK)
+	if gait == Gait.STAND and int(horse["gait"]) == Gait.STAND:
+		return
+	horse["from"] = here
+	horse["to"] = pos
+	horse["gait"] = gait
+	horse["start_ms"] = now_ms
+	horse["end_ms"] = now_ms + int(step_s * 1000.0) + 40
+	_send_move(horse, 0.0, out)
+
+
+## Seguindo: quando o dono se afasta, vai até atrás dele.
+func _follow_owner(horse: Dictionary, now_ms: int, players: Dictionary, out: Array) -> void:
+	var peer := _owner_peer(horse)
+	if peer < 0 or not players.has(peer):
+		return
+	if now_ms < int(horse["eat_until_ms"]):
+		return
+	var owner_pos: Vector2 = players[peer]
+	var here := position_of(horse, now_ms)
+	var far := here.distance_to(owner_pos)
+	if far > FOLLOW_JUMP:
+		var spot := _spot_near(owner_pos, here)
+		horse["from"] = spot
+		horse["to"] = spot
+		horse["aim"] = owner_pos
+		horse["gait"] = Gait.STAND
+		_send_move(horse, 0.0, out)
+		return
+	var moving := int(horse["gait"]) != Gait.STAND
+	if moving and (horse["aim"] as Vector2).distance_to(owner_pos) < FOLLOW_RETARGET:
+		return
+	if not moving and far <= FOLLOW_FAR:
+		return
+	var target := _spot_near(owner_pos, here)
+	if target.distance_to(here) < 0.3:
+		return
+	var gallop := far > GALLOP_AFTER
+	var speed := GALLOP_SPEED if gallop else FOLLOW_SPEED
+	horse["from"] = here
+	horse["to"] = target
+	horse["aim"] = owner_pos
+	horse["gait"] = Gait.GALLOP if gallop else Gait.WALK
+	horse["start_ms"] = now_ms
+	horse["end_ms"] = now_ms + int(here.distance_to(target) / speed * 1000.0) + 100
+	_send_move(horse, 0.0, out)
+
+
+## Um ponto livre a FOLLOW_NEAR de "owner_pos", do lado de onde o cavalo vem.
+func _spot_near(owner_pos: Vector2, from: Vector2) -> Vector2:
+	var away := (from - owner_pos)
+	var base := away.angle() if away.length() > 0.01 else 0.0
+	for k in 9:
+		var angle := base + (k / 2) * 0.6 * (1 if k % 2 == 0 else -1)
+		var point := owner_pos + Vector2.from_angle(angle) * FOLLOW_NEAR
+		if _walkable(point):
+			return point
+	return owner_pos
+
+
+func _send_move(horse: Dictionary, elapsed: float, out: Array) -> void:
+	var duration := maxf(0.0, (int(horse["end_ms"]) - int(horse["start_ms"])) / 1000.0) if int(horse["gait"]) != Gait.STAND else 0.0
+	var args := [horse["id"], horse["from"], horse["to"], 0.0, duration, elapsed, int(horse["gait"])]
+	for peer in horse["watchers"]:
+		out.append([peer, "move", args])
+
+
+## Montar no próprio cavalo. Devolve "montou", "longe", "nao_e_seu",
+## "montado" (alguém já está nele) ou "sumiu".
+func mount(peer: int, horse_id: int, pos: Vector2, now_ms: int) -> String:
+	if not horses.has(horse_id):
+		return "sumiu"
+	var horse: Dictionary = horses[horse_id]
+	if int(horse["herd"]) >= 0 or str(horse["owner"]) != str(peer_keys.get(peer, "")) or str(horse["owner"]).is_empty():
+		return "nao_e_seu"
+	if int(horse["rider"]) >= 0:
+		return "montado"
+	if position_of(horse, now_ms).distance_to(pos) > MOUNT_REACH:
+		return "longe"
+	horse["rider"] = peer
+	horse["eat_until_ms"] = 0
+	_send_rider(horse, _pending)
+	_carry(horse, pos, now_ms, _pending)
+	return "montou"
+
+
+## Desmontar: o cavalo fica onde está e volta a seguir. Devolve o id, ou -1.
+func dismount(peer: int, now_ms: int) -> int:
+	var horse_id := riding_of(peer)
+	if horse_id < 0:
+		return -1
+	var horse: Dictionary = horses[horse_id]
+	horse["rider"] = -1
+	var here := position_of(horse, now_ms)
+	horse["from"] = here
+	horse["to"] = here
+	horse["aim"] = here
+	horse["gait"] = Gait.STAND
+	_send_move(horse, 0.0, _pending)
+	_send_rider(horse, _pending)
+	return horse_id
+
+
+## O cavalo em que "peer" está montado, ou -1.
+func riding_of(peer: int) -> int:
+	for horse in horses.values():
+		if int(horse["rider"]) == peer:
+			return int(horse["id"])
+	return -1
+
+
+## Avisa quem vê o cavalo de quem está montado nele ("" = ninguém).
+func _send_rider(horse: Dictionary, out: Array) -> void:
+	var key := str(peer_keys.get(int(horse["rider"]), "")) if int(horse["rider"]) >= 0 else ""
+	for peer in horse["watchers"]:
+		out.append([peer, "rider", [horse["id"], key]])
 
 
 ## O dono dá nome ao seu cavalo (prefixo + sufixo, ver compose_name).
@@ -404,7 +587,7 @@ func load_tame(saved: Array) -> void:
 			"from": at, "to": at, "start_ms": 0, "end_ms": 0, "gait": Gait.STAND,
 			"next_graze_ms": -1, "next_snort_ms": -1, "next_neigh_ms": -1,
 			"watchers": {}, "need": 0, "trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
-			"owner": str(entry["owner"]),
+			"owner": str(entry["owner"]), "rider": -1, "eat_until_ms": 0, "aim": at,
 			"name": str(entry.get("name", "")) if is_name(str(entry.get("name", ""))) else "",
 		}
 		_next_id += 1
@@ -487,7 +670,7 @@ func _make_herd(chunk: Vector2i, home: Vector2, biome: int, rng: RandomNumberGen
 			"watchers": {},
 			"need": rng.randi_range(FRUITS_TO_TAME[0], FRUITS_TO_TAME[1]),
 			"trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
-			"owner": "", "name": "",
+			"owner": "", "name": "", "rider": -1, "eat_until_ms": 0, "aim": Vector2.INF,
 		}
 		_next_id += 1
 		horses[horse["id"]] = horse
@@ -812,11 +995,15 @@ func _sync_watchers(now_ms: int, players: Dictionary, out: Array) -> void:
 func appear_args(horse: Dictionary, now_ms: int) -> Array:
 	var gait := int(horse["gait"])
 	if gait == Gait.STAND or now_ms >= int(horse["end_ms"]):
-		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND, horse["owner"], horse["name"], horse["herd"]]
+		return [horse["id"], horse["pitch"], horse["coat"], horse["to"], horse["to"], 0.0, 0.0, 0.0, Gait.STAND, horse["owner"], horse["name"], horse["herd"], _rider_key(horse)]
 	var duration := (int(horse["end_ms"]) - int(horse["start_ms"])) / 1000.0
 	var delay := maxf((int(horse["start_ms"]) - now_ms) / 1000.0, 0.0)
 	var elapsed := maxf((now_ms - int(horse["start_ms"])) / 1000.0, 0.0)
-	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait, horse["owner"], horse["name"], horse["herd"]]
+	return [horse["id"], horse["pitch"], horse["coat"], horse["from"], horse["to"], delay, duration, elapsed, gait, horse["owner"], horse["name"], horse["herd"], _rider_key(horse)]
+
+
+func _rider_key(horse: Dictionary) -> String:
+	return str(peer_keys.get(int(horse["rider"]), "")) if int(horse["rider"]) >= 0 else ""
 
 
 static func _chunk_of(point: Vector2) -> Vector2i:
