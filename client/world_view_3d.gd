@@ -47,6 +47,9 @@ const WATER_COLORS := {
 }
 const WATER_DRIFT := Vector2(0.018, 0.011)  # deslocamento das ondas por segundo (ladrilhos)
 const WATER_LEVEL := -0.18  # a água fica abaixo do chão
+const HEIGHT_AMP := 0.08  # metros: o chão ondula de leve, sem linhas retas
+const FOAM_COLOR := Color("8fa3a6")
+const SHADOW_DISTANCE := 30.0  # só as sombras perto da criatura (custo de FPS)
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
 const TRAIL_COLOR := Color("6a5640")
@@ -57,6 +60,9 @@ var _audio: SpatialAudio
 var _harvest: Harvest
 var _daytime: Node  # o relógio do mundo (Daytime); nulo = sempre noite
 var _env: Environment
+var _sky_material: ShaderMaterial
+var _cloud_time := 0.0
+static var _height_noise: FastNoiseLite
 var _sun: DirectionalLight3D
 var _ring_glow := 0.0
 var _ring_check := 0.0
@@ -90,6 +96,9 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	var textures := WorldTextures.make_all()
 	_material = _textured(textures["ground"])
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_material.normal_enabled = true
+	_material.normal_texture = WorldTextures.ground_normal()
+	_material.normal_scale = 0.7
 	var bark := _textured(textures["bark"])
 	var leaf := _textured(textures["leaf"])
 	var stone := _textured(textures["stone"])
@@ -108,6 +117,7 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_water_material.emission_enabled = true
 	_water_material.emission = Color("0d2233")
 	_water_material.emission_energy_multiplier = 0.6
+	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
 	_make_shapes()
 	_camera = Camera3D.new()
 	_camera.name = "Olhos"
@@ -136,7 +146,9 @@ func follow(pos: Vector2) -> void:
 	_pos = pos
 	if _camera == null:
 		return
-	_camera.position = Vector3(pos.x, 0.0, pos.y) * METERS + Vector3.UP * EYE_HEIGHT
+	var feet := Vector3(pos.x, 0.0, pos.y) * METERS
+	feet.y = ground_height(feet.x, feet.z)
+	_camera.position = feet + Vector3.UP * EYE_HEIGHT
 	if _obras != null:
 		_obras.follow(pos)
 	var chunk := _chunk_of(WorldGen.cell_of(pos))
@@ -229,10 +241,34 @@ func chunk_count() -> int:
 	return _chunks.size()
 
 
+## Aplica já as opções de vídeo (sombras, suavização de bordas e brilho),
+## para o menu do jogo mudá-las sem sair do mundo.
+func apply_quality() -> void:
+	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
+	if _env != null:
+		_env.glow_enabled = Net.glow
+	if _sun != null:
+		_sun.shadow_enabled = Net.shadows
+
+
 func _setup_environment() -> void:
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = SKY_COLOR
+	_sky_material = WorldTextures.sky_material()
+	var sky := Sky.new()
+	sky.sky_material = _sky_material
+	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.fog_sky_affect = 0.4
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.glow_enabled = Net.glow
+	env.glow_intensity = 0.5
+	env.glow_bloom = 0.05
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 0.82
+	env.adjustment_contrast = 1.05
+	env.adjustment_brightness = 0.78
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("56627a")
 	env.ambient_light_energy = 1.0
@@ -250,7 +286,12 @@ func _setup_environment() -> void:
 	light.rotation_degrees = Vector3(-55.0, 30.0, 0.0)
 	light.light_color = Color("a9b6cf")
 	light.light_energy = 0.55
-	light.shadow_enabled = false
+	light.shadow_enabled = Net.shadows
+	light.shadow_blur = 2.0
+	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	light.directional_shadow_max_distance = SHADOW_DISTANCE
+	light.shadow_bias = 0.08
+	light.shadow_normal_bias = 1.5
 	add_child(light)
 	_sun = light
 	_update_sky(0.0)
@@ -290,9 +331,29 @@ func _process(delta: float) -> void:
 	for i in MAX_BUILDS_PER_FRAME:
 		if _wanted.is_empty():
 			return
-		var key: Vector2i = _wanted.pop_back()
-		if not _chunks.has(key):
-			_build(key)
+		var key: Vector2i = _wanted.back()
+		if _chunks.has(key):
+			_wanted.pop_back()
+			continue
+		# Gerar um pedaço do mundo custa mais que montar o chão dele: gera
+		# no máximo um por quadro e só então monta (a água e as margens
+		# olham os vizinhos).
+		if _generate_missing(key):
+			return
+		_wanted.pop_back()
+		_build(key)
+
+
+## Gera, no máximo, um pedaço do mundo que falta em volta de "key".
+## Devolve verdadeiro se gerou (o quadro já foi gasto).
+func _generate_missing(key: Vector2i) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var near := key + Vector2i(dx, dy)
+			if not _world.is_generated(near):
+				_world.generate(near)
+				return true
+	return false
 
 
 ## Monta já todos os pedaços da fila (para a captura de tela e os testes).
@@ -308,6 +369,18 @@ func _build(key: Vector2i) -> void:
 	var ground := _Surface.new()
 	var water := _Surface.new()
 	var bridges := []  # casas de ponte, para a peça em 3D
+	# Guarda a coisa de cada casa (com uma margem de 3 em volta) para a água
+	# saber a distância até a margem sem consultar o mundo de novo.
+	var kinds := {}
+	for y in range(-3, CHUNK + 3):
+		for x in range(-3, CHUNK + 3):
+			var c := first + Vector2i(x, y)
+			kinds[c] = _is_water(_world.thing_at(c))
+	var depths := {}
+	for y in range(-1, CHUNK + 1):
+		for x in range(-1, CHUNK + 1):
+			var c := first + Vector2i(x, y)
+			depths[c] = _shore_distance(c, kinds)
 	for y in CHUNK:
 		for x in CHUNK:
 			var cell := first + Vector2i(x, y)
@@ -316,12 +389,20 @@ func _build(key: Vector2i) -> void:
 			var x1 := x0 + METERS
 			var z0 := cell.y * METERS
 			var z1 := z0 + METERS
-			if _is_water(thing):
+			if kinds[cell]:
 				# Água: um plano mais baixo e, onde o vizinho é terra, uma
-				# parede de margem do chão até a água.
-				water.quad(Vector3(x0, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z1), Vector3(x0, WATER_LEVEL, z1), _cell_color(cell), Vector3.UP)
+				# parede de margem do chão até a água. A cor clareia perto da
+				# margem (espuma) e escurece onde é fundo.
+				var base := _cell_color(cell)
+				var tints := PackedColorArray()
+				for corner: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
+					var sum := 0.0
+					for off: Vector2i in [Vector2i(-1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 0)]:
+						sum += float(depths.get(cell + corner + off, 4))
+					tints.append(_water_tint(base, sum / 4.0))
+				water.quad_colors(Vector3(x0, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z1), Vector3(x0, WATER_LEVEL, z1), tints, [Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
 				for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-					if _is_water(_world.thing_at(cell + dir)):
+					if kinds[cell + dir]:
 						continue
 					var a: Vector3
 					var b: Vector3
@@ -337,12 +418,20 @@ func _build(key: Vector2i) -> void:
 					else:
 						a = Vector3(x1, 0.0, z0)
 						b = Vector3(x0, 0.0, z0)
-					var down := Vector3(0.0, WATER_LEVEL, 0.0)
-					ground.quad(a, b, b + down, a + down, BANK_COLOR, Vector3(dir.x, 0.0, dir.y))
+					a.y = ground_height(a.x, a.z)
+					b.y = ground_height(b.x, b.z)
+					var wall_a := Vector3(a.x, WATER_LEVEL, a.z)
+					var wall_b := Vector3(b.x, WATER_LEVEL, b.z)
+					ground.quad(a, b, wall_b, wall_a, BANK_COLOR, Vector3(dir.x, 0.0, dir.y))
 				continue
 			if thing == WorldGen.Thing.PONTE:
 				bridges.append(cell)
-			ground.quad(Vector3(x0, 0.0, z0), Vector3(x1, 0.0, z0), Vector3(x1, 0.0, z1), Vector3(x0, 0.0, z1), _cell_color(cell), Vector3.UP)
+			var color := _cell_color(cell)
+			var p0 := Vector3(x0, ground_height(x0, z0), z0)
+			var p1 := Vector3(x1, ground_height(x1, z0), z0)
+			var p2 := Vector3(x1, ground_height(x1, z1), z1)
+			var p3 := Vector3(x0, ground_height(x0, z1), z1)
+			ground.quad_colors(p0, p1, p2, p3, [color, color, color, color], [_ground_normal(p0), _ground_normal(p1), _ground_normal(p2), _ground_normal(p3)])
 	var mesh := ArrayMesh.new()
 	ground.add_to(mesh, _material)
 	water.add_to(mesh, _water_material)
@@ -354,6 +443,45 @@ func _build(key: Vector2i) -> void:
 	_chunks[key] = instance
 	_bridges[key] = bridges
 	_add_things(instance, first, bridges)
+
+
+## Distância (em casas, até 3; 4 = longe) de uma casa de água até a terra mais
+## próxima. Casa que não é água vale 0.
+func _shore_distance(cell: Vector2i, kinds: Dictionary) -> int:
+	if not kinds.get(cell, false):
+		return 0
+	for r in range(1, 4):
+		for i in range(-r, r + 1):
+			if not kinds.get(cell + Vector2i(i, -r), true) or not kinds.get(cell + Vector2i(i, r), true) \
+					or not kinds.get(cell + Vector2i(-r, i), true) or not kinds.get(cell + Vector2i(r, i), true):
+				return r
+	return 4
+
+
+## Cor da água num canto: espuma na margem, mais clara no raso, escura no fundo.
+func _water_tint(base: Color, distance: float) -> Color:
+	var t := clampf(distance / 4.0, 0.0, 1.0)
+	var shade := lerpf(1.15, 0.72, t)
+	var out := base * shade
+	out = out.lerp(FOAM_COLOR, clampf(1.0 - distance * 1.4, 0.0, 1.0) * 0.4)
+	out.a = 1.0
+	return out
+
+
+## Altura do chão num ponto do mundo (metros): ondulação suave e estável.
+static func ground_height(x: float, z: float) -> float:
+	if _height_noise == null:
+		_height_noise = FastNoiseLite.new()
+		_height_noise.seed = 777
+		_height_noise.frequency = 0.16
+		_height_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+		_height_noise.fractal_octaves = 2
+	return HEIGHT_AMP * _height_noise.get_noise_2d(x, z)
+
+
+static func _ground_normal(p: Vector3) -> Vector3:
+	var d := 0.3
+	return Vector3(ground_height(p.x - d, p.z) - ground_height(p.x + d, p.z), 2.0 * d, ground_height(p.x, p.z - d) - ground_height(p.x, p.z + d)).normalized()
 
 
 static func _is_water(thing: int) -> bool:
@@ -379,6 +507,18 @@ class _Surface:
 			uvs.append(Vector2(point.x, point.z) / TEXTURE_METERS if normal.y > 0.5 else Vector2(point.x + point.z, point.y) / TEXTURE_METERS)
 		# O mesmo giro serve para chão (cima) e margens: a luz de duas faces
 		# não importa, o material não tem culling.
+		indices.append_array(PackedInt32Array([v, v + 1, v + 2, v, v + 2, v + 3]))
+
+	## Como quad, mas com uma cor e uma normal por canto (relevo e água).
+	func quad_colors(a: Vector3, b: Vector3, c: Vector3, d: Vector3, corner_colors: Array, corner_normals: Array) -> void:
+		var v := vertices.size()
+		var points := [a, b, c, d]
+		for i in 4:
+			var point: Vector3 = points[i]
+			vertices.append(point)
+			colors.append(corner_colors[i])
+			normals.append(corner_normals[i])
+			uvs.append(Vector2(point.x, point.z) / TEXTURE_METERS)
 		indices.append_array(PackedInt32Array([v, v + 1, v + 2, v, v + 2, v + 3]))
 
 	func add_to(mesh: ArrayMesh, material: Material) -> void:
@@ -504,6 +644,7 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 				if not standing:
 					continue
 			var base := Vector3((cell.x + 0.5) * METERS, 0.0, (cell.y + 0.5) * METERS)
+			base.y = ground_height(base.x, base.z)
 			var r1 := _rand(cell, 1)
 			var r2 := _rand(cell, 2)
 			var r3 := _rand(cell, 3)
@@ -571,7 +712,8 @@ static func flush(lists: Dictionary, shapes: Dictionary, materials: Variant, par
 		var holder := MultiMeshInstance3D.new()
 		holder.multimesh = multi
 		holder.material_override = materials[shape] if materials is Dictionary else materials
-		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# Só as peças grandes projetam sombra; as pequenas não valem o custo.
+		holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shape in ["trunk", "cone", "box"] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(holder)
 
 
@@ -651,7 +793,11 @@ func _update_sky(delta: float) -> void:
 	var glow := _ring_glow * dark
 	sky = sky.lerp(RING_GLOW * 0.35, glow * 0.5)
 	fog = fog.lerp(RING_GLOW * 0.3, glow * 0.5)
-	_env.background_color = sky
+	_cloud_time += delta
+	_sky_material.set_shader_parameter("top_color", sky)
+	_sky_material.set_shader_parameter("horizon_color", fog)
+	_sky_material.set_shader_parameter("cloud_color", fog.lerp(sky, 0.25).lightened(0.18))
+	_sky_material.set_shader_parameter("wind", Vector2(_cloud_time * 0.004, _cloud_time * 0.0015))
 	_env.fog_light_color = fog
 	_env.ambient_light_color = DAY_AMBIENT.lerp(NIGHT_AMBIENT, dark).lerp(RING_GLOW, glow * 0.5)
 	_env.ambient_light_energy = lerpf(1.3, 0.8, dark) + 0.5 * glow

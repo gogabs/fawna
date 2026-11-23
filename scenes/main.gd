@@ -35,7 +35,13 @@ extends Control
 @onready var options_button: Button = %OptionsButton
 @onready var quit_button: Button = %QuitButton
 @onready var vsync_check: CheckButton = %VsyncCheck
-@onready var graphics_check: CheckButton = %GraphicsCheck
+@onready var graphics_page: Control = %GraphicsPage
+@onready var graphics_button: Button = %GraphicsButton
+@onready var graphics_back_button: Button = %GraphicsBackButton
+@onready var preset_button: Button = %PresetButton
+@onready var shadows_check: CheckButton = %ShadowsCheck
+@onready var msaa_button: Button = %MsaaButton
+@onready var glow_check: CheckButton = %GlowCheck
 @onready var nav_button: Button = %NavButton
 @onready var back_button: Button = %BackButton
 @onready var ui_sound: AudioStreamPlayer = %UiSound
@@ -88,11 +94,16 @@ func _ready() -> void:
 	password_field.nav_control().pressed.connect(_say_editing_password)
 	password_field.submitted.connect(func(_t): _say_field_done("Senha"))
 	vsync_check.toggled.connect(_on_vsync_toggled)
-	graphics_check.toggled.connect(_on_graphics_toggled)
+	graphics_button.pressed.connect(_show_graphics)
+	graphics_back_button.pressed.connect(_back_to_options)
+	preset_button.pressed.connect(_on_preset_pressed)
+	shadows_check.toggled.connect(_on_shadows_toggled)
+	msaa_button.pressed.connect(_on_msaa_pressed)
+	glow_check.toggled.connect(_on_glow_toggled)
 	nav_button.pressed.connect(_on_nav_pressed)
-	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), vsync_check, graphics_check, nav_button, back_button, rescan_button, join_back_button]:
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), graphics_button, graphics_back_button, preset_button, vsync_check, shadows_check, msaa_button, glow_check, nav_button, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
-	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button]:
+	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button, preset_button, msaa_button, graphics_button, graphics_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
 
 	_show_main(false)
@@ -179,7 +190,9 @@ func _process(delta: float) -> void:
 ## texto entram pelo botão (nav_control).
 func _page_items() -> Array[Control]:
 	var page: Control = main_page
-	if options_page.visible:
+	if graphics_page.visible:
+		page = graphics_page
+	elif options_page.visible:
 		page = options_page
 	elif join_page.visible:
 		page = join_page
@@ -215,7 +228,9 @@ func _navigate(action: String) -> void:
 				else:
 					button.pressed.emit()
 		"voltar":
-			if options_page.visible:
+			if graphics_page.visible:
+				_back_to_options()
+			elif options_page.visible:
 				_show_main()
 			elif join_page.visible:
 				_show_main(false)
@@ -230,25 +245,42 @@ func _show_main(save := true) -> void:
 		Net.save_settings()
 	_stop_scan()
 	options_page.hide()
+	graphics_page.hide()
 	join_page.hide()
 	main_page.show()
 	connect_button.text = ("Entrar no mundo como %s" % Net.player_name) if _has_name() else "Entrar no mundo"
 	notice_label.hide()
 	connect_button.grab_focus.call_deferred()
 	if save:
-		Speech.say("Opções salvas. Menu principal.", false)
+		Speech.say("Configurações salvas. Menu principal.", false)
 
 
 func _show_options() -> void:
 	name_field.value = Net.player_name
 	password_field.value = Net.password
 	vsync_check.set_pressed_no_signal(Net.vsync)
-	graphics_check.set_pressed_no_signal(Net.graphics_off)
+	_refresh_graphics()
 	_refresh_nav_button()
 	main_page.hide()
 	options_page.show()
-	Speech.say("Opções.", true)
+	Speech.say("Configurações.", true)
 	name_field.nav_control().grab_focus.call_deferred()
+
+
+func _show_graphics() -> void:
+	_refresh_graphics()
+	options_page.hide()
+	graphics_page.show()
+	Speech.say("Gráficos.", true)
+	preset_button.grab_focus.call_deferred()
+
+
+## Volta da categoria Gráficos sem refazer os campos de nome e senha.
+func _back_to_options() -> void:
+	graphics_page.hide()
+	options_page.show()
+	Speech.say("Configurações.", true)
+	graphics_button.grab_focus.call_deferred()
 
 
 ## Aplica na hora, para dar para sentir a diferença antes de salvar.
@@ -260,13 +292,47 @@ func _on_vsync_toggled(on: bool) -> void:
 		Speech.say(_on_off(on))
 
 
-## Gráficos desligados: vale ao entrar no jogo, para os menus continuarem
-## visíveis (e o leitor de tela recebendo o foco).
-func _on_graphics_toggled(on: bool) -> void:
-	Net.graphics_off = on
+## Os gráficos valem ao entrar no jogo, para os menus continuarem visíveis
+## (e o leitor de tela recebendo o foco). "Desativados" para de desenhar.
+func _on_preset_pressed() -> void:
+	var preset := Net.graphics_preset()
+	Net.set_graphics_preset((preset + 1) % Net.PRESET_NAMES.size() if preset >= 0 else 1)
+	_refresh_graphics()
+	_say_choice(preset_button.text)
+
+
+func _on_shadows_toggled(on: bool) -> void:
+	Net.shadows = on
+	_refresh_graphics()
 	_play(Sounds.ui_confirm())
 	if not Speech.screen_reader_active():
-		Speech.say(_on_off(on))
+		Speech.say("%s. %s" % [_on_off(on), preset_button.text])
+
+
+func _on_msaa_pressed() -> void:
+	Net.msaa = {0: 2, 2: 4, 4: 0}.get(Net.msaa, 0)
+	_refresh_graphics()
+	_say_choice(msaa_button.text)
+
+
+func _on_glow_toggled(on: bool) -> void:
+	Net.glow = on
+	_refresh_graphics()
+	_play(Sounds.ui_confirm())
+	if not Speech.screen_reader_active():
+		Speech.say("%s. %s" % [_on_off(on), preset_button.text])
+
+
+func _say_choice(text: String) -> void:
+	if not Speech.screen_reader_active():
+		Speech.say(text)
+
+
+func _refresh_graphics() -> void:
+	preset_button.text = "Preset de gráficos: %s" % Net.graphics_preset_name()
+	msaa_button.text = "Antisserrilhamento: %s" % ("Desligado" if Net.msaa == 0 else "%dx" % Net.msaa)
+	shadows_check.set_pressed_no_signal(Net.shadows)
+	glow_check.set_pressed_no_signal(Net.glow)
 
 
 func _on_nav_pressed() -> void:
@@ -314,9 +380,9 @@ func _require_name() -> bool:
 	if _has_name() and Net.password.length() >= Credentials.MIN_LENGTH:
 		return true
 	if _has_name():
-		notice_label.text = "Defina uma senha de pelo menos %d caracteres nas Opções antes de entrar." % Credentials.MIN_LENGTH
+		notice_label.text = "Defina uma senha de pelo menos %d caracteres nas Configurações antes de entrar." % Credentials.MIN_LENGTH
 	else:
-		notice_label.text = "Defina seu nome e uma senha nas Opções antes de entrar."
+		notice_label.text = "Defina seu nome e uma senha nas Configurações antes de entrar."
 	notice_label.show()
 	Speech.say(notice_label.text)
 	return false
@@ -420,8 +486,14 @@ func _on_focus(control: Control) -> void:
 		Speech.say(password_field.spoken(), interrupt)
 	elif control == vsync_check:
 		Speech.say("VSync, %s. Botão de alternar. Deixe desligado se o leitor de tela demorar." % _on_off(vsync_check.button_pressed), interrupt)
-	elif control == graphics_check:
-		Speech.say("Desligar os gráficos, %s. Botão de alternar. Gasta bem menos processador no jogo; a janela fica parada." % _on_off(graphics_check.button_pressed), interrupt)
+	elif control == graphics_button:
+		Speech.say("Gráficos, botão. Preset, VSync, sombras e mais.", interrupt)
+	elif control == preset_button:
+		Speech.say("%s. Botão. Desativados para de desenhar no jogo e gasta bem menos processador. Mais desempenho desliga sombras e brilho. Melhores gráficos liga tudo." % preset_button.text, interrupt)
+	elif control == shadows_check:
+		Speech.say("Sombras, %s. Botão de alternar. Pesa na placa de vídeo." % _on_off(shadows_check.button_pressed), interrupt)
+	elif control == glow_check:
+		Speech.say("Brilho nas luzes, %s. Botão de alternar." % _on_off(glow_check.button_pressed), interrupt)
 	elif control == ip_field.nav_control():
 		Speech.say(ip_field.spoken(), interrupt)
 	elif control is Button:

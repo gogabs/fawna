@@ -13,6 +13,7 @@ const GROUND_FLOOR := 0.62
 const BARK_FLOOR := 0.35
 const LEAF_FLOOR := 0.55
 const STONE_FLOOR := 0.5
+const GROUND_BUMP := 5.0
 const WATER_BUMP := 6.0  # força das ondas no mapa de relevo
 
 
@@ -66,6 +67,54 @@ static func water_normal() -> ImageTexture:
 	waves.bump_map_to_normal_map(WATER_BUMP)
 	waves.generate_mipmaps()
 	return ImageTexture.create_from_image(waves)
+
+
+## Relevo fino do chão (mapa de normais), do mesmo tipo de ruído da textura.
+static func ground_normal() -> ImageTexture:
+	var coarse := _noise(FastNoiseLite.TYPE_SIMPLEX_SMOOTH, 0.05, 3, 61).get_seamless_image(SIZE, SIZE)
+	var fine := _noise(FastNoiseLite.TYPE_PERLIN, 0.3, 2, 62).get_seamless_image(SIZE, SIZE)
+	coarse.convert(Image.FORMAT_RGBA8)
+	fine.convert(Image.FORMAT_RGBA8)
+	coarse.blend_rect(fine, Rect2i(0, 0, SIZE, SIZE), Vector2i.ZERO)
+	coarse.bump_map_to_normal_map(GROUND_BUMP)
+	coarse.generate_mipmaps()
+	return ImageTexture.create_from_image(coarse)
+
+
+## Material do céu: gradiente do horizonte ao topo e nuvens que derivam devagar.
+## As cores vêm do relógio do jogo (World3D as atualiza); aqui só o desenho.
+static func sky_material() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = SKY_SHADER
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	var clouds := _noise(FastNoiseLite.TYPE_SIMPLEX_SMOOTH, 0.012, 4, 71).get_seamless_image(256, 256)
+	clouds.generate_mipmaps()
+	material.set_shader_parameter("clouds", ImageTexture.create_from_image(clouds))
+	material.set_shader_parameter("cover", 0.55)
+	return material
+
+
+const SKY_SHADER := """
+shader_type sky;
+uniform vec3 top_color : source_color = vec3(0.3);
+uniform vec3 horizon_color : source_color = vec3(0.3);
+uniform vec3 cloud_color : source_color = vec3(0.4);
+uniform vec2 wind = vec2(0.0);
+uniform float cover = 0.55;
+uniform sampler2D clouds : repeat_enable, filter_linear_mipmap;
+void sky() {
+	float h = clamp(EYEDIR.y, 0.0, 1.0);
+	vec3 col = mix(horizon_color, top_color, pow(h, 0.45));
+	if (EYEDIR.y > 0.0) {
+		vec2 uv = EYEDIR.xz / (EYEDIR.y + 0.3) * 0.7 + wind;
+		float n = texture(clouds, uv).r;
+		float c = smoothstep(1.0 - cover, 1.0 - cover + 0.3, n) * smoothstep(0.02, 0.3, EYEDIR.y);
+		col = mix(col, cloud_color, c * 0.75);
+	}
+	COLOR = col;
+}
+"""
 
 
 static func _noise(kind: int, frequency: float, octaves: int, noise_seed: int) -> FastNoiseLite:

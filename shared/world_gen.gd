@@ -575,6 +575,17 @@ func thing_at(cell: Vector2i) -> Thing:
 	return _chunk_data(cell)[0][_chunk_index(cell)] as Thing
 
 
+## O pedaço (de CHUNK casas) já foi gerado? Deixa o 3D gerar um por vez,
+## em quadros diferentes, em vez de todos de uma vez ao montar o chão.
+func is_generated(chunk: Vector2i) -> bool:
+	return _chunks.has(chunk) or not in_bounds(chunk * CHUNK)
+
+
+## Gera o pedaço, se ainda não foi.
+func generate(chunk: Vector2i) -> void:
+	_chunk_data(chunk * CHUNK)
+
+
 ## [coisas, biomas] do pedaço que contém a casa, gerado na primeira vez.
 func _chunk_data(cell: Vector2i) -> Array:
 	var chunk := Vector2i(floori(float(cell.x) / CHUNK), floori(float(cell.y) / CHUNK))
