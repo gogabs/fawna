@@ -50,6 +50,10 @@ const WATER_LEVEL := -0.18  # a água fica abaixo do chão
 const HEIGHT_AMP := 0.08  # metros: o chão ondula de leve, sem linhas retas
 const FOAM_COLOR := Color("8fa3a6")
 const SHADOW_DISTANCE := 30.0  # só as sombras perto da criatura (custo de FPS)
+const SUB := 2  # pontos da malha do chão por casa (por lado)
+const MARGIN := 3  # casas em volta do pedaço que a malha e a água consultam
+const BED_DEPTH := -0.7  # o leito sob a água (a água fica em WATER_LEVEL)
+const WARP_AMOUNT := 0.55  # metros que o ruído entorta as bordas
 const BANK_COLOR := Color("1c2a26")
 const FALLBACK_COLOR := Color("3a3a3a")  # bioma novo ainda sem cor
 const TRAIL_COLOR := Color("6a5640")
@@ -80,6 +84,7 @@ var _water_time := 0.0
 var _materials := {}  # forma -> material com a textura dela
 var _water_material: StandardMaterial3D
 var _noise := FastNoiseLite.new()
+var _warp := FastNoiseLite.new()
 var _shapes := {}  # forma (String) -> Mesh, criadas uma vez e repartidas entre os pedaços
 var _center_chunk := Vector2i(1 << 30, 1 << 30)
 var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais longe
@@ -93,6 +98,8 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	_harvest = harvest
 	_noise.seed = 1234
 	_noise.frequency = 0.9
+	_warp.seed = 4321
+	_warp.frequency = 0.35
 	var textures := WorldTextures.make_all()
 	_material = _textured(textures["ground"])
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -369,69 +376,56 @@ func _build(key: Vector2i) -> void:
 	var ground := _Surface.new()
 	var water := _Surface.new()
 	var bridges := []  # casas de ponte, para a peça em 3D
-	# Guarda a coisa de cada casa (com uma margem de 3 em volta) para a água
-	# saber a distância até a margem sem consultar o mundo de novo.
-	var kinds := {}
-	for y in range(-3, CHUNK + 3):
-		for x in range(-3, CHUNK + 3):
+	# Guarda, de cada casa (com uma margem em volta), se é água (ou ponte sobre
+	# água) e a cor do chão: o chão é uma malha mais fina que as casas, e cada
+	# ponto dela olha as casas vizinhas, então as bordas saem suaves.
+	var wet := {}  # casa -> verdadeiro se é água ou ponte
+	var kinds := {}  # casa -> verdadeiro se é só água (para a cor)
+	for y in range(-MARGIN, CHUNK + MARGIN):
+		for x in range(-MARGIN, CHUNK + MARGIN):
 			var c := first + Vector2i(x, y)
-			kinds[c] = _is_water(_world.thing_at(c))
+			var thing := _world.thing_at(c)
+			var is_water := _is_water(thing)
+			kinds[c] = is_water
+			wet[c] = is_water or thing == WorldGen.Thing.PONTE
+			if thing == WorldGen.Thing.PONTE and x >= 0 and y >= 0 and x < CHUNK and y < CHUNK:
+				bridges.append(c)
 	var depths := {}
 	for y in range(-1, CHUNK + 1):
 		for x in range(-1, CHUNK + 1):
 			var c := first + Vector2i(x, y)
-			depths[c] = _shore_distance(c, kinds)
+			depths[c] = _shore_distance(c, wet)
+	var land := {}  # casa -> cor do chão
+	for y in range(-2, CHUNK + 2):
+		for x in range(-2, CHUNK + 2):
+			var c := first + Vector2i(x, y)
+			land[c] = BANK_COLOR if wet[c] else _cell_color(c)
+	_build_ground(ground, first, wet, land)
+	# Água: um plano um pouco abaixo do chão sobre as casas de água e as
+	# vizinhas (o chão cobre o que passa da margem); cor mais clara na margem
+	# (espuma) e mais escura no fundo.
+	var bases := {}  # casa -> cor da água, com as cores das casas misturadas nos cantos
 	for y in CHUNK:
 		for x in CHUNK:
 			var cell := first + Vector2i(x, y)
-			var thing := _world.thing_at(cell)
+			if not _near_water(cell, wet):
+				continue
 			var x0 := cell.x * METERS
 			var x1 := x0 + METERS
 			var z0 := cell.y * METERS
 			var z1 := z0 + METERS
-			if kinds[cell]:
-				# Água: um plano mais baixo e, onde o vizinho é terra, uma
-				# parede de margem do chão até a água. A cor clareia perto da
-				# margem (espuma) e escurece onde é fundo.
-				var base := _cell_color(cell)
-				var tints := PackedColorArray()
-				for corner: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
-					var sum := 0.0
-					for off: Vector2i in [Vector2i(-1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 0)]:
-						sum += float(depths.get(cell + corner + off, 4))
-					tints.append(_water_tint(base, sum / 4.0))
-				water.quad_colors(Vector3(x0, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z1), Vector3(x0, WATER_LEVEL, z1), tints, [Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
-				for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-					if kinds[cell + dir]:
-						continue
-					var a: Vector3
-					var b: Vector3
-					if dir.x == 1:
-						a = Vector3(x1, 0.0, z1)
-						b = Vector3(x1, 0.0, z0)
-					elif dir.x == -1:
-						a = Vector3(x0, 0.0, z0)
-						b = Vector3(x0, 0.0, z1)
-					elif dir.y == 1:
-						a = Vector3(x0, 0.0, z1)
-						b = Vector3(x1, 0.0, z1)
-					else:
-						a = Vector3(x1, 0.0, z0)
-						b = Vector3(x0, 0.0, z0)
-					a.y = ground_height(a.x, a.z)
-					b.y = ground_height(b.x, b.z)
-					var wall_a := Vector3(a.x, WATER_LEVEL, a.z)
-					var wall_b := Vector3(b.x, WATER_LEVEL, b.z)
-					ground.quad(a, b, wall_b, wall_a, BANK_COLOR, Vector3(dir.x, 0.0, dir.y))
-				continue
-			if thing == WorldGen.Thing.PONTE:
-				bridges.append(cell)
-			var color := _cell_color(cell)
-			var p0 := Vector3(x0, ground_height(x0, z0), z0)
-			var p1 := Vector3(x1, ground_height(x1, z0), z0)
-			var p2 := Vector3(x1, ground_height(x1, z1), z1)
-			var p3 := Vector3(x0, ground_height(x0, z1), z1)
-			ground.quad_colors(p0, p1, p2, p3, [color, color, color, color], [_ground_normal(p0), _ground_normal(p1), _ground_normal(p2), _ground_normal(p3)])
+			var tints := PackedColorArray()
+			for corner: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
+				var sum := 0.0
+				var base := Color(0, 0, 0, 0)
+				for off: Vector2i in [Vector2i(-1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 0)]:
+					var c2 := cell + corner + off
+					sum += float(depths.get(c2, 4))
+					if not bases.has(c2):
+						bases[c2] = _water_base(c2, kinds)
+					base += bases[c2] * 0.25
+				tints.append(_water_tint(base, sum / 4.0))
+			water.quad_colors(Vector3(x0, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z0), Vector3(x1, WATER_LEVEL, z1), Vector3(x0, WATER_LEVEL, z1), tints, [Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
 	var mesh := ArrayMesh.new()
 	ground.add_to(mesh, _material)
 	water.add_to(mesh, _water_material)
@@ -443,6 +437,94 @@ func _build(key: Vector2i) -> void:
 	_chunks[key] = instance
 	_bridges[key] = bridges
 	_add_things(instance, first, bridges)
+
+
+## Malha do chão de um pedaço: SUB x SUB pontos por casa. Os pontos que caem
+## onde há água afundam até o leito, então a margem é a linha em que o chão
+## cruza a água: uma curva, não o degrau das casas. Tudo é função da posição
+## no mundo, então os pedaços se encaixam sem emenda.
+func _build_ground(ground: _Surface, first: Vector2i, wet: Dictionary, land: Dictionary) -> void:
+	var grid := CHUNK * SUB
+	var n := grid + 3  # um ponto a mais em cada lado, para as normais
+	var step := METERS / SUB
+	var origin := Vector2(first.x * METERS, first.y * METERS)
+	var heights := PackedFloat32Array()
+	heights.resize(n * n)
+	var colors := PackedColorArray()
+	colors.resize(n * n)
+	for j in n:
+		for i in n:
+			var x := origin.x + (i - 1) * step
+			var z := origin.y + (j - 1) * step
+			var warped := Vector2(x, z) + Vector2(_warp.get_noise_2d(x, z), _warp.get_noise_2d(x + 97.0, z - 53.0)) * WARP_AMOUNT
+			var wetness := smoothstep(0.3, 0.7, _blend_wet(warped, wet))
+			heights[j * n + i] = lerpf(ground_height(x, z), BED_DEPTH, wetness)
+			var color := _blend_color(warped, land)
+			colors[j * n + i] = color.lerp(BANK_COLOR, wetness * 0.4)
+	for j in range(1, n - 1):
+		for i in range(1, n - 1):
+			var x := origin.x + (i - 1) * step
+			var z := origin.y + (j - 1) * step
+			var dx := (heights[j * n + i + 1] - heights[j * n + i - 1]) / (2.0 * step)
+			var dz := (heights[(j + 1) * n + i] - heights[(j - 1) * n + i]) / (2.0 * step)
+			ground.vertices.append(Vector3(x, heights[j * n + i], z))
+			ground.normals.append(Vector3(-dx, 1.0, -dz).normalized())
+			ground.colors.append(colors[j * n + i])
+			ground.uvs.append(Vector2(x, z) / TEXTURE_METERS)
+	var row := grid + 1
+	for j in grid:
+		for i in grid:
+			var a := j * row + i
+			ground.indices.append_array(PackedInt32Array([a, a + 1, a + 1 + row, a, a + 1 + row, a + row]))
+
+
+## Fração de água (0 a 1) num ponto: mistura bilinear das quatro casas mais
+## perto, tendo cada casa o valor no centro dela.
+func _blend_wet(p: Vector2, wet: Dictionary) -> float:
+	var u := p.x / METERS - 0.5
+	var v := p.y / METERS - 0.5
+	var cx := floori(u)
+	var cz := floori(v)
+	var fx := u - cx
+	var fz := v - cz
+	var a := 1.0 if wet.get(Vector2i(cx, cz), false) else 0.0
+	var b := 1.0 if wet.get(Vector2i(cx + 1, cz), false) else 0.0
+	var c := 1.0 if wet.get(Vector2i(cx, cz + 1), false) else 0.0
+	var d := 1.0 if wet.get(Vector2i(cx + 1, cz + 1), false) else 0.0
+	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
+
+
+func _blend_color(p: Vector2, land: Dictionary) -> Color:
+	var u := p.x / METERS - 0.5
+	var v := p.y / METERS - 0.5
+	var cx := floori(u)
+	var cz := floori(v)
+	var fx := u - cx
+	var fz := v - cz
+	var a: Color = land.get(Vector2i(cx, cz), FALLBACK_COLOR)
+	var b: Color = land.get(Vector2i(cx + 1, cz), FALLBACK_COLOR)
+	var c: Color = land.get(Vector2i(cx, cz + 1), FALLBACK_COLOR)
+	var d: Color = land.get(Vector2i(cx + 1, cz + 1), FALLBACK_COLOR)
+	return a.lerp(b, fx).lerp(c.lerp(d, fx), fz)
+
+
+## A casa é de água ou encosta numa (incluindo as diagonais)?
+static func _near_water(cell: Vector2i, wet: Dictionary) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if wet.get(cell + Vector2i(dx, dy), false):
+				return true
+	return false
+
+
+## Cor da água de uma casa: a dela, ou a de uma vizinha de água, ou a da lagoa.
+func _water_base(cell: Vector2i, kinds: Dictionary) -> Color:
+	if kinds.get(cell, false):
+		return _cell_color(cell)
+	for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if kinds.get(cell + dir, false):
+			return _cell_color(cell + dir)
+	return WATER_COLORS[WorldGen.Thing.LAGO]
 
 
 ## Distância (em casas, até 3; 4 = longe) de uma casa de água até a terra mais
