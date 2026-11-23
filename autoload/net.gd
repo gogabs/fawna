@@ -44,6 +44,8 @@ var graphics_off := false
 var shadows := false
 var msaa := 0
 var glow := false
+## Minimapa com a bússola no canto da tela (só visual).
+var minimap := true
 const PRESET_NAMES := ["Desativados", "Mais desempenho", "Melhores gráficos"]
 ## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
 ## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
@@ -90,6 +92,7 @@ func load_settings() -> void:
 	shadows = config.get_value("video", "sombras", shadows)
 	msaa = config.get_value("video", "antisserrilhamento", msaa)
 	glow = config.get_value("video", "brilho", glow)
+	minimap = config.get_value("video", "minimapa", minimap)
 	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
@@ -102,6 +105,7 @@ func save_settings() -> void:
 	config.set_value("video", "sombras", shadows)
 	config.set_value("video", "antisserrilhamento", msaa)
 	config.set_value("video", "brilho", glow)
+	config.set_value("video", "minimapa", minimap)
 	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
 

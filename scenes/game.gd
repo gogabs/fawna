@@ -3038,6 +3038,7 @@ func _graphics_items() -> Array:
 		{"label": "Sombras: %s" % ("ligadas" if Net.shadows else "desligadas"), "run": _graphics_set.bind("sombras")},
 		{"label": "Antisserrilhamento: %s" % ("desligado" if Net.msaa == 0 else "%dx" % Net.msaa), "run": _graphics_set.bind("msaa")},
 		{"label": "Brilho nas luzes: %s" % ("ligado" if Net.glow else "desligado"), "run": _graphics_set.bind("brilho")},
+		{"label": "Minimapa e bússola: %s" % ("ligado" if Net.minimap else "desligado"), "run": _graphics_set.bind("minimapa")},
 	]
 
 
@@ -3059,6 +3060,9 @@ func _graphics_set(what: String) -> String:
 		"msaa":
 			Net.msaa = {0: 2, 2: 4, 4: 0}.get(Net.msaa, 0)
 			text = "Antisserrilhamento %s." % ("desligado" if Net.msaa == 0 else "%dx" % Net.msaa)
+		"minimapa":
+			Net.minimap = not Net.minimap
+			text = "Minimapa e bússola %s." % ("ligado" if Net.minimap else "desligado")
 		"brilho":
 			Net.glow = not Net.glow
 			text = "Brilho nas luzes %s." % ("ligado" if Net.glow else "desligado")

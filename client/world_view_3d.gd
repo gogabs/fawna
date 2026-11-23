@@ -70,6 +70,7 @@ static var _height_noise: FastNoiseLite
 var _sun: DirectionalLight3D
 var _ring_glow := 0.0
 var _ring_check := 0.0
+var _minimap: MinimapView
 var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
@@ -134,6 +135,11 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 	add_child(_camera)
 	_camera.make_current()
 	_setup_environment()
+	_minimap = MinimapView.new()
+	_minimap.name = "Minimapa3D"
+	add_child(_minimap)
+	_minimap.setup(_map_color)
+	_minimap.visible = Net.minimap
 	if builds != null:
 		_obras = BuildsView3D.new()
 		_obras.name = "Obras3D"
@@ -251,6 +257,8 @@ func chunk_count() -> int:
 ## Aplica já as opções de vídeo (sombras, suavização de bordas e brilho),
 ## para o menu do jogo mudá-las sem sair do mundo.
 func apply_quality() -> void:
+	if _minimap != null:
+		_minimap.visible = Net.minimap
 	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
 	if _env != null:
 		_env.glow_enabled = Net.glow
@@ -329,6 +337,8 @@ func _plan(center: Vector2i) -> void:
 
 func _process(delta: float) -> void:
 	_update_sky(delta)
+	if _minimap != null and _minimap.visible:
+		_minimap.update(_pos, _camera.rotation.y if _camera != null else 0.0)
 	_animate_water(delta)
 	if _held_flame != null and _held_flame.visible:
 		var flicker := 1.0 + 0.12 * sin(Time.get_ticks_msec() * 0.021) + 0.06 * sin(Time.get_ticks_msec() * 0.047)
@@ -615,6 +625,25 @@ class _Surface:
 		arrays[Mesh.ARRAY_INDEX] = indices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+
+
+## Cor de uma casa no minimapa: o chão, com as árvores e as pedras por cima.
+func _map_color(cell: Vector2i) -> Color:
+	var thing := _world.thing_at(cell)
+	var color := _cell_color(cell)
+	color.a = 1.0
+	match thing:
+		WorldGen.Thing.ARVORE:
+			return TREE_CROWN.get(_world.biome_at(cell), TREE_CROWN_DEFAULT).darkened(0.1)
+		WorldGen.Thing.PEDRAS:
+			return STONE_COLOR
+		WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS:
+			return SHRUB_COLOR
+		WorldGen.Thing.BAMBU:
+			return BAMBOO_COLOR
+	if WATER_COLORS.has(thing):
+		return color.lightened(0.15)
+	return color
 
 
 func _cell_color(cell: Vector2i) -> Color:
