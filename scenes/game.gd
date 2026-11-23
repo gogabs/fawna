@@ -4406,6 +4406,9 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"ESCURECER":  # testes: escurece a tela (fade do desfalecer)
+				if view3d != null:
+					view3d.fade_out(0.05)
 			"TERCEIRA":  # testes: liga a câmera em terceira pessoa
 				Net.third_person = true
 				if view3d != null:

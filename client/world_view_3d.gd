@@ -79,6 +79,8 @@ var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
 var _held_torch: Node3D
+var _fade_rect: ColorRect
+var _fade_tween: Tween
 var _torch_held := false
 var _torch_lit := false
 var _self_model: Node3D  # o próprio personagem, só na terceira pessoa
@@ -332,6 +334,32 @@ func flash(seconds: float) -> void:
 	_flash_rect.color = Color(0.85, 0.93, 1.0, 0.35)
 	var tween := create_tween()
 	tween.tween_property(_flash_rect, "color:a", 0.0, maxf(seconds, 0.1))
+
+
+## Escurece a tela até o preto em "seconds" (desfalecer, ser levado pelo Calado).
+func fade_out(seconds: float) -> void:
+	_fade_to(1.0, seconds)
+
+
+## Clareia de volta do preto em "seconds", já no lugar novo.
+func fade_in(seconds: float) -> void:
+	_fade_to(0.0, seconds)
+
+
+func _fade_to(alpha: float, seconds: float) -> void:
+	if _fade_rect == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 20  # por cima de tudo (menu, minimapa, clarão)
+		add_child(layer)
+		_fade_rect = ColorRect.new()
+		_fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_fade_rect.color = Color(0.0, 0.0, 0.0, 0.0)
+		layer.add_child(_fade_rect)
+	if _fade_tween != null:
+		_fade_tween.kill()
+	_fade_tween = create_tween()
+	_fade_tween.tween_property(_fade_rect, "color:a", alpha, maxf(seconds, 0.05))
 
 
 ## A tocha na mão esquerda, no canto da tela: "held" se há uma tocha na mão,

@@ -267,9 +267,13 @@ func horror_caught(spot: Vector2, _lost_something: bool) -> void:
 	_caught = true
 	_known.clear()
 	game._play(HorrorSounds.caught())
+	if game.view3d != null:
+		game.view3d.fade_out(minf(HorrorSounds.CAUGHT_SECONDS * 0.8, 1.0))
 	await get_tree().create_timer(HorrorSounds.CAUGHT_SECONDS).timeout
 	game._set_pos(spot)
 	game._last_sent = spot
+	if game.view3d != null:
+		game.view3d.fade_in(1.2)
 	game._play(HorrorSounds.relief())
 	await get_tree().create_timer(HorrorSounds.RELIEF_SECONDS).timeout
 	_caught = false
