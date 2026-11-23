@@ -165,6 +165,14 @@ A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais 
 
 O forno se constrói em Fabricar > Construções, colado do lado de fora da parede de um abrigo pronto (de lado, longe da porta), um por abrigo: base de pedras (2 grandes, 4 médias), cúpula de argila (6, que seca uns 3 minutos) e a madeira com 1 sílex. Acende e queima madeira como a fogueira. Aceso, Espaço nele abre o forno: **Broa de milho** (3 espigas; sustenta bem e dura 6 dias), **Ensopado** (1 cenoura, 2 raízes e 1 cogumelo, no pote; enche e aquece muito, mas estraga em meio dia), **Assar tudo** (raízes e milho da bolsa, de uma vez) e **Queimar o pote de argila**. O pote se modela em Fabricar > Utensílios com 3 argilas, sai cru e só serve depois de queimado; não se gasta. Com o forno aceso, quem está dentro do abrigo se aquece mais depressa; do lado de fora, o forno não aquece como a fogueira. Receitas em `shared/cooking.gd`. Comandos de teste: `FORNO` (começa à frente), `FORNO_PRONTO` (um forno aceso no abrigo mais perto, para quem hospeda), `POTE`, `BROA`.
 
+### Secador, pote selado e manto
+
+- **Secador** (Fabricar > Construções): um varal de 4 bambus e 2 cipós. Espaço nele pendura frutas e cogumelos da bolsa (cabem 12) e recolhe o que secou: secam em 10 minutos (5 com uma fogueira acesa a até 4 casas) e viram fruta seca e cogumelo seco, que saciam menos mas duram 30 dias.
+- **Pote selado** (Fabricar > Utensílios): o pote de argila queimado, 2 resinas e 1 fibra. Pela Bolsa, no pote, guarda e tira comida: cabem 8 por pote, e lá dentro a comida não envelhece (volta com a idade que tinha). Pote com comida não se larga.
+- **Manto de fibra** (bancada da oficina): 8 fibras, 2 cipós e 1 resina, sem pele (nada no jogo vem de matar animais, só o peixe). Vestido pela Bolsa (e tirado em Equipamento), soma 25 ao teto de qualquer fonte de calor (sozinho, segura 25 no frio) e a perda no frio cai para 60%. Não pesa na carga enquanto vestido.
+
+Comando de teste: `SECADOR` (começa um secador à frente).
+
 ## Como se joga (por enquanto)
 
 1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu e as frutas têm um som baixinho e próprio, em 3D:

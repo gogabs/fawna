@@ -417,6 +417,7 @@ func request_join(player_name: String, password: String) -> void:
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	daytime.sync_to(id)
 	survival.send_to(id)
+	survival.send_stash(id)
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), state.torch_left(id), "", "")
 	torches_changed.rpc_id(id, state.lit_torch_ids())
@@ -661,8 +662,8 @@ func request_drop(item: String, amount: int) -> void:
 	var id := _sender_id()
 	var result := state.drop(id, item, amount)
 	if not result["ok"]:
-		if state.players.has(id) and result["reason"] == "nao_tem":
-			action_failed.rpc_id(id, "nao_tem", item)
+		if state.players.has(id) and result["reason"] in ["nao_tem", "pote_cheio"]:
+			action_failed.rpc_id(id, str(result["reason"]), item)
 		return
 	_dirty = true
 	inventory_changed.rpc_id(id, state.inventory_of(id), "", "")
@@ -1321,6 +1322,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"porta": Sounds.door(bool(extra.get("open", true))) if event == "porta" else null,
 		"guardou": Sounds.build_deposit(), "pegou_estoque": Sounds.build_deposit(),
 		"dono": Sounds.build_stage(), "sem_dono": Sounds.build_deposit(),
+		"secador": Sounds.build_deposit(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
@@ -1417,6 +1419,8 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 				Speech.say("%s está pront%s: %d por %d casas, com a porta para o %s.%s" % [
 					Crafting.build_title(build["kind"]), Crafting.BUILDS[build["kind"]]["article"], int(build["size"]), int(build["size"]), build["entrance"],
 					" " + Builds.furniture_hint(build) if Crafting.has_furniture(build["kind"]) else ""])
+			elif Builds.has_rack(build):
+				Speech.say("O secador está pronto. Espaço nele pendura frutas e cogumelos para secar; perto de uma fogueira acesa, secam na metade do tempo.")
 			elif build["kind"] == "forno":
 				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
 				Speech.say("O forno está pronto, com madeira para uns %d minuto%s. Espaço bate as pedras para acender; aceso, Espaço abre o forno para cozinhar, e ele aquece o abrigo." % [
@@ -1627,6 +1631,8 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Na Longa Escuridão isto não dá nada.")
 		"cheio":
 			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
+		"pote_cheio":
+			Speech.say("Há comida guardada no pote selado. Tire antes de largá-lo.")
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -2530,6 +2536,8 @@ func _interact() -> void:
 			Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
 		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
 			Speech.say(builds.status_text(int(build["id"])))
+		elif Builds.has_rack(build):
+			Speech.say(_menu.open_at("Secador", _rack_root.bind(int(build["id"]))))
 		elif build["kind"] == "forno" and build["done"] and builds.is_lit(int(build["id"])):
 			Speech.say(_menu.open_at("Forno aceso", _oven_root.bind(int(build["id"]))))
 		else:
@@ -2714,7 +2722,7 @@ func _use_ability() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; cada um aquece só até certo ponto: a fogueira mais quanto mais madeira tem, o abrigo pela metade e um pouco mais, e o abrigo com forno aceso quase até o fim. A tocha só freia o frio. O forno se constrói em Fabricar, Construções, colado do lado de fora da parede de um abrigo pronto, longe da porta. Aceso, Espaço nele abre o forno: broa de milho, ensopado (no pote de argila, que se modela em Fabricar, Utensílios, e se queima no próprio forno) e assar tudo de uma vez. O forno aceso aquece mais depressa quem está dentro do abrigo. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com fome ou frio você vai ficando lento, aos poucos; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, e os cavalos a até 48 metros (manadas selvagens e cavalos domesticados, pelo nome), do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. Cavalinhos-da-bruma vivem em manadas na pradaria e no deserto gelado: quem chega andando direto os espanta. Pare perto até a manada se acalmar, chegue devagar até um cavalo e ofereça frutas com Espaço, uma de cada vez, esperando ele mastigar; depois de algumas, ele perde o medo e segue você por um tempo; então, Espaço nele com um cabresto (feito na bancada da oficina) o faz seu, e você escolhe o nome. Cada um tem um cavalo só. Seu cavalo segue você, menos quando para para comer. Perto dele, o menu das setas ganha Cavalo, para pôr o alforje e guardar ou pegar coisas nele, e o manto: no frio, sem manto, o cavalo anda mais devagar e não galopa. Ali também dá para soltar o cavalo, que volta a ser selvagem. Alforje e manto também se fazem na bancada da oficina. M monta nele e, montado, desmonta (subir e descer levam um instante); o cavalo anda sozinho: W sobe de parado para passo, trote e galope (um toque por vez, ou segurando) (os calcanhares batem no lombo); segurar S freia e, parado, dá ré enquanto segura; A e D não fazem nada, gire com Q e E. O cavalo desvia sozinho de obstáculos pequenos, segue as curvas das trilhas na mata, no bambuzal e perto da água, e derrapa e para antes de bater. Montado, não dá para golpear nem usar a habilidade da espécie, menos o uivo do Geado. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; cada um aquece só até certo ponto: a fogueira mais quanto mais madeira tem, o abrigo pela metade e um pouco mais, e o abrigo com forno aceso quase até o fim. A tocha só freia o frio. O forno se constrói em Fabricar, Construções, colado do lado de fora da parede de um abrigo pronto, longe da porta. Aceso, Espaço nele abre o forno: broa de milho, ensopado (no pote de argila, que se modela em Fabricar, Utensílios, e se queima no próprio forno) e assar tudo de uma vez. O forno aceso aquece mais depressa quem está dentro do abrigo. Para guardar comida: o secador (Fabricar, Construções) seca frutas e cogumelos, que então duram a estação inteira, mais depressa perto de uma fogueira acesa; o pote selado (o pote queimado com resina, em Fabricar, Utensílios) guarda comida sem estragar, pela Bolsa. O manto de fibra, feito na bancada da oficina e vestido pela Bolsa, segura o calor perto do fogo e longe dele. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com fome ou frio você vai ficando lento, aos poucos; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, e os cavalos a até 48 metros (manadas selvagens e cavalos domesticados, pelo nome), do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. Cavalinhos-da-bruma vivem em manadas na pradaria e no deserto gelado: quem chega andando direto os espanta. Pare perto até a manada se acalmar, chegue devagar até um cavalo e ofereça frutas com Espaço, uma de cada vez, esperando ele mastigar; depois de algumas, ele perde o medo e segue você por um tempo; então, Espaço nele com um cabresto (feito na bancada da oficina) o faz seu, e você escolhe o nome. Cada um tem um cavalo só. Seu cavalo segue você, menos quando para para comer. Perto dele, o menu das setas ganha Cavalo, para pôr o alforje e guardar ou pegar coisas nele, e o manto: no frio, sem manto, o cavalo anda mais devagar e não galopa. Ali também dá para soltar o cavalo, que volta a ser selvagem. Alforje e manto também se fazem na bancada da oficina. M monta nele e, montado, desmonta (subir e descer levam um instante); o cavalo anda sozinho: W sobe de parado para passo, trote e galope (um toque por vez, ou segurando) (os calcanhares batem no lombo); segurar S freia e, parado, dá ré enquanto segura; A e D não fazem nada, gire com Q e E. O cavalo desvia sozinho de obstáculos pequenos, segue as curvas das trilhas na mata, no bambuzal e perto da água, e derrapa e para antes de bater. Montado, não dá para golpear nem usar a habilidade da espécie, menos o uivo do Geado. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -3208,6 +3216,11 @@ func _bag_items() -> Array:
 			soon += int(survival.spoiling.get(key, 0))
 		if soon > 0:
 			label += ", %d passando" % soon if soon < int(entry[1]) else ", passando"
+		if item == "pote_selado" and not survival.jar.is_empty():
+			var inside := 0
+			for amount in survival.jar.values():
+				inside += int(amount)
+			label += ", com %d comida%s dentro" % [inside, "" if inside == 1 else "s"]
 		if keys.size() == 1 and keys[0] == item:
 			items.append({"label": label, "open": _bag_item_actions.bind(item)})
 		else:
@@ -3230,6 +3243,81 @@ func _bag_sizes(base: String) -> Array:
 	return items
 
 
+func _wear(item: String) -> String:
+	survival.request_wear.rpc_id(1, item)
+	return ""
+
+
+func _take_off() -> String:
+	survival.request_take_off.rpc_id(1)
+	return ""
+
+
+## "Dentro do pote selado: 3 broas de milho e 2 frutas secas. Cabem mais 3."
+func _jar_text() -> String:
+	var used := 0
+	for amount in survival.jar.values():
+		used += int(amount)
+	var room := WorldState.JAR_CAPACITY * int(inventory.get("pote_selado", 0)) - used
+	if survival.jar.is_empty():
+		return "O pote selado está vazio. Cabem %d comidas, e ali elas não estragam." % room
+	return "Dentro do pote selado: %s. Cabem mais %d." % [Economy.items_text(survival.jar), room]
+
+
+func _jar_store_items() -> Array:
+	var items := []
+	for key: String in inventory:
+		if not Body.is_food(key) or key == Body.SPOILED:
+			continue
+		var amount := int(inventory[key])
+		items.append({"label": "%s, %d" % [Bag.display_name(key), amount], "run": _jar_store.bind(key, amount)})
+	return items
+
+
+func _jar_take_items() -> Array:
+	var items := []
+	for key: String in survival.jar:
+		var amount := int(survival.jar[key])
+		items.append({"label": "%s, %d: tirar 1" % [Bag.display_name(key), amount], "run": _jar_take.bind(key, 1)})
+		if amount > 1:
+			items.append({"label": "%s: tirar todas, %d" % [Bag.display_name(key), amount], "run": _jar_take.bind(key, amount)})
+	return items
+
+
+func _jar_store(item: String, amount: int) -> String:
+	survival.request_jar_store.rpc_id(1, item, amount)
+	return ""
+
+
+func _jar_take(item: String, amount: int) -> String:
+	survival.request_jar_take.rpc_id(1, item, amount)
+	return ""
+
+
+## Espaço no secador pronto: pendurar fruta ou cogumelo da bolsa, recolher o
+## que secou e como está.
+func _rack_root(build_id: int) -> Array:
+	var items := []
+	for key: String in inventory:
+		if not Builds.dries_into(key).is_empty():
+			var amount := int(inventory[key])
+			items.append({"label": "Pendurar %s, %d" % [Economy.names_of(key)[1 if amount > 1 else 0], amount],
+				"run": _rack_hang.bind(build_id, key, amount)})
+	items.append({"label": "Recolher o que secou", "run": _rack_gather.bind(build_id)})
+	items.append({"label": "Como está", "info": builds.rack_text(build_id)})
+	return items
+
+
+func _rack_hang(build_id: int, item: String, amount: int) -> String:
+	survival.request_rack_hang.rpc_id(1, build_id, item, amount)
+	return ""
+
+
+func _rack_gather(build_id: int) -> String:
+	survival.request_rack_gather.rpc_id(1, build_id)
+	return ""
+
+
 func _bag_item_actions(item: String) -> Array:
 	var amount := int(inventory.get(item, 0))
 	var actions := []
@@ -3243,6 +3331,12 @@ func _bag_item_actions(item: String) -> Array:
 			actions.append({"label": "Assar todas, %d" % amount, "run": _roast.bind(item, amount)})
 	if Bag.can_wield(item):
 		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
+	if item == "manto":
+		actions.append({"label": "Vestir", "run": _wear.bind(item)})
+	if item == "pote_selado":
+		actions.append({"label": "Guardar comida", "open": _jar_store_items, "empty": "não há comida na bolsa"})
+		actions.append({"label": "Tirar comida", "open": _jar_take_items, "empty": "o pote está vazio"})
+		actions.append({"label": "O que tem dentro", "info": _jar_text()})
 	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
 	if amount > 1:
 		actions.append({"label": "Jogar tudo, %d" % amount, "run": _drop.bind(item, amount)})
@@ -3281,6 +3375,9 @@ func _equipment_items() -> Array:
 	var items := []
 	if not wielded.is_empty():
 		items.append({"label": Bag.display_name(wielded), "open": _equipment_actions})
+	if not survival.worn.is_empty():
+		items.append({"label": "%s, vestido" % Bag.display_name(survival.worn),
+			"open": func(): return [{"label": "Tirar", "run": _take_off}] if not survival.worn.is_empty() else []})
 	if not offhand.is_empty():
 		var lit := _torch_ends > Time.get_unix_time_from_system()
 		items.append({"label": "%s, mão não dominante%s" % [Bag.display_name(offhand), ", acesa" if lit else ", apagada"],
@@ -4235,6 +4332,10 @@ func _run_auto_commands() -> void:
 				_test_oven()
 			"POTE":
 				_craft("pote_cru")
+			"SECADOR":
+				_start_build("secador")
+			"OFICINA":  # testes, só quem hospeda: uma oficina 5x5 pronta perto (para o manto na bancada)
+				_test_workshop()
 			"BROA":  # testes, só quem hospeda: 3 espigas e a broa no forno aceso ao lado
 				if state != null:
 					state.inventory_of(my_id)["milho"] = 3
@@ -4316,6 +4417,32 @@ func _test_shelters() -> void:
 			if placed:
 				break
 	build_snapshot.rpc(state.builds.snapshot())
+
+
+## Teste: uma oficina 5x5 pronta, com a porta ao sul, perto de quem hospeda.
+func _test_workshop() -> void:
+	if state == null:
+		return
+	if not state.builds.has_settlement(world.region_of(WorldGen.cell_of(_pos))):
+		_test_settlement()
+	var here := WorldGen.cell_of(_pos)
+	for r in range(5, 60, 2):
+		for dx in range(-r, r + 1, 2):
+			for dy in [-r, r]:
+				for spot: Vector2i in [here + Vector2i(dx, dy), here + Vector2i(dy, dx)]:
+					if not state.builds.site_refusal("oficina", spot, 5, "sul").is_empty():
+						continue
+					var made: Dictionary = state.builds.start_site("oficina", spot, 5, "sul")
+					var build: Dictionary = state.builds.get_build(int(made["id"]))
+					build["done"] = true
+					build["phase"] = "obra"
+					build["stage"] = Crafting.stage_count("oficina")
+					build["prep"] = {}
+					build["removed"] = Builds.footprint_cells(spot, 5)
+					state.builds._register_walls(build)
+					print("[teste] oficina 5x5 em %s" % spot)
+					build_snapshot.rpc(state.builds.snapshot())
+					return
 
 
 ## Teste: um forno pronto e aceso colado no abrigo pronto mais perto de quem

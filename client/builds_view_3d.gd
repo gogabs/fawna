@@ -142,6 +142,8 @@ func _add_build(lists: Dictionary, build: Dictionary) -> void:
 	if size <= 1:
 		if kind == "forno":
 			_add_oven(lists, build, finished)
+		elif kind == "secador":
+			_add_rack(lists, build, finished)
 		elif Crafting.BUILDS[kind].get("fire", false):
 			_add_fire(lists, build, finished)
 		else:
@@ -186,6 +188,18 @@ func _add_fire(lists: Dictionary, build: Dictionary, finished: int) -> void:
 			_flickers.append({"light": light, "base": FIRE_ENERGY, "phase": randf() * TAU})
 		else:
 			WorldView3D.put(lists, "blob", at, Vector3(0.7, 0.1, 0.7), 0.0, 0.05, ASH)
+
+
+## Secador: dois esteios de bambu e o varal entre eles.
+func _add_rack(lists: Dictionary, build: Dictionary, finished: int) -> void:
+	if finished < 1:
+		return
+	var at := _cell_at(build["cell"])
+	for side in [-0.6, 0.6]:
+		WorldView3D.put(lists, "box", at + Vector3(side, 0.0, 0.0), Vector3(0.1, 1.6, 0.1), 0.0, 0.8, POST)
+	WorldView3D.put(lists, "box", at, Vector3(1.3, 0.06, 0.06), 0.0, 1.5, POST)
+	if not (build.get("rack", []) as Array).is_empty():
+		WorldView3D.put(lists, "box", at, Vector3(1.0, 0.3, 0.08), 0.0, 1.3, CLAY)
 
 
 ## Forno: base de pedras, a cúpula de argila por cima e, aceso, a brasa na boca.
