@@ -14,7 +14,9 @@ const ACTIONS := {
 
 
 ## direction: "cima", "baixo", "esquerda" ou "direita".
-static func action(direction: String, vertical := Net.vertical_nav) -> String:
+static func action(direction: String, vertical: Variant = null) -> String:
+	if vertical == null:
+		vertical = _vertical()
 	if vertical:
 		match direction:
 			"cima": return "anterior"
@@ -45,7 +47,18 @@ static func from_event(event: InputEvent) -> String:
 
 
 ## Como usar as setas, para falar.
-static func help(vertical := Net.vertical_nav) -> String:
+static func help(vertical: Variant = null) -> String:
+	if vertical == null:
+		vertical = _vertical()
 	if vertical:
 		return "Cima e baixo escolhem, seta para a direita confirma e seta para a esquerda volta."
 	return "Esquerda e direita escolhem, seta para cima confirma e seta para baixo volta."
+
+
+## A orientação escolhida nas Opções (Net.vertical_nav). Procurada pela árvore,
+## e não pelo nome do autoload, para os testes que rodam sem os autoloads
+## (godot --script) conseguirem compilar os menus.
+static func _vertical() -> bool:
+	var tree := Engine.get_main_loop() as SceneTree
+	var net: Node = tree.root.get_node_or_null("Net") if tree != null else null
+	return bool(net.get("vertical_nav")) if net != null else false
