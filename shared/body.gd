@@ -83,7 +83,10 @@ const TORCH_FACTOR := 0.5
 const TORCH_CAP := 20.0
 ## Sem frio: o calor volta até cheio em WARM_DAYS.
 const WARM_DAYS := 0.25
-## O manto (ainda por fazer) somará ao teto de qualquer fonte e frearia a perda.
+## Manto de fibra vestido: soma CLOAK_BONUS ao teto de qualquer fonte (mesmo
+## sem fonte nenhuma) e a perda no frio cai para CLOAK_FACTOR.
+const CLOAK_BONUS := 25.0
+const CLOAK_FACTOR := 0.6
 
 ## Comida: quanto cada item sacia (fome) e aquece (calor), em pontos da
 ## reserva, como se diz ao comer ("Você come uma fruta.") e em quantos dias de
@@ -108,6 +111,9 @@ const FOODS := {
 	# mas estraga logo.
 	"broa": {"food": 40.0, "warmth": 4.0, "eat": "uma broa de milho", "keeps": 6.0},
 	"ensopado": {"food": 35.0, "warmth": 25.0, "eat": "um ensopado quente", "keeps": 0.5},
+	# Do secador: sacia menos que a fresca, mas dura a estação inteira.
+	"fruta_seca": {"food": 8.0, "warmth": 0.0, "eat": "uma fruta seca", "keeps": 30.0},
+	"cogumelo_seco": {"food": 5.0, "warmth": 0.0, "eat": "um cogumelo seco", "keeps": 30.0},
 }
 ## O que a comida vira quando estraga: só serve para jogar fora.
 const SPOILED := "estragada"
@@ -238,7 +244,8 @@ static func cold_days(season: int, night: bool, biome: int) -> float:
 
 ## Um passo do corpo. "ctx" diz onde a criatura está:
 ##   season (0-3), night (bool), biome (WorldGen.Biome), fire (fogueira perto),
-##   shelter (dentro de um abrigo pronto), oven (e o forno colado nele aceso), torch (tocha acesa), wet (molhado),
+##   shelter (dentro de um abrigo pronto), oven (e o forno colado nele aceso),
+##   cloak (manto vestido), torch (tocha acesa), wet (molhado),
 ##   species, day_seconds.
 ## Muda "entry" no lugar e devolve os níveis {food, warmth} depois do passo.
 static func step(entry: Dictionary, seconds: float, ctx: Dictionary) -> Dictionary:
@@ -260,6 +267,8 @@ static func step(entry: Dictionary, seconds: float, ctx: Dictionary) -> Dictiona
 		var loss := MAX / (days * day_seconds) * Species.effect(species, "cold")
 		if bool(ctx.get("torch", false)):
 			loss *= TORCH_FACTOR
+		if bool(ctx.get("cloak", false)):
+			loss *= CLOAK_FACTOR
 		if bool(ctx.get("wet", false)):
 			loss *= WET_FACTOR
 		warmth = maxf(cap, warmth - loss * seconds)
@@ -270,7 +279,8 @@ static func step(entry: Dictionary, seconds: float, ctx: Dictionary) -> Dictiona
 
 ## A fonte de calor que vale agora: { kind, cap, days }. "kind": "fire",
 ## "oven", "shelter", "torch", "warm" (sem frio) ou "" (nenhuma; teto zero).
-## "fire_fuel" no ctx: de 0 a 1, quanto de madeira a fogueira tem.
+## "fire_fuel" no ctx: de 0 a 1, quanto de madeira a fogueira tem. "cloak":
+## manto vestido (soma CLOAK_BONUS a todo teto; sozinho, é o teto "cloak").
 static func warmth_source(ctx: Dictionary, cold := true) -> Dictionary:
 	var best := {"kind": "", "cap": 0.0, "days": 1.0}
 	var options := []
@@ -286,6 +296,10 @@ static func warmth_source(ctx: Dictionary, cold := true) -> Dictionary:
 			options.append({"kind": "shelter", "cap": SHELTER_CAP, "days": SHELTER_DAYS})
 	if bool(ctx.get("torch", false)):
 		options.append({"kind": "torch", "cap": TORCH_CAP, "days": SHELTER_DAYS})
+	if bool(ctx.get("cloak", false)):
+		best = {"kind": "cloak", "cap": CLOAK_BONUS, "days": SHELTER_DAYS}
+		for option: Dictionary in options:
+			option["cap"] = minf(MAX, float(option["cap"]) + CLOAK_BONUS)
 	for option: Dictionary in options:
 		if float(option["cap"]) > float(best["cap"]) or (float(option["cap"]) == float(best["cap"]) and float(option["days"]) < float(best["days"])):
 			best = option
@@ -367,6 +381,32 @@ static func take_oldest(lots: Dictionary, item: String, amount := 1) -> void:
 		amount -= cut
 		if int(list[0][0]) <= 0:
 			list.pop_front()
+
+
+## Tira "amount" do lote mais velho e devolve o que tirou, [[n, dias], ...],
+## para guardar noutro lugar com a mesma idade (o pote selado).
+static func split_lots(lots: Dictionary, item: String, amount: int) -> Array:
+	var list: Array = lots.get(item, [])
+	var out := []
+	while amount > 0 and not list.is_empty():
+		var cut := mini(amount, int(list[0][0]))
+		out.append([cut, float(list[0][1])])
+		list[0][0] = int(list[0][0]) - cut
+		amount -= cut
+		if int(list[0][0]) <= 0:
+			list.pop_front()
+	return out
+
+
+## Põe lotes de volta, cada um no seu lugar pela idade (o mais velho na frente).
+static func merge_lots(lots: Dictionary, item: String, taken: Array) -> void:
+	var list: Array = lots.get(item, [])
+	for lot: Array in taken:
+		var at := 0
+		while at < list.size() and float(list[at][1]) <= float(lot[1]):
+			at += 1
+		list.insert(at, [int(lot[0]), float(lot[1])])
+	lots[item] = list
 
 
 ## Passa o tempo nos lotes ("days" de jogo, já com o fator do frio). O que

@@ -72,6 +72,17 @@ const BUILDS := {
 			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 2, "silex": 1}, "work": 2},
 		],
 	},
+	# Secador: um varal de bambu amarrado com cipó. Fruta e cogumelo pendurados
+	# nele secam (Drying) e duram a estação inteira; perto de uma fogueira
+	# acesa secam na metade do tempo.
+	"secador": {
+		"name": ["secador", "secadores"],
+		"article": "o",
+		"rack": true,
+		"stages": [
+			{"name": "os esteios e o varal", "materials": {"bambu": 4, "cipo": 2}, "work": 3},
+		],
+	},
 	"abrigo": {
 		"name": ["abrigo", "abrigos"],
 		"article": "o",
@@ -118,7 +129,7 @@ const BUILDS := {
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo", "forno", "armazem", "oficina"]
+const BUILD_ORDER := ["marco", "fogueira", "secador", "abrigo", "forno", "armazem", "oficina"]
 
 ## Armazenamento: construções grandes prontas guardam itens, cada uma só de
 ## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
@@ -204,8 +215,18 @@ const WORKSHOP := {
 			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
 			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Manto de fibra trançada: nada de pele (regra do Gabs: recursos não vêm
+	# de matar animais). Vestido, aquece (Body.CLOAK_BONUS).
+	"manto": {"name": ["manto de fibra", "mantos de fibra"], "article": "o",
+		"materials": {"fibra": 8, "cipo": 2, "resina": 1},
+		"done": "Está na bolsa: vista pela Bolsa, no menu das setas.",
+		"steps": [
+			{"say": "Você torce a fibra em fios compridos.", "knocks": 5, "sound": "encaixe"},
+			{"say": "Você trança os fios em tiras largas e as costura com cipó.", "knocks": 6, "sound": "encaixe"},
+			{"say": "Você passa resina nas costuras, para a chuva não entrar.", "knocks": 3, "sound": "encaixe"},
+		]},
 }
-const WORKSHOP_ORDER := ["tocha"]
+const WORKSHOP_ORDER := ["tocha", "manto"]
 
 ## Utensílios: também da bolsa, com passos, mas não se empunham. O pote sai
 ## cru; só serve depois de queimado num forno aceso (Cooking, "pote").
@@ -218,8 +239,17 @@ const UTENSILS := {
 			{"say": "Você enrola cordões de argila e sobe as paredes do pote.", "knocks": 5, "sound": "encaixe"},
 			{"say": "Você alisa o pote por dentro e por fora.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Pote selado: o pote queimado com a boca fechada por resina. Comida
+	# guardada nele não estraga (WorldState.jars).
+	"pote_selado": {"name": ["pote selado", "potes selados"], "article": "o",
+		"materials": {"pote": 1, "resina": 2, "fibra": 1},
+		"done": "Está na bolsa. Pela Bolsa, no pote, guarde comida: ali ela não estraga.",
+		"steps": [
+			{"say": "Você amolece a resina perto do corpo, até ficar mole.", "knocks": 3, "sound": "encaixe"},
+			{"say": "Você faz uma tampa de fibra e a cola na boca do pote com a resina.", "knocks": 4, "sound": "encaixe"},
+		]},
 }
-const UTENSIL_ORDER := ["pote_cru"]
+const UTENSIL_ORDER := ["pote_cru", "pote_selado"]
 
 
 static func material_text(item: String, amount: int) -> String:

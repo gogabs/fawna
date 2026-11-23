@@ -37,7 +37,10 @@ var _known := false  # já chegou a primeira notícia do servidor
 var _levels := [0, 0]
 var _bar_steps := [0, 0]
 ## Comida da bolsa para passar (item -> quantidade), para a Bolsa dizer.
-var spoiling := {}  # posição de cada reserva na barra sonora (Body.bar_step)
+var spoiling := {}
+## O que a criatura veste ("manto" ou "") e o que há no pote selado (item -> n).
+var worn := ""
+var jar := {}  # posição de cada reserva na barra sonora (Body.bar_step)
 var _bars: BodyBars
 var _sound_wait := [0.0, 0.0]
 var _out := false  # desfalecida: não anda até acordar
@@ -88,6 +91,7 @@ func context_of(peer: int) -> Dictionary:
 		"fire_fuel": fire_fuel,
 		"shelter": shelter,
 		"oven": oven,
+		"cloak": state.worn_of(peer) == "manto",
 		"torch": state.torch_left(peer) > 0.0,
 		"wet": float(state.wet_left.get(peer, 0.0)) > 0.0,
 		"species": state.species_of(peer),
@@ -142,6 +146,13 @@ func send_to(peer: int) -> void:
 	_since_send[peer] = 0.0
 	_sent_levels[peer] = _marks_of(entry)
 	body_state.rpc_id(peer, float(entry["food"]), float(entry["warmth"]))
+
+
+## A roupa vestida e o pote selado, para a Bolsa e o Equipamento.
+func send_stash(peer: int) -> void:
+	var state: WorldState = get_parent().state
+	if state.players.has(peer):
+		stash_state.rpc_id(peer, state.worn_of(peer), state.jar_of(peer))
 
 
 ## O que, ao mudar, faz o servidor mandar na hora: os limiares falados e as
@@ -245,6 +256,73 @@ func _finish_cook(id: int, recipe: String) -> void:
 	send_to(id)
 
 
+## Bolsa > manto > Vestir; Equipamento > manto > Tirar.
+@rpc("any_peer", "call_local", "reliable")
+func request_wear(item: String) -> void:
+	_stash_action("vestiu", func(state: WorldState, id: int): return state.wear(id, item))
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_take_off() -> void:
+	_stash_action("tirou", func(state: WorldState, id: int): return state.take_off(id))
+
+
+## Bolsa > pote selado > Guardar / Tirar.
+@rpc("any_peer", "call_local", "reliable")
+func request_jar_store(item: String, amount: int) -> void:
+	_stash_action("guardou", func(state: WorldState, id: int): return state.jar_store(id, item, amount))
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_jar_take(item: String, amount: int) -> void:
+	_stash_action("tirou_pote", func(state: WorldState, id: int): return state.jar_take(id, item, amount))
+
+
+## Espaço no secador > Pendurar / Recolher.
+@rpc("any_peer", "call_local", "reliable")
+func request_rack_hang(build_id: int, item: String, amount: int) -> void:
+	_rack_action(build_id, "pendurou", func(state: WorldState, id: int): return state.rack_hang(id, build_id, item, amount))
+
+
+@rpc("any_peer", "call_local", "reliable")
+func request_rack_gather(build_id: int) -> void:
+	_rack_action(build_id, "recolheu", func(state: WorldState, id: int): return state.rack_gather(id, build_id))
+
+
+func _stash_action(event: String, action: Callable) -> void:
+	if not multiplayer.is_server():
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var result: Dictionary = action.call(game.state, id)
+	if not game.state.players.has(id):
+		return
+	if not result["ok"]:
+		stash_refused.rpc_id(id, str(result["reason"]))
+		return
+	game._dirty = true
+	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	send_stash(id)
+	stash_done.rpc_id(id, event, str(result.get("item", "")), int(result.get("amount", 1)))
+
+
+func _rack_action(build_id: int, event: String, action: Callable) -> void:
+	if not multiplayer.is_server():
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var result: Dictionary = action.call(game.state, id)
+	if not game.state.players.has(id):
+		return
+	if not result["ok"]:
+		rack_refused.rpc_id(id, str(result["reason"]), float(result.get("left", 0.0)))
+		return
+	game._dirty = true
+	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	game.build_changed.rpc(game.state.builds.info(build_id), "secador", id, {})
+	rack_done.rpc_id(id, event, result.get("items", {}), int(result.get("amount", 0)), float(result.get("seconds", 0.0)))
+
+
 ## J com a enxada na terra à frente, fora de obra: cava atrás de raízes.
 @rpc("any_peer", "call_local", "reliable")
 func request_dig(cell: Vector2i) -> void:
@@ -323,6 +401,67 @@ func spoiling_state(soon: Dictionary) -> void:
 func roasted(into: String, amount: int) -> void:
 	_play(BodySounds.roast(), BODY_DB)
 	Speech.say("Você assa no fogo e fica com %s." % Economy.item_text(into, amount), false)
+
+
+@rpc("authority", "call_local", "reliable")
+func stash_state(new_worn: String, new_jar: Dictionary) -> void:
+	worn = new_worn
+	jar = new_jar
+	get_parent()._sync_menu.call_deferred()
+
+
+@rpc("authority", "call_local", "reliable")
+func stash_done(event: String, item: String, amount: int) -> void:
+	match event:
+		"vestiu":
+			Speech.say("Você veste o manto de fibra. Ele segura o calor, perto do fogo e longe dele.", false)
+		"tirou":
+			Speech.say("Você tira o manto e o guarda na bolsa.", false)
+		"guardou":
+			Speech.say("Você guarda %s no pote selado. Ali não estraga." % Economy.item_text(item, amount), false)
+		"tirou_pote":
+			Speech.say("Você tira %s do pote selado." % Economy.item_text(item, amount), false)
+
+
+@rpc("authority", "call_local", "reliable")
+func stash_refused(reason: String) -> void:
+	match reason:
+		"ja_veste":
+			Speech.say("Você já veste um manto.")
+		"sem_pote":
+			Speech.say("Você não tem um pote selado.")
+		"cheio":
+			Speech.say("O pote selado está cheio: cabem %d em cada pote." % WorldState.JAR_CAPACITY)
+		"nao_e_comida":
+			Speech.say("Só comida vai no pote selado.")
+		_:
+			Speech.say("Não deu.")
+
+
+@rpc("authority", "call_local", "reliable")
+func rack_done(event: String, items: Dictionary, amount: int, seconds: float) -> void:
+	if event == "recolheu":
+		Speech.say("Você recolhe do varal %s." % Economy.items_text(items), false)
+	else:
+		Speech.say("Você pendura %d no varal. Seca em uns %s%s." % [amount, Builds._minutes_text(seconds),
+			", com o calor da fogueira" if seconds < Builds.DRY_SECONDS else ""], false)
+
+
+@rpc("authority", "call_local", "reliable")
+func rack_refused(reason: String, left: float) -> void:
+	match reason:
+		"cheio":
+			Speech.say("O varal está cheio: cabem %d." % Builds.RACK_CAPACITY)
+		"nada":
+			Speech.say("Não há nada pendurado.")
+		"secando":
+			Speech.say("Nada secou ainda. A primeira fica pronta em uns %s." % Builds._minutes_text(left))
+		"longe":
+			Speech.say("Chegue mais perto do secador.")
+		"nao_seca":
+			Speech.say("No varal só secam frutas e cogumelos.")
+		_:
+			Speech.say("Não deu.")
 
 
 @rpc("authority", "call_local", "reliable")

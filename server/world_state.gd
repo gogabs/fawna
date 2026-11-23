@@ -62,6 +62,12 @@ var wet_left := {}
 var cooking := {}
 ## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
 var offhand := {}
+## Roupa vestida, por nome: hoje só o manto de fibra. Não pesa na carga.
+var worn := {}
+## Pote selado de cada um, por nome: item -> [[n, dias que faltam], ...]. A
+## comida guardada ali não envelhece. Cabem JAR_CAPACITY por pote selado.
+var jars := {}
+const JAR_CAPACITY := 8
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
 var torch_until := {}
 ## id -> { method, needed, count, last_ms, first }: quem está riscando a tocha.
@@ -827,6 +833,157 @@ func strip_resources(id: int) -> Dictionary:
 	return lost
 
 
+# --- Roupa e pote selado --------------------------------------------------------
+
+func worn_of(id: int) -> String:
+	if not players.has(id):
+		return ""
+	return str(worn.get(players[id]["name"], ""))
+
+
+## Veste o manto da bolsa. Devolve { ok, reason } ("nao_tem", "ja_veste").
+func wear(id: int, item: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if item != "manto":
+		return {"ok": false, "reason": "nao_veste", "item": item}
+	if not worn_of(id).is_empty():
+		return {"ok": false, "reason": "ja_veste", "item": item}
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	worn[players[id]["name"]] = item
+	return {"ok": true, "item": item}
+
+
+## Tira a roupa e a põe na bolsa. Devolve { ok, reason, item }.
+func take_off(id: int) -> Dictionary:
+	var item := worn_of(id)
+	if item.is_empty():
+		return {"ok": false, "reason": "sem_roupa"}
+	var inv := inventory_of(id)
+	inv[item] = int(inv.get(item, 0)) + 1
+	worn.erase(players[id]["name"])
+	return {"ok": true, "item": item}
+
+
+## O que está no pote selado de "id": item -> quantidade.
+func jar_of(id: int) -> Dictionary:
+	var out := {}
+	if not players.has(id):
+		return out
+	var jar: Dictionary = jars.get(players[id]["name"], {})
+	for item: String in jar:
+		var total := 0
+		for lot: Array in jar[item]:
+			total += int(lot[0])
+		if total > 0:
+			out[item] = total
+	return out
+
+
+func jar_room(id: int) -> int:
+	var used := 0
+	for amount in jar_of(id).values():
+		used += int(amount)
+	return JAR_CAPACITY * int(inventory_of(id).get("pote_selado", 0)) - used
+
+
+## Guarda comida da bolsa no pote selado, com a idade que ela tem. Devolve
+## { ok, reason, amount } ("sem_pote", "nao_e_comida", "sem_item", "cheio").
+func jar_store(id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var inv := inventory_of(id)
+	if int(inv.get("pote_selado", 0)) <= 0:
+		return {"ok": false, "reason": "sem_pote"}
+	if not Body.is_food(item) or item == Body.SPOILED:
+		return {"ok": false, "reason": "nao_e_comida", "item": item}
+	var have := int(inv.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var count := mini(mini(amount, have), jar_room(id))
+	if count <= 0:
+		return {"ok": false, "reason": "cheio"}
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	var taken := Body.split_lots(food_lots, item, count)
+	inv[item] = have - count
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	var player_name: String = players[id]["name"]
+	if not jars.has(player_name):
+		jars[player_name] = {}
+	var jar: Dictionary = jars[player_name]
+	if not jar.has(item):
+		jar[item] = []
+	for lot: Array in taken:
+		jar[item].append(lot)
+	return {"ok": true, "item": item, "amount": count}
+
+
+## Tira comida do pote selado de volta para a bolsa, com a idade que tinha.
+func jar_take(id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var player_name: String = players[id]["name"]
+	var jar: Dictionary = jars.get(player_name, {})
+	var list: Array = jar.get(item, [])
+	var taken := []
+	var count := 0
+	while count < amount and not list.is_empty():
+		var cut := mini(amount - count, int(list[0][0]))
+		taken.append([cut, float(list[0][1])])
+		list[0][0] = int(list[0][0]) - cut
+		count += cut
+		if int(list[0][0]) <= 0:
+			list.pop_front()
+	if count <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	if list.is_empty():
+		jar.erase(item)
+	if jar.is_empty():
+		jars.erase(player_name)
+	var inv := inventory_of(id)
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	Body.merge_lots(food_lots, item, taken)
+	inv[item] = int(inv.get(item, 0)) + count
+	Body.reconcile(food_lots, inv)
+	return {"ok": true, "item": item, "amount": count}
+
+
+## Pendura fruta ou cogumelo da bolsa no secador ao alcance.
+func rack_hang(id: int, build_id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty() or Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH + 0.5:
+		return {"ok": false, "reason": "longe"}
+	var inv := inventory_of(id)
+	var result := builds.hang(build_id, inv, item, amount)
+	if result["ok"]:
+		Body.reconcile(lots_of(id), inv)
+	return result
+
+
+## Recolhe o que secou no secador ao alcance.
+func rack_gather(id: int, build_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty() or Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH + 0.5:
+		return {"ok": false, "reason": "longe"}
+	var inv := inventory_of(id)
+	var result := builds.gather_rack(build_id, inv)
+	if result["ok"]:
+		Body.reconcile(lots_of(id), inv)
+	return result
+
+
 ## Quem desfalece de fome ou de frio perde metade de cada recurso da bolsa
 ## (arredondado para baixo: quem tem 1 fica com ele); armas, ferramentas e o
 ## que está nas mãos ficam. Devolve o que foi perdido (item -> quantidade).
@@ -956,8 +1113,10 @@ func drop(id: int, item: String, amount: int) -> Dictionary:
 	var now := Time.get_ticks_msec()
 	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
-	_last_drop[id] = now
 	var moved := mini(amount, have)
+	if item == "pote_selado" and jar_room(id) - JAR_CAPACITY * moved < 0:
+		return {"ok": false, "reason": "pote_cheio", "item": item}
+	_last_drop[id] = now
 	inv[item] = have - moved
 	if int(inv[item]) <= 0:
 		inv.erase(item)
@@ -1350,6 +1509,8 @@ func to_save() -> Dictionary:
 		"inventories": inventories,
 		"equipment": equipment,
 		"offhand": offhand,
+		"worn": worn,
+		"jars": jars,
 		"species": species,
 		"torch_until": torch_until,
 		"body": body,
@@ -1386,6 +1547,20 @@ static func from_save(data: Dictionary) -> WorldState:
 			state.species[player_name] = str(data["species"][player_name])
 	for player_name in data.get("offhand", {}):
 		state.offhand[player_name] = str(data["offhand"][player_name])
+	for player_name in data.get("worn", {}):
+		if str(data["worn"][player_name]) == "manto":
+			state.worn[player_name] = "manto"
+	for player_name in data.get("jars", {}):
+		var jar := {}
+		for item in data["jars"][player_name]:
+			var list := []
+			for lot in data["jars"][player_name][item]:
+				if int(lot[0]) > 0:
+					list.append([int(lot[0]), float(lot[1])])
+			if not list.is_empty():
+				jar[str(item)] = list
+		if not jar.is_empty():
+			state.jars[str(player_name)] = jar
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
 	var saved_body = data.get("body", {})

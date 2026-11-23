@@ -556,7 +556,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
 		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}, "owners": [], "lockers": {},
-		"since": {}, "votes": [], "cool": {}, "approved": false, "voters": []}
+		"since": {}, "votes": [], "cool": {}, "approved": false, "voters": [], "rack": []}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -1112,6 +1112,126 @@ func dried(at_time := -1.0) -> Array:
 	return out
 
 
+# --- Secador ---------------------------------------------------------------------
+
+## O que cada coisa vira ao secar (pela chave do grupo: toda fruta vira fruta seca).
+const DRIES := {"frutas": "fruta_seca", "cogumelo": "cogumelo_seco"}
+## Segundos para secar; com uma fogueira acesa a até DRY_FIRE_REACH casas, metade.
+const DRY_SECONDS := 600.0
+const DRY_FIRE_REACH := 4.0
+## Quanto cabe pendurado num secador.
+const RACK_CAPACITY := 12
+
+
+static func dries_into(item: String) -> String:
+	return str(DRIES.get(Economy.base_of(item), ""))
+
+
+static func has_rack(build: Dictionary) -> bool:
+	return bool(Crafting.BUILDS.get(str(build.get("kind", "")), {}).get("rack", false)) and bool(build.get("done", false))
+
+
+## Quantos itens estão pendurados (secando ou já secos).
+static func rack_count(build: Dictionary) -> int:
+	var total := 0
+	for entry: Array in build.get("rack", []):
+		total += int(entry[1])
+	return total
+
+
+## O secador está perto de uma fogueira acesa?
+func fire_near_rack(build: Dictionary, at_time := -1.0) -> bool:
+	for other: Dictionary in _builds.values():
+		if other["kind"] == "fogueira" and is_lit(int(other["id"]), at_time) \
+				and Vector2(other["cell"]).distance_to(Vector2(build["cell"])) <= DRY_FIRE_REACH:
+			return true
+	return false
+
+
+## Pendura até "amount" de "item" (fruta ou cogumelo) da bolsa no secador.
+## Devolve { ok, reason, amount, seconds } com reason "desconhecida",
+## "nao_seca", "sem_item" ou "cheio".
+func hang(id: int, bag: Dictionary, item: String, amount: int, at_time := -1.0) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or not has_rack(build):
+		return {"ok": false, "reason": "desconhecida"}
+	if dries_into(item).is_empty():
+		return {"ok": false, "reason": "nao_seca"}
+	if at_time < 0.0:
+		at_time = now()
+	var have := int(bag.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item"}
+	var room := RACK_CAPACITY - rack_count(build)
+	if room <= 0:
+		return {"ok": false, "reason": "cheio"}
+	var count := mini(mini(amount, have), room)
+	bag[item] = have - count
+	if int(bag[item]) <= 0:
+		bag.erase(item)
+	var seconds := DRY_SECONDS * (0.5 if fire_near_rack(build, at_time) else 1.0)
+	build["rack"].append([item, count, at_time + seconds])
+	return {"ok": true, "amount": count, "seconds": seconds}
+
+
+## Recolhe do secador o que já secou. Devolve { ok, reason, items } com
+## reason "nada" (nada pendurado) ou "secando" (ainda nada seco; "left":
+## segundos até o primeiro).
+func gather_rack(id: int, bag: Dictionary, at_time := -1.0) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or not has_rack(build):
+		return {"ok": false, "reason": "desconhecida"}
+	if at_time < 0.0:
+		at_time = now()
+	var items := {}
+	var keep := []
+	var soonest := INF
+	for entry: Array in build["rack"]:
+		if float(entry[2]) <= at_time:
+			var into := dries_into(str(entry[0]))
+			items[into] = int(items.get(into, 0)) + int(entry[1])
+		else:
+			keep.append(entry)
+			soonest = minf(soonest, float(entry[2]) - at_time)
+	if items.is_empty():
+		return {"ok": false, "reason": "nada" if keep.is_empty() else "secando", "left": soonest}
+	build["rack"] = keep
+	for item: String in items:
+		bag[item] = int(bag.get(item, 0)) + int(items[item])
+	return {"ok": true, "items": items}
+
+
+## "Secador: 4 amoras secando, uns 6 minutos; 3 cogumelos secos."
+func rack_text(id: int, at_time := -1.0) -> String:
+	var build := get_build(id)
+	if build.is_empty():
+		return ""
+	if at_time < 0.0:
+		at_time = now()
+	var drying := {}
+	var ready := {}
+	var soonest := INF
+	for entry: Array in build.get("rack", []):
+		if float(entry[2]) <= at_time:
+			var into := dries_into(str(entry[0]))
+			ready[into] = int(ready.get(into, 0)) + int(entry[1])
+		else:
+			drying[str(entry[0])] = int(drying.get(str(entry[0]), 0)) + int(entry[1])
+			soonest = minf(soonest, float(entry[2]) - at_time)
+	var parts: PackedStringArray = []
+	if not drying.is_empty():
+		parts.append("secando: %s, a primeira em uns %s" % [Economy.items_text(drying), _minutes_text(soonest)])
+	if not ready.is_empty():
+		parts.append("pronto para recolher: %s" % Economy.items_text(ready))
+	if parts.is_empty():
+		return "O varal está vazio. Cabem %d frutas ou cogumelos." % RACK_CAPACITY
+	return _capital_text("; ".join(parts)) + "."
+
+
+static func _capital_text(text: String) -> String:
+	return text.left(1).to_upper() + text.substr(1)
+
+
 # --- Rede e salvamento -----------------------------------------------------------
 
 ## Estado de uma construção para mandar pela rede: o tempo de fogo vai
@@ -1137,6 +1257,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"votes": build["votes"].map(func(vote): return {"target": vote["target"], "by": vote["by"], "age": at_time - float(vote["opened"]),
 			"yes": vote["yes"], "no": vote["no"]}),
 		"lockers": build["lockers"].duplicate(true),
+		"rack": (build.get("rack", []) as Array).map(func(entry): return [entry[0], entry[1], maxf(0.0, float(entry[2]) - at_time)]),
 	}
 
 
@@ -1156,6 +1277,17 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0)),
 		"ignited": bool(data.get("ignited", false)), "flint": int(data.get("flint", 0)),
 		"name": str(data.get("name", ""))}, data, at_time + dry_left if dry_left > 0.0 else 0.0))
+	_builds[int(data["id"])]["rack"] = _read_rack(data.get("rack", []), at_time)
+
+
+## [[item, n, segundos]] -> [[item, n, hora em que fica seco]] ("base" soma a
+## hora de agora; no arquivo a hora já vem absoluta, base 0).
+static func _read_rack(list: Array, base: float) -> Array:
+	var out := []
+	for entry in list:
+		if typeof(entry) == TYPE_ARRAY and entry.size() >= 3 and int(entry[1]) > 0:
+			out.append([str(entry[0]), int(entry[1]), base + float(entry[2])])
+	return out
 
 
 func snapshot(at_time := -1.0) -> Array:
@@ -1199,6 +1331,7 @@ func to_save() -> Dictionary:
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
 			"stock": build["stock"], "owners": build["owners"], "lockers": build["lockers"],
 			"since": build["since"], "votes": build["votes"], "cool": build["cool"], "approved": build["approved"],
+			"rack": build.get("rack", []),
 		})
 	return {"next_id": _next_id, "list": list, "cleared": _cells_to_list(_cleared.keys()), "seen": seen}
 
@@ -1223,6 +1356,7 @@ func load_save(data: Dictionary) -> void:
 			# Mundos antigos davam o nome ao começar o marco: em obra, ele some.
 			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""},
 			entry, float(entry.get("dry_until", 0.0))))
+		_builds[int(entry["id"])]["rack"] = _read_rack(entry.get("rack", []), 0.0)
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
 	# Donos de antes do registro de atividade começam ativos agora.
 	for build: Dictionary in _builds.values():
@@ -1820,6 +1954,8 @@ func status_text(id: int, at_time := -1.0) -> String:
 			text += " Guarda %s: %s. Espaço longe da porta abre o armazenamento." % [
 				Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
 		return text
+	if has_rack(build):
+		return "Secador pronto. %s Espaço nele pendura frutas e cogumelos, ou recolhe o que secou." % rack_text(id, at_time)
 	if build["kind"] == "marco":
 		if not str(build["name"]).is_empty():
 			return "Marco do povoado %s." % build["name"]
