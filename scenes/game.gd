@@ -2155,6 +2155,7 @@ func _ride_halt(angle: float, speed: float) -> Vector2:
 	_skid_speed = speed
 	var cell := WorldGen.cell_of(_pos)
 	_play(HorseSounds.skid(horses.surface_at(_pos)), true, FOOTSTEP_DB + SKID_DB)
+	horses.request_voice.rpc_id(1, horse, "derrapada")
 	horses.request_voice.rpc_id(1, horse, "relincho")
 	if not Net.auto_commands.is_empty():
 		print("[teste] derrapada em %s" % [cell])

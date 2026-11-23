@@ -74,7 +74,7 @@ const SPAWNS := {
 }
 
 ## Sons que o servidor manda (o cliente escolhe a variação).
-const SOUNDS := ["pasto", "bufo", "relincho", "alarme", "manso"]
+const SOUNDS := ["pasto", "bufo", "relincho", "alarme", "manso", "derrapada"]
 
 ## Domesticar (casas e segundos; ver offer).
 const OFFER_REACH := 1.6
