@@ -15,7 +15,7 @@ const RING_COLOR := Color(0.85, 0.82, 0.72, 0.8)
 const BACK_COLOR := Color(0.05, 0.06, 0.07, 0.65)
 const NORTH_COLOR := Color("d0603a")
 const LETTER_COLOR := Color("e8e2d0")
-const LETTERS := ["N", "L", "S", "O"]  # norte, leste, sul, oeste
+const LETTERS := ["N", "E", "S", "W"]  # norte, leste, sul, oeste (como numa bússola real)
 const SHADER := """
 shader_type canvas_item;
 void fragment() {
