@@ -360,6 +360,18 @@ func release_result(id: int, result: String, horse_name: String) -> void:
 		Speech.say(text)
 
 
+## Quem monta pede uma voz do cavalo (relincho ao derrapar, bufo ao parar):
+## todos que o veem ouvem.
+@rpc("any_peer", "call_local", "reliable")
+func request_voice(horse_id: int, kind: String) -> void:
+	if not multiplayer.is_server() or herd == null or not kind in ["relincho", "bufo"]:
+		return
+	var id: int = get_parent()._sender_id()
+	if herd.riding_of(id) != horse_id:
+		return
+	herd._pending_sound(herd.horses[horse_id], kind)
+
+
 ## Manda ao dono o equipamento e o conteúdo do alforje do cavalo.
 func _send_gear(peer: int, horse_id: int) -> void:
 	if not herd.horses.has(horse_id):
@@ -943,6 +955,11 @@ func _next_gap(horse: Dictionary, gallop: bool) -> float:
 func _snort_gap(gait: int) -> float:
 	var span: Array = GALLOP_SNORTS if gait == Herd.Gait.GALLOP else WALK_SNORTS
 	return randf_range(span[0], span[1])
+
+
+## O chão em "point", para os cascos e a derrapada.
+func surface_at(point: Vector2) -> String:
+	return _surface_at(point)
 
 
 func _surface_at(point: Vector2) -> String:

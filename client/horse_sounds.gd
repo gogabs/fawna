@@ -53,6 +53,17 @@ static func hoof(surface: String, gallop: bool, last: AudioStream = null) -> Aud
 	return generated(("galope_" if gallop else "casco_") + surface, randi() % VARIANTS)
 
 
+## Derrapada do cavalo freando de repente: derrapada_<chão>_<n> gravada,
+## senão derrapada_<n>, senão gerada (ruído de raspão que vai morrendo).
+static func skid(surface: String) -> AudioStream:
+	var recorded := _recorded("derrapada_" + surface)
+	if recorded.is_empty():
+		recorded = _recorded("derrapada")
+	if not recorded.is_empty():
+		return recorded[randi() % recorded.size()]
+	return generated("derrapada", randi() % VARIANTS)
+
+
 ## Há cascos gravados para esse chão? (Os gerados têm outro volume.)
 static func has_hooves(surface: String) -> bool:
 	return not _recorded("casco_" + surface).is_empty()
@@ -81,6 +92,8 @@ static func generated(kind: String, variant: int) -> AudioStream:
 				buf = _with_tail(_nicker(rng), 0.3)
 			"pasto":
 				buf = _graze(rng)
+			"derrapada":
+				buf = _skid(rng)
 			_:
 				buf = _buffer(0.1)
 	var stream := _to_wav(buf)
@@ -218,6 +231,18 @@ static func _graze(rng: RandomNumberGenerator) -> PackedFloat32Array:
 		for g in 5:
 			_noise_burst(buf, at + g * 0.018, 0.02, 0.3, 0.2, rng.randf_range(0.15, 0.3), rng)
 		_thump(buf, at, 0.06, rng.randf_range(110.0, 140.0), 0.12)
+	return buf
+
+
+## Derrapada (provisória, até haver gravação): duas batidas fortes dos cascos
+## da frente e um raspão de terra que vai morrendo, com grãos soltos.
+static func _skid(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var buf := _buffer(1.0)
+	_thump(buf, 0.0, 0.09, rng.randf_range(85.0, 100.0), 0.5)
+	_thump(buf, 0.07, 0.09, rng.randf_range(80.0, 95.0), 0.45)
+	_noise_burst(buf, 0.03, 0.7, 0.4, 0.25, 0.4, rng)  # raspão
+	for g in 14:
+		_noise_burst(buf, rng.randf_range(0.05, 0.75), 0.012, 0.8, 0.0, rng.randf_range(0.05, 0.15), rng)
 	return buf
 
 

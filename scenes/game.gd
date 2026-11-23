@@ -47,6 +47,7 @@ const TURN_RUSTLE_DB := -4.0
 const START_STOP_DB := -4.0
 const RUSTLE_DB := -12.0
 const ANKLET_DB := 0.0
+const SKID_DB := 0.0  # derrapada do cavalo montado, em relação aos passos
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -166,6 +167,26 @@ var _ride_level := 0
 var _ride_moving := false  # andou no último quadro (para os cascos)
 var _ride_w_next := -1  # ms da próxima subida com W segurado (-1 = solto)
 var _ride_s_next := -1  # ms da próxima descida com S segurado (-1 = solto)
+## Rédea sozinha: andando para a frente, o cavalo olha adiante (RIDE_LOOK_S
+## segundos de caminho) e desvia de obstáculos pequenos, até RIDE_STEER_MAX
+## para cada lado, voltando à direção de quem monta depois. Numa trilha
+## cercada de mata, bambuzal ou água, segue as curvas dela sozinho; se a curva
+## passa de RIDE_TURN_AT, quem monta gira junto (com o clique da bússola). Sem
+## saída a tempo, trotando ou galopando, derrapa (SKID_DECEL) e para antes de
+## bater, relinchando; a passo, só para e bufa.
+const RIDE_LOOK_S := 0.7
+const RIDE_LOOK_MIN := 1.2
+const RIDE_LOOK_MAX := 3.2
+const RIDE_STEER_STEP := RideSteer.STEP  # 10°
+const RIDE_STEER_TRIES := 5  # até 50° para cada lado
+const RIDE_STEER_RATE := PI * 0.9  # rad/s
+const RIDE_TURN_AT := PI / 6.0  # 30°
+const SKID_DECEL := 7.0  # casas/s²
+const SKID_MARGIN := 0.5  # casas que sobram antes do obstáculo
+var _ride_angle := 0.0  # desvio do cavalo em relação à direção de quem monta (rad, horário)
+var _ride_last_ms := 0
+var _skid_speed := 0.0
+var _skid_dir := Vector2.ZERO
 var _tired_until := 0
 var _dash_boost := 1.0
 var _channel_token := 0
@@ -2017,6 +2038,8 @@ func _wanted_motion() -> Vector2:
 ## Montado: W e S mudam o andar (ver _ride_level) e o cavalo segue sozinho
 ## para a frente (ou para trás, na ré).
 func _ride_motion() -> Vector2:
+	if _skid_speed > 0.0:
+		return _ride_skid()
 	var now := Time.get_ticks_msec()
 	if Input.is_action_pressed("andar_frente"):
 		if _ride_w_next < 0 or now >= _ride_w_next:
@@ -2042,7 +2065,101 @@ func _ride_motion() -> Vector2:
 	# Com frio e sem manto (Herd.COLD_SLOW), o cavalo não galopa e vai mais devagar.
 	_ride_level = mini(_ride_level, _ride_top())
 	var slow := Herd.COLD_SLOW if horses.is_chilled(horses.riding_mine()) else 1.0
-	return Compass.forward(_heading) * (-1.0 if _ride_level < 0 else 1.0) * float(RIDE_SPEEDS[_ride_level + 1]) * slow
+	var speed := float(RIDE_SPEEDS[_ride_level + 1]) * slow
+	if _ride_level <= 0:
+		_ride_angle = 0.0
+		return Compass.forward(_heading) * -1.0 * speed if _ride_level < 0 else Vector2.ZERO
+	return _steer(speed)
+
+
+## Derrapando: as teclas esperam o cavalo parar.
+func _ride_skid() -> Vector2:
+	var dt := _ride_dt()
+	_skid_speed = maxf(0.0, _skid_speed - SKID_DECEL * dt)
+	if _skid_speed > 0.0 and _clearance_dir(_skid_dir, 0.45) < 0.45:
+		_skid_speed = 0.0
+	_ride_level = 0
+	if Input.is_action_pressed("andar_frente"):
+		_ride_w_next = RIDE_KEY_HELD
+	return _skid_dir * _skid_speed
+
+
+func _ride_dt() -> float:
+	var now := Time.get_ticks_msec()
+	var dt := clampf((now - _ride_last_ms) / 1000.0, 0.0, 0.1)
+	_ride_last_ms = now
+	return dt
+
+
+## Para a frente, com a rédea sozinha (ver RIDE_LOOK_S).
+func _steer(speed: float) -> Vector2:
+	var dt := _ride_dt()
+	var base := Compass.angle(_heading)
+	var look := clampf(speed * RIDE_LOOK_S, RIDE_LOOK_MIN, RIDE_LOOK_MAX)
+	var trail := _trail_offset(base)
+	var want := 0.0 if is_nan(trail) else trail
+	var chosen := NAN
+	var best := want
+	var best_clear := -1.0
+	for k in RIDE_STEER_TRIES * 2 + 1:
+		var off := want + RIDE_STEER_STEP * ((k + 1) / 2) * (1.0 if k % 2 == 1 else -1.0)
+		var clear := _clearance(base + off, look)
+		if clear >= look:
+			chosen = off
+			break
+		if clear > best_clear:
+			best_clear = clear
+			best = off
+	var stop := speed * speed / (2.0 * SKID_DECEL) + SKID_MARGIN
+	if is_nan(chosen):
+		if best_clear > stop:
+			chosen = best  # vai para o lado mais aberto enquanto há espaço
+		elif _clearance(base + _ride_angle, stop) < stop:
+			return _ride_halt(base + _ride_angle, speed)
+		else:
+			chosen = best
+	_ride_angle = move_toward(_ride_angle, chosen, RIDE_STEER_RATE * dt)
+	if not is_nan(trail) and absf(_ride_angle) > RIDE_TURN_AT:
+		# A trilha virou: quem monta gira junto, e o cavalo segue reto nela.
+		var step := 1 if _ride_angle > 0.0 else -1
+		_turn(step)
+		_ride_angle -= step * TAU / Compass.STEPS
+		base = Compass.angle(_heading)
+	var a := base + _ride_angle
+	return Vector2(sin(a), -cos(a)) * speed
+
+
+## Sem saída a tempo: trotando ou galopando, derrapa e relincha; a passo, para e bufa.
+func _ride_halt(angle: float, speed: float) -> Vector2:
+	var horse: int = horses.riding_mine()
+	_ride_level = 0
+	_ride_angle = 0.0
+	if Input.is_action_pressed("andar_frente"):
+		_ride_w_next = RIDE_KEY_HELD
+	if speed < float(RIDE_SPEEDS[3]) * 0.75:
+		horses.request_voice.rpc_id(1, horse, "bufo")
+		return Vector2.ZERO
+	_skid_dir = Vector2(sin(angle), -cos(angle))
+	_skid_speed = speed
+	var cell := WorldGen.cell_of(_pos)
+	_play(HorseSounds.skid(horses.surface_at(_pos)), true, FOOTSTEP_DB + SKID_DB)
+	horses.request_voice.rpc_id(1, horse, "relincho")
+	if not Net.auto_commands.is_empty():
+		print("[teste] derrapada em %s" % [cell])
+	return _ride_skid()
+
+
+## Quanto dá para andar em linha reta na direção "angle", até "look" casas.
+func _clearance(angle: float, look: float) -> float:
+	return RideSteer.clearance(_pos, Vector2(sin(angle), -cos(angle)), look, _can_stand)
+
+
+func _clearance_dir(dir: Vector2, look: float) -> float:
+	return RideSteer.clearance(_pos, dir, look, _can_stand)
+
+
+func _trail_offset(base: float) -> float:
+	return RideSteer.trail_offset(world, _pos, base)
 
 
 ## O andar mais alto montado: galope (3), ou trote (2) com o cavalo no frio.
@@ -2119,6 +2236,8 @@ func _spur() -> void:
 ## Montou ou desmontou: o cavalo começa parado.
 func ride_reset() -> void:
 	_ride_level = 0
+	_ride_angle = 0.0
+	_skid_speed = 0.0
 	# Tecla que já estava apertada só vale depois de soltar e apertar de novo.
 	_ride_w_next = RIDE_KEY_HELD if Input.is_action_pressed("andar_frente") else -1
 	_ride_s_next = RIDE_KEY_HELD if Input.is_action_pressed("andar_tras") else -1
@@ -2580,7 +2699,7 @@ func _use_ability() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; a tocha só freia o frio. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com muita fome ou frio você fica lento; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, e os cavalos a até 48 metros (manadas selvagens e cavalos domesticados, pelo nome), do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. Cavalinhos-da-bruma vivem em manadas na pradaria e no deserto gelado: quem chega andando direto os espanta. Pare perto até a manada se acalmar, chegue devagar até um cavalo e ofereça frutas com Espaço, uma de cada vez, esperando ele mastigar; depois de algumas, ele perde o medo e segue você por um tempo; então, Espaço nele com um cabresto (feito na bancada da oficina) o faz seu, e você escolhe o nome. Cada um tem um cavalo só. Seu cavalo segue você, menos quando para para comer. Perto dele, o menu das setas ganha Cavalo, para pôr o alforje e guardar ou pegar coisas nele, e o manto: no frio, sem manto, o cavalo anda mais devagar e não galopa. Ali também dá para soltar o cavalo, que volta a ser selvagem. Alforje e manto também se fazem na bancada da oficina. M monta nele e, montado, desmonta (subir e descer levam um instante); o cavalo anda sozinho: W sobe de parado para passo, trote e galope (um toque por vez, ou segurando) (os calcanhares batem no lombo); segurar S freia e, parado, dá ré enquanto segura; A e D não fazem nada, gire com Q e E. Montado, não dá para golpear nem usar a habilidade da espécie, menos o uivo do Geado. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; a tocha só freia o frio. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com muita fome ou frio você fica lento; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, e os cavalos a até 48 metros (manadas selvagens e cavalos domesticados, pelo nome), do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. Cavalinhos-da-bruma vivem em manadas na pradaria e no deserto gelado: quem chega andando direto os espanta. Pare perto até a manada se acalmar, chegue devagar até um cavalo e ofereça frutas com Espaço, uma de cada vez, esperando ele mastigar; depois de algumas, ele perde o medo e segue você por um tempo; então, Espaço nele com um cabresto (feito na bancada da oficina) o faz seu, e você escolhe o nome. Cada um tem um cavalo só. Seu cavalo segue você, menos quando para para comer. Perto dele, o menu das setas ganha Cavalo, para pôr o alforje e guardar ou pegar coisas nele, e o manto: no frio, sem manto, o cavalo anda mais devagar e não galopa. Ali também dá para soltar o cavalo, que volta a ser selvagem. Alforje e manto também se fazem na bancada da oficina. M monta nele e, montado, desmonta (subir e descer levam um instante); o cavalo anda sozinho: W sobe de parado para passo, trote e galope (um toque por vez, ou segurando) (os calcanhares batem no lombo); segurar S freia e, parado, dá ré enquanto segura; A e D não fazem nada, gire com Q e E. O cavalo desvia sozinho de obstáculos pequenos, segue as curvas das trilhas na mata, no bambuzal e perto da água, e derrapa e para antes de bater. Montado, não dá para golpear nem usar a habilidade da espécie, menos o uivo do Geado. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
