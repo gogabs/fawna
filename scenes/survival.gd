@@ -536,9 +536,13 @@ func fainted(spot: Vector2, cause: String, lost_something := false) -> void:
 		return
 	_out = true
 	_play(BodySounds.faint(), 0.0)
+	if game.view3d != null:
+		game.view3d.fade_out(FAINT_SECONDS * 0.6)  # tudo escurece
 	await get_tree().create_timer(FAINT_SECONDS).timeout
 	game._set_pos(spot)
 	game._last_sent = spot
+	if game.view3d != null:
+		game.view3d.fade_in(1.2)  # acorda no lugar novo
 	_out = false
 	var text := "A fome vence você, e tudo escurece. Você acorda em outro lugar, fraco, com o estômago doendo." if cause == "food" \
 		else "O frio vence você, e tudo escurece. Você acorda em outro lugar, ainda tremendo."
