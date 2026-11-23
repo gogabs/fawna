@@ -124,10 +124,12 @@ Publicados com autorização do Gabs (2026-11-22).
   pisada do "World Sounds Audio Pack" (CC0, ver `world/`) num tom mais grave:
   grama com `grassstep`/`brushstep`, terra com `dirtstep`, neve com
   `deepsnowstep` (casco abafado), madeira com `bridge2step`/`creekywoodstep`.
-  Grama, terra e neve com o casco mais baixo e a cauda suavizada.
-- `galope_<chão>_<n>.ogg`: uma passada inteira de galope: quatro batidas,
-  o corpo (galope gravado, grave e baixo) e uma bufada curta de fôlego.
+  Grama, terra e neve com o casco um pouco mais baixo e a cauda suavizada.
+- `galope_<chão>_<n>.ogg`: uma passada inteira de galope: quatro batidas
+  (na grama, as mesmas pisadas do passo), o corpo (galope gravado, grave e baixo) e uma bufada curta de fôlego.
 - `relincho_<n>`, `bufo_<n>`, `manso_<n>` (relincho manso), `pasto_<n>`.
+- `corpo_<n>` (o corpo assentando no lombo, ao montar) e `toque_<n>` (os
+  calcanhares no lombo, ao apertar W montado): gerados por código, sem gravação.
 
 Gravações de origem, todas no Freesound:
 

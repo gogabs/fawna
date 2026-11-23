@@ -420,9 +420,9 @@ func _ask_name(id: int, choice: String) -> String:
 	return ""
 
 
-## M: monta no seu cavalo mais perto, a até Herd.MOUNT_REACH. Devolve o que
-## falar (a resposta do servidor chega depois).
-func mount_nearest(me: Vector2) -> String:
+## M: o seu cavalo mais perto, a até Herd.MOUNT_REACH, para montar (o id); ou
+## o que falar (longe, sem cavalo, ou a escolha do nome se ainda não tem).
+func mount_nearest(me: Vector2) -> Variant:
 	var mine: String = get_parent().my_owner_key()
 	var best := -1
 	var best_d := Herd.MOUNT_REACH
@@ -439,8 +439,21 @@ func mount_nearest(me: Vector2) -> String:
 		return "Seu cavalo está longe." if any else "Nenhum cavalo seu por perto."
 	if str(_horses[best]["name"]).is_empty():
 		return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(best, 0))
-	request_mount.rpc_id(1, best)
-	return ""
+	return best
+
+
+## Subindo no cavalo: ele ajeita uma pata, no chão de "point".
+func shift_hoof(point: Vector2, extra_db: float) -> void:
+	var surface := _surface_at(point)
+	var recorded := HorseSounds.has_hooves(surface)
+	var peak: float = HOOF_PEAK_DB["casco"].get(surface, -9.0) if recorded else -9.0
+	_play_ridden(HorseSounds.hoof(surface, false), get_parent().FOOTSTEP_DB + STEP_PEAK_DB - peak + RIDDEN_DB["casco"] + extra_db)
+
+
+## Um bufo do cavalo, de onde ele está (ao desmontar).
+func snort(id: int) -> void:
+	if _horses.has(id):
+		_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
 
 
 ## O cavalo em que estou montado, ou -1.
