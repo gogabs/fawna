@@ -48,12 +48,13 @@ func _test_placement() -> void:
 					vines += 1
 				else:
 					fibers += 1
-				if world.cover_at(cell) != WorldGen.Cover.FECHADA:
+				# A fibra também nasce na beira da água (Plants).
+				if world.cover_at(cell) != WorldGen.Cover.FECHADA and not (thing == WorldGen.Thing.FIBRA and (world.is_waterside(cell) or Plants.species_at(world, cell) == "milho")):
 					outside += 1
 			elif thing == WorldGen.Thing.SILEX:
 				flints += 1
 	_check(vines > 0 and fibers > 0, "há cipó e fibra nas matas (cipó %d, fibra %d)" % [vines, fibers])
-	_check(outside == 0, "cipó e fibra só nascem em mata fechada")
+	_check(outside == 0, "cipó só na mata fechada; capim na mata fechada, na beira da água ou (milho) no campo")
 	_check(flints > 0, "há sílex no mundo (%d)" % flints)
 	for thing: int in [WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA, WorldGen.Thing.SILEX]:
 		_check(Harvest.is_source(thing) and not Harvest.needs_tool(thing), "recurso novo se colhe com a mão")
@@ -142,11 +143,11 @@ func _test_recipes() -> void:
 	var inv := state.inventory_of(2)
 	_check(state.craft(2, "faca")["reason"] == "faltam", "faca sem material não sai")
 	inv["silex"] = 2
-	inv["lenha_pequena"] = 1
+	inv["madeira_pequena"] = 1
 	_check(state.craft(2, "faca")["ok"] and int(inv.get("faca", 0)) == 1 and not inv.has("silex"), "faca bruta: 2 sílex e 1 lenha pequena")
 	_check(Bag.can_wield("faca") and Bag.with_article("faca") == "a faca bruta de sílex", "faca se empunha e se fala")
 	_check(Crafting.TOOL_ORDER.has("faca"), "faca está em Ferramentas")
-	inv["lenha_media"] = 1
+	inv["madeira_media"] = 1
 	inv["resina"] = 2
 	inv["fibra"] = 2
 	inv["cipo"] = 1

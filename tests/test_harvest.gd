@@ -79,8 +79,7 @@ func _test_placement() -> void:
 		print("[recursos] semente %d: %s" % [world_seed, count])
 		for thing in Harvest.SOURCES:
 			_check(int(count.get(thing, 0)) > 0, "deveria haver %s (semente %d)" % [WorldGen.THING_NAMES[thing], world_seed])
-		var fruits := int(count.get(WorldGen.Thing.ARBUSTO_FRUTAS, 0))
-		_check(fruits < int(count.get(WorldGen.Thing.ARBUSTO, 0)) / 5, "frutas deveriam ser raras")
+		_check(int(count.get(WorldGen.Thing.ARBUSTO_FRUTAS, 0)) > 0 and int(count.get(WorldGen.Thing.ARBUSTO, 0)) > 0, "há arbustos de fruta e de fibra")
 		var clay := int(count.get(WorldGen.Thing.ARGILA, 0))
 		_check(count["argila_perto_da_agua"] == clay, "toda argila deveria estar perto da água (%d de %d)" % [count["argila_perto_da_agua"], clay])
 		_check(not world.is_passable(_find(world, WorldGen.Thing.BAMBU)[1]), "bambu deveria bloquear a passagem")
@@ -107,7 +106,8 @@ func _test_edges_and_water() -> void:
 				var cell := Vector2i(x, y)
 				var thing := world.thing_at(cell)
 				var biome := world.biome_at(cell)
-				if thing == WorldGen.Thing.ARBUSTO or thing == WorldGen.Thing.ARBUSTO_FRUTAS:
+				# Os arbustos de fibra a mais da beira da água ficam fora da conta da orla.
+				if (thing == WorldGen.Thing.ARBUSTO or thing == WorldGen.Thing.ARBUSTO_FRUTAS) and not world.is_waterside(cell):
 					bushes += 1
 					if _cover_within(world, cell, 4, WorldGen.Cover.FECHADA) and _cover_within(world, cell, 4, WorldGen.Cover.ABERTA):
 						edge_bushes += 1
@@ -257,7 +257,7 @@ func _test_bamboo_needs_strikes() -> void:
 func _test_direct_collect_and_regrow() -> void:
 	var world := WorldGen.new(42)
 	var harvest := Harvest.new(world)
-	var expected := {WorldGen.Thing.ARBUSTO: "lenha", WorldGen.Thing.ARGILA: "argila", WorldGen.Thing.ARBUSTO_FRUTAS: "frutas"}
+	var expected := {WorldGen.Thing.ARBUSTO: "fibra", WorldGen.Thing.GALHOS: "madeira", WorldGen.Thing.ARGILA: "argila", WorldGen.Thing.ARBUSTO_FRUTAS: "frutas"}
 	for thing in expected:
 		var cell: Vector2i = _find(world, thing)[1]
 		var got := harvest.take(cell, 5000.0)
@@ -334,7 +334,7 @@ func _test_world_state() -> void:
 
 ## Pedras: nascem pelo mundo, mais na beira da água; cada peça recolhida
 ## sai de um tamanho (1/3 cada longe da água, mais pequenas perto dela). A
-## lenha dos arbustos é só média e pequena. Tudo entra na bolsa por tamanho.
+## madeira dos galhos é só média e pequena. Tudo entra na bolsa por tamanho.
 func _test_stones_and_sizes() -> void:
 	var world := WorldGen.new(42)
 	var dry := WorldGen.NO_CELL
@@ -380,27 +380,29 @@ func _test_stones_and_sizes() -> void:
 		sum += int(parts[k])
 	_check(taken["ok"] and sum == int(taken["amount"]), "as peças somam o que foi recolhido")
 	_check(not harvest.is_available(dry, 101.0), "pedras recolhidas somem até voltar")
-	var bush := _find(world, WorldGen.Thing.ARBUSTO)
+	var twigs := _find(world, WorldGen.Thing.GALHOS)
+	_check(not twigs.is_empty(), "há galhos caídos no bosque")
 	var wood := {}
 	for i in 40:
-		var rolled: Dictionary = harvest._roll_parts(bush[1], "lenha", 2)
+		var rolled: Dictionary = harvest._roll_parts(twigs[1], "madeira", 2)
 		for k in rolled:
 			wood[k] = true
-	_check(wood.has("lenha_media") and wood.has("lenha_pequena") and not wood.has("lenha_grande"),
-		"arbusto dá lenha média e pequena, nunca grande: %s" % [wood.keys()])
+	_check(wood.has("madeira_media") and wood.has("madeira_pequena") and not wood.has("madeira_grande"),
+		"galhos dão madeira média e pequena, nunca grande: %s" % [wood.keys()])
 	# Na bolsa e na fala.
 	var bag := {"pedra_grande": 3, "pedra_pequena": 1, "argila": 2}
 	_check(Bag.entry_label("pedra", Bag.count(bag, "pedra"), bag) == "Pedra, 3 grandes, 1 pequena",
 		"bolsa agrupa os tamanhos: " + Bag.entry_label("pedra", 4, bag))
 	_check(Bag.entry_label("argila", 2, bag) == "Argila, 2", "sem tamanho continua igual")
 	_check(Bag.entries(bag) == [["argila", 2], ["pedra", 4]], "entradas agrupadas: %s" % [Bag.entries(bag)])
-	_check(Bag.entry_label("lenha", 3, {"lenha_media": 1, "lenha_pequena": 2}) == "Lenha, 1 média, 2 pequenas", "lenha com tamanhos")
+	_check(Bag.entry_label("madeira", 3, {"madeira_media": 1, "madeira_pequena": 2}) == "Madeira, 1 média, 2 pequenas", "madeira com tamanhos")
 	_check(Economy.collected_text("pedra", 3, {"pedra_grande": 1, "pedra_pequena": 2}) == "3 pedras: 1 grande e 2 pequenas",
 		Economy.collected_text("pedra", 3, {"pedra_grande": 1, "pedra_pequena": 2}))
-	_check(Economy.collected_text("lenha", 2, {"lenha_media": 2}) == "2 lenhas médias", "um tamanho só")
-	# Save antigo: "lenha" sem tamanho vira lenha média.
-	var state := WorldState.from_save({"seed": 42, "inventories": {"Lua": {"lenha": 4, "lenha_pequena": 1}}})
-	_check(state.inventories["Lua"] == {"lenha_media": 4, "lenha_pequena": 1}, "lenha antiga vira média: %s" % [state.inventories["Lua"]])
+	_check(Economy.collected_text("madeira", 2, {"madeira_media": 2}) == "2 madeiras médias", "um tamanho só")
+	# Saves antigos: lenha vira madeira do mesmo tamanho ("lenha" sem tamanho,
+	# média) e a madeira de antes vira madeira grande.
+	var state := WorldState.from_save({"seed": 42, "inventories": {"Lua": {"lenha": 4, "lenha_pequena": 1, "lenha_media": 1, "lenha_grande": 2, "madeira": 3}}})
+	_check(state.inventories["Lua"] == {"madeira_media": 5, "madeira_pequena": 1, "madeira_grande": 5}, "lenha e madeira antigas migram: %s" % [state.inventories["Lua"]])
 
 
 ## Um arbusto com frutas sem outro igual por perto (na orla do bosque eles
@@ -436,12 +438,12 @@ func _test_narrator() -> void:
 	var after := Narrator.surroundings(world, pos, 0, [], harvest)
 	_check(after.contains("arbusto vazio"), "Tab fala do arbusto vazio depois de colhido: " + after)
 	_check(harvest.spoken_name(spot[1]) == "arbusto vazio", "arbusto colhido continua lá, vazio")
-	# Arbusto comum: dá gravetos (lenha) e continua lá depois de colhido.
+	# Arbusto comum: dá fibra e continua lá depois de colhido.
 	var bush := _find(world, WorldGen.Thing.ARBUSTO)
 	_check(harvest.spoken_name(bush[1]) == "arbusto", "arbusto não diz o que dá")
-	_check(harvest.take(bush[1])["item"] == "lenha", "gravetos do arbusto viram lenha")
+	_check(harvest.take(bush[1])["item"] == "fibra", "arbusto dá fibra")
 	_check(harvest.spoken_name(bush[1]) == "arbusto vazio", "arbusto colhido é arbusto vazio")
-	_check(not Sounds.has_resource_loop(WorldGen.Thing.ARBUSTO), "gravetos não têm emissor próprio")
+	_check(not Sounds.has_resource_loop(WorldGen.Thing.ARBUSTO), "arbusto de fibra não tem emissor próprio")
 	_check(Sounds.has_ambient(WorldGen.Thing.ARBUSTO_FRUTAS), "arbusto com frutas soa como arbusto também")
 
 
@@ -500,10 +502,10 @@ func _test_dense_forest() -> void:
 	# Golpes soltos se esquecem, mas a árvore caída não se levanta sozinha.
 	_check(world.is_passable(cell) and harvest.hits_left(cell, t + 99999.0) == 0, "árvore caída continua caída")
 	var got := harvest.take(cell, t + 100000.0)
-	_check(got["ok"] and got["item"] == "madeira" and got["amount"] == 2 and got["parts"].is_empty(), "árvore dá 2 madeiras (%s)" % got)
-	_check(got["extras"] == {"lenha_grande": 2}, "e 2 lenhas grandes, separadas da madeira")
-	_check(Economy.haul_text("madeira", 2, {}, {"lenha_grande": 2}) == "2 madeiras e 2 lenhas grandes", "fala: %s" % Economy.haul_text("madeira", 2, {}, {"lenha_grande": 2}))
-	_check(Bag.entry_label("madeira", 2, {"madeira": 2}) == "Madeira, 2", "madeira na bolsa")
+	_check(got["ok"] and got["item"] == "madeira" and got["amount"] == 4 and got["parts"] == {"madeira_grande": 4}, "árvore dá 4 madeiras grandes (%s)" % got)
+	_check(got["extras"].is_empty(), "e nada mais")
+	_check(Economy.haul_text("madeira", 4, got["parts"], {}) == "4 madeiras grandes", "fala: %s" % Economy.haul_text("madeira", 4, got["parts"], {}))
+	_check(Bag.entry_label("madeira", 4, {"madeira_grande": 4}) == "Madeira, 4 grandes", "madeira na bolsa")
 	# No servidor, tudo vai para a bolsa.
 	var state := WorldState.new(42)
 	state.add_player(1, "Lua")
@@ -514,7 +516,7 @@ func _test_dense_forest() -> void:
 		state.strike(1, spot[1])
 	state.collect(1, spot[1])
 	var inv: Dictionary = state.inventories["Lua"]
-	_check(inv.get("madeira") == 2 and inv.get("lenha_grande") == 2, "madeira e lenha grande na bolsa (%s)" % inv)
+	_check(inv.get("madeira_grande") == 4 and not inv.has("madeira"), "madeira grande na bolsa (%s)" % inv)
 	_check(world.is_passable(cell), "recolhida, a casa segue livre")
 	_check(not harvest.is_available(cell, t + 1.0e9), "árvore não rebrota")
 	# Cliente: o espelho recebido do servidor também abre a passagem.

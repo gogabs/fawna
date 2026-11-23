@@ -17,7 +17,7 @@ extends RefCounted
 ##   de pé -> (bambu: golpes com o machado até cair) -> pronta para recolher
 ##   -> recolhida (some: sem som, sem fala) -> rebrota depois de "regrow" s.
 ## O arbusto não some: depois de colhido continua lá como um arbusto vazio
-## (TAKEN_NAMES), até os gravetos ou as frutas voltarem.
+## (TAKEN_NAMES), até a fibra ou as frutas voltarem.
 
 ## Tempo de rebrota que nunca chega: a árvore derrubada não volta.
 const NEVER := 1.0e15
@@ -27,32 +27,33 @@ const NEVER := 1.0e15
 ##   hits: golpes de machado até poder recolher (0: recolhe direto, com a mão);
 ##   extra_hits: até quantos golpes a mais uma fonte pode pedir (varia por lugar);
 ##   regrow: segundos até voltar depois de recolhida;
-##   extras: itens que vêm junto, com quantidade fixa (item -> quanto). A árvore
-##   dá madeira (para construir) e lenha grande (para o fogo), separadas; para
-##   voltar a ser tudo lenha, troque a linha dela por "item": "lenha" e tire
-##   extras (TREE_SIZE_CHANCES já faz a lenha sair grande);
+##   extras: itens que vêm junto, com quantidade fixa (item -> quanto);
 ##   opens: derrubada (ou recolhida), a casa deixa de bloquear (world.cleared).
 const SOURCES := {
-	WorldGen.Thing.ARVORE: {"item": "madeira", "amount": 2, "extras": {"lenha_grande": 2}, "hits": 6, "extra_hits": 3, "tool": "machado", "regrow": NEVER, "opens": true},
+	WorldGen.Thing.ARVORE: {"item": "madeira", "amount": 4, "hits": 6, "extra_hits": 3, "tool": "machado", "regrow": NEVER, "opens": true},
 	WorldGen.Thing.BAMBU: {"item": "bambu", "amount": 3, "hits": 3, "extra_hits": 2, "tool": "machado", "regrow": 900.0, "opens": true},
-	WorldGen.Thing.ARBUSTO: {"item": "lenha", "amount": 2, "hits": 0, "regrow": 300.0},
+	WorldGen.Thing.ARBUSTO: {"item": "fibra", "amount": 1, "hits": 0, "regrow": 900.0},
+	WorldGen.Thing.GALHOS: {"item": "madeira", "amount": 2, "hits": 0, "regrow": 600.0},
 	WorldGen.Thing.ARGILA: {"item": "argila", "amount": 1, "hits": 0, "regrow": 480.0},
 	WorldGen.Thing.ARBUSTO_FRUTAS: {"item": "frutas", "amount": 2, "hits": 0, "regrow": 1800.0},
 	WorldGen.Thing.PEDRAS: {"item": "pedra", "amount": 3, "hits": 0, "regrow": 600.0},
 	WorldGen.Thing.CIPO: {"item": "cipo", "amount": 1, "hits": 0, "regrow": 1200.0},
+	# A rama não se colhe com a mão: a raiz sai com a enxada (WorldState.dig_roots).
+	WorldGen.Thing.RAMA: {"item": "raiz", "amount": 2, "hits": 0, "tool": "enxada", "regrow": 1200.0},
+	WorldGen.Thing.COGUMELO: {"item": "cogumelo", "amount": 2, "hits": 0, "regrow": 1800.0},
 	WorldGen.Thing.FIBRA: {"item": "fibra", "amount": 2, "hits": 0, "regrow": 900.0},
 	WorldGen.Thing.SILEX: {"item": "silex", "amount": 1, "hits": 0, "regrow": 1800.0},
 }
 
 ## Recursos com tamanho (Economy.SIZES): a chance de cada peça recolhida
-## sair de cada tamanho. Os arbustos dão só lenha média e pequena (a grande
-## virá das árvores). Na beira da água (WorldGen.is_waterside) as pedras são
-## mais miúdas.
+## sair de cada tamanho. Os galhos do chão dão só madeira média e pequena (a
+## grande é a tora, da árvore derrubada: TREE_SIZE_CHANCES). Na beira da água
+## (WorldGen.is_waterside) as pedras são mais miúdas.
 const SIZE_CHANCES := {
-	"lenha": {"media": 0.5, "pequena": 0.5},
+	"madeira": {"media": 0.5, "pequena": 0.5},
 	"pedra": {"grande": 1.0 / 3.0, "media": 1.0 / 3.0, "pequena": 1.0 / 3.0},
 }
-## Árvore dá só lenha grande (usado se a árvore voltar a dar lenha como item principal).
+## A árvore derrubada dá só madeira grande.
 const TREE_SIZE_CHANCES := {"grande": 1.0}
 
 ## Nos últimos golpes o tronco range: o aviso de que falta pouco é o som, não a fala.
@@ -81,6 +82,9 @@ var _nodes := {}
 ## Sorteia o tamanho de cada peça recolhida (só no servidor importa). Os
 ## testes podem fixar a semente.
 var rng := RandomNumberGenerator.new()
+## Quem joga reconhece as espécies das plantas de longe (tag Forrageador)?
+## Só muda a fala (spoken_name), no cliente.
+var knows_plants := false
 
 
 func _init(new_world: WorldGen) -> void:
@@ -105,7 +109,7 @@ static func now() -> float:
 
 
 ## Nome da coisa desta casa para a fala, conforme o estado: "arbusto" (de
-## gravetos ou de frutas, sem distinguir) vira "arbusto vazio" depois de colhido, um bambu sem golpes faltando é
+## fibra ou de frutas, sem distinguir) vira "arbusto vazio" depois de colhido, um bambu sem golpes faltando é
 ## "bambu derrubado". Vazio se a coisa foi recolhida e sumiu.
 func spoken_name(cell: Vector2i, at := -1.0) -> String:
 	var thing := world.thing_at(cell)
@@ -115,6 +119,10 @@ func spoken_name(cell: Vector2i, at := -1.0) -> String:
 		return TAKEN_NAMES.get(thing, "")
 	if needs_tool(thing) and hits_left(cell, at) == 0:
 		return "árvore caída" if thing == WorldGen.Thing.ARVORE else "bambu derrubado"
+	if knows_plants:
+		var species := Plants.species_at(world, cell)
+		if not species.is_empty():
+			return Plants.name_of(species)
 	return WorldGen.THING_NAMES[thing]
 
 
@@ -124,6 +132,9 @@ func regrow_time(cell: Vector2i) -> float:
 	var thing := world.thing_at(cell)
 	if thing == WorldGen.Thing.BAMBU and world.biome_at(cell) == WorldGen.Biome.BAMBUZAL:
 		return NEVER
+	var own := Plants.regrow_of(Plants.species_at(world, cell))
+	if own > 0.0:
+		return own
 	return float(SOURCES[thing]["regrow"])
 
 
@@ -199,7 +210,7 @@ func strike(cell: Vector2i, at := -1.0, power := 1.0) -> Dictionary:
 ## Chance de cada tamanho para o que esta casa dá ({} se o item não tem
 ## tamanho).
 func size_chances(cell: Vector2i) -> Dictionary:
-	if world.thing_at(cell) == WorldGen.Thing.ARVORE and item_of(WorldGen.Thing.ARVORE) == "lenha":
+	if world.thing_at(cell) == WorldGen.Thing.ARVORE:
 		return TREE_SIZE_CHANCES
 	var item := item_of(world.thing_at(cell))
 	if item == "pedra" and world.is_waterside(cell):
@@ -228,7 +239,7 @@ func _roll_parts(cell: Vector2i, item: String, amount: int) -> Dictionary:
 
 ## Recolhe a fonte inteira. Devolve { ok, reason, item, amount, parts, hits_left }.
 ## parts: quanto de cada tamanho, para recursos com tamanho
-## ({"lenha_media": 1, "lenha_pequena": 1}); vazio para os outros. É parts
+## ({"madeira_media": 1, "madeira_pequena": 1}); vazio para os outros. É parts
 ## que vai para a bolsa quando não está vazio.
 ## reason: "nada", "colhido" ou "golpear" (o bambu ainda está de pé).
 func take(cell: Vector2i, at := -1.0) -> Dictionary:
@@ -246,6 +257,10 @@ func take(cell: Vector2i, at := -1.0) -> Dictionary:
 	_nodes[cell] = {"hits": 0, "regrow_at": at + regrow_time(cell), "struck_at": 0.0}
 	_sync(cell, at)
 	var amount := int(source["amount"])
+	# Plantas: a espécie decide o que vem (amoras, fibra, batatas...).
+	var plant := Plants.yield_at(world, cell, amount)
+	if not plant.is_empty():
+		return {"ok": true, "reason": "", "item": plant["item"], "amount": amount, "parts": plant["parts"], "extras": {}}
 	return {"ok": true, "reason": "", "item": source["item"], "amount": amount,
 		"parts": _roll_parts(cell, source["item"], amount),
 		"extras": (source.get("extras", {}) as Dictionary).duplicate()}

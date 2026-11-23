@@ -5,14 +5,13 @@ extends RefCounted
 ##
 ## Alguns recursos têm tamanhos (subtipos): cada tamanho é um item separado
 ## na bolsa, com a chave "<recurso>_<tamanho>" (ex.: "pedra_grande",
-## "lenha_pequena"). As receitas gastam essas chaves. Na fala e no menu da
+## "madeira_pequena"). As receitas gastam essas chaves. Na fala e no menu da
 ## Bolsa eles aparecem agrupados: "Pedra, 3 grandes, 1 pequena".
 
 ## Nome falado de cada item: [singular, plural]. O que cada coisa do mundo
 ## dá ao ser coletada fica em Harvest.SOURCES.
 const ITEM_NAMES := {
 	"bambu": ["bambu", "bambus"],
-	"lenha": ["lenha", "lenhas"],
 	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
@@ -22,10 +21,21 @@ const ITEM_NAMES := {
 	"cipo": ["cipó", "cipós"],
 	"fibra": ["fibra vegetal", "fibras vegetais"],
 	"resina": ["resina", "resinas"],
+	"raiz": ["raiz", "raízes"],
+	"raiz_assada": ["raiz assada", "raízes assadas"],
+	"castanha": ["castanha", "castanhas"],
+	"estragada": ["comida estragada", "comidas estragadas"],
+	"cogumelo": ["cogumelo", "cogumelos"],
+	"milho": ["espiga de milho", "espigas de milho"],
+	"milho_assado": ["milho assado", "milhos assados"],
+	"broa": ["broa de milho", "broas de milho"],
+	"ensopado": ["ensopado", "ensopados"],
+	"fruta_seca": ["fruta seca", "frutas secas"],
+	"cogumelo_seco": ["cogumelo seco", "cogumelos secos"],
 }
 
 ## Tamanhos, do maior para o menor, com o nome falado [singular, plural]
-## (todos os recursos com tamanho são femininos: lenha, pedra).
+## (todos os recursos com tamanho são femininos: madeira, pedra).
 const SIZE_ORDER := ["grande", "media", "pequena"]
 const SIZE_NAMES := {
 	"grande": ["grande", "grandes"],
@@ -33,20 +43,77 @@ const SIZE_NAMES := {
 	"pequena": ["pequena", "pequenas"],
 }
 
-## Que tamanhos cada recurso pode ter. Lenha grande só vem das árvores; os
-## arbustos dão lenha média e pequena.
+## Que tamanhos cada recurso pode ter. Madeira grande (a tora) só vem da
+## árvore derrubada; a média e a pequena são os galhos catados no chão perto
+## das árvores. Toda madeira serve para construir e para queimar.
 const SIZES := {
-	"lenha": ["grande", "media", "pequena"],
+	"madeira": ["grande", "media", "pequena"],
 	"pedra": ["grande", "media", "pequena"],
 }
 
+## Grupos por espécie, como os tamanhos: cada espécie é um item à parte
+## ("frutas_amora", "raiz_batata"), falado pelo nome dela ("2 amoras") e
+## agrupado na Bolsa ("Fruta, 2 amoras, 1 pitanga"). A ordem é a da Bolsa.
+## O que cada planta dá fica em Plants.
+const KINDS := {
+	"frutas": ["amora", "pitanga", "baga", "maracuja"],
+	"raiz": ["batata", "mandioca", "cara", "cenoura"],
+	"cogumelo": ["pardo", "orelha", "neve"],
+}
+## Nome falado de cada espécie [singular, plural] e se é feminino.
+const KIND_NAMES := {
+	"amora": ["amora", "amoras", true],
+	"pitanga": ["pitanga", "pitangas", true],
+	"baga": ["baga-de-cinza", "bagas-de-cinza", true],
+	"maracuja": ["maracujá-do-mato", "maracujás-do-mato", false],
+	"batata": ["batata", "batatas", true],
+	"mandioca": ["mandioca", "mandiocas", true],
+	"cara": ["cará", "carás", false],
+	"cenoura": ["cenoura", "cenouras", true],
+	"pardo": ["chapéu-pardo", "chapéus-pardos", false],
+	"orelha": ["orelha-de-pau", "orelhas-de-pau", true],
+	"neve": ["cogumelo-da-neve", "cogumelos-da-neve", false],
+}
 
-## "pedra_grande" -> "pedra". Itens sem tamanho voltam como estão.
+
+## Chave de um item de um save antigo -> a chave de hoje. A lenha virou
+## madeira do mesmo tamanho (a lenha sem tamanho, de antes deles, vira média),
+## e a madeira de antes, que só saía das árvores, vira madeira grande. Pedra
+## sem tamanho vira média.
+static func migrate(item: String) -> String:
+	if item == "lenha" or item == "pedra":
+		return ("madeira" if item == "lenha" else "pedra") + "_media"
+	if item == "madeira":
+		return "madeira_grande"
+	# Frutas e raízes de antes das espécies.
+	if item == "frutas":
+		return "frutas_amora"
+	if item == "raiz":
+		return "raiz_batata"
+	if item.begins_with("lenha_"):
+		return "madeira_" + item.substr(6)
+	return item
+
+
+## "pedra_grande" -> "pedra", "frutas_amora" -> "frutas". Itens sem tamanho
+## nem espécie voltam como estão.
 static func base_of(item: String) -> String:
 	var cut := item.rfind("_")
-	if cut > 0 and SIZES.has(item.left(cut)) and SIZE_NAMES.has(item.substr(cut + 1)):
+	if cut > 0 and subtypes_of(item.left(cut)).has(item.substr(cut + 1)):
 		return item.left(cut)
 	return item
+
+
+## Tamanhos ou espécies de um recurso, na ordem da Bolsa ([] se não tem).
+static func subtypes_of(base: String) -> Array:
+	return SIZES.get(base, KINDS.get(base, []))
+
+
+## Nome [singular, plural] de um tamanho ou de uma espécie.
+static func subtype_names(subtype: String) -> Array:
+	if SIZE_NAMES.has(subtype):
+		return SIZE_NAMES[subtype]
+	return KIND_NAMES.get(subtype, [subtype, subtype])
 
 
 ## "pedra_grande" -> "grande"; "" se o item não tem tamanho.
@@ -60,8 +127,16 @@ static func sized(base: String, size: String) -> String:
 	return "%s_%s" % [base, size]
 
 
+## O recurso se divide em tamanhos ou espécies (itens agrupados na Bolsa)?
 static func has_sizes(base: String) -> bool:
-	return SIZES.has(base)
+	return SIZES.has(base) or KINDS.has(base)
+
+
+## Feminino? Vale para espécies ("uma amora", "um cará") e, por padrão, para
+## o resto, que é tudo feminino entre as comidas.
+static func is_feminine(item: String) -> bool:
+	var kind := size_of(item)
+	return bool(KIND_NAMES[kind][2]) if KIND_NAMES.has(kind) else true
 
 
 ## O item existe no jogo (com ou sem tamanho)?
@@ -78,6 +153,9 @@ static func names_of(item: String) -> Array:
 	var size := size_of(item)
 	if size.is_empty():
 		return names
+	# Espécie: só o nome dela ("amora"); tamanho: o recurso e o tamanho.
+	if KIND_NAMES.has(size):
+		return [KIND_NAMES[size][0], KIND_NAMES[size][1]]
 	return ["%s %s" % [names[0], SIZE_NAMES[size][0]], "%s %s" % [names[1], SIZE_NAMES[size][1]]]
 
 
@@ -90,14 +168,15 @@ static func item_text(item: String, amount: int) -> String:
 ## {"pedra_grande": 3, "pedra_pequena": 1} -> "3 grandes, 1 pequena".
 static func sizes_text(base: String, items: Dictionary, joiner := ", ") -> String:
 	var parts: PackedStringArray = []
-	for size: String in SIZE_ORDER:
+	for size: String in subtypes_of(base):
 		var amount := int(items.get(sized(base, size), 0))
 		if amount > 0:
-			parts.append("%d %s" % [amount, SIZE_NAMES[size][0] if amount == 1 else SIZE_NAMES[size][1]])
+			var names := subtype_names(size)
+			parts.append("%d %s" % [amount, names[0] if amount == 1 else names[1]])
 	return joiner.join(parts)
 
 
-## O que se acabou de coletar: "3 pedras: 1 grande e 2 pequenas", "2 lenhas
+## O que se acabou de coletar: "3 pedras: 1 grande e 2 pequenas", "2 madeiras
 ## médias", "1 argila".
 static func collected_text(base: String, amount: int, parts: Dictionary) -> String:
 	var sizes := 0
@@ -117,7 +196,7 @@ static func collected_text(base: String, amount: int, parts: Dictionary) -> Stri
 
 
 ## Tudo o que uma coleta rendeu: o item principal (com seus tamanhos) e os
-## extras: "2 madeiras e 2 lenhas grandes".
+## extras: "3 bambus e 1 argila".
 static func haul_text(base: String, amount: int, parts: Dictionary, extras: Dictionary) -> String:
 	var main := collected_text(base, amount, parts)
 	if extras.is_empty():

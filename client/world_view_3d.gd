@@ -86,7 +86,7 @@ var _wanted: Array[Vector2i] = []  # pedaços a montar, do mais perto ao mais lo
 var _pos := Vector2.ZERO
 
 
-func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null, daytime: Node = null) -> void:
+func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds: Builds = null, players: Dictionary = {}, my_id := 0, birds: Node = null, horrors: Node = null, daytime: Node = null, horses: Node = null) -> void:
 	_world = world
 	_daytime = daytime
 	_audio = audio
@@ -132,11 +132,11 @@ func setup(world: WorldGen, audio: SpatialAudio, harvest: Harvest = null, builds
 		_obras.name = "Obras3D"
 		add_child(_obras)
 		_obras.setup(world, builds, players, my_id, _shapes, _materials)
-	if birds != null or horrors != null:
+	if birds != null or horrors != null or horses != null:
 		var wildlife := WildlifeView3D.new()
 		wildlife.name = "Bichos3D"
 		add_child(wildlife)
-		wildlife.setup(birds, horrors, _shapes)
+		wildlife.setup(birds, horrors, _shapes, horses)
 		_wildlife = wildlife
 
 
@@ -676,6 +676,17 @@ func _add_things(parent: Node3D, first: Vector2i, bridges: Array = []) -> void:
 					put(lists, "stalk", base, Vector3(2.0, 0.6, 2.0), turn, 0.3, FIBER_COLOR * shade)
 				WorldGen.Thing.CIPO:
 					put(lists, "blob", base, Vector3(0.6, 0.3, 0.6), turn, 0.1, VINE_COLOR * shade)
+				WorldGen.Thing.RAMA:
+					# Rama rasteira: uma touceira baixa de folhas.
+					put(lists, "blob", base, Vector3(0.7, 0.25, 0.7), turn, 0.08, VINE_COLOR * shade)
+				WorldGen.Thing.COGUMELO:
+					# Um tufo de chapéus baixos no chão.
+					put(lists, "blob", base, Vector3(0.35, 0.18, 0.35), turn, 0.09, STONE_COLOR.lerp(Color(0.85, 0.75, 0.6), 0.6) * shade)
+				WorldGen.Thing.GALHOS:
+					# Dois ou três galhos finos caídos, cruzados no chão.
+					for k in 2 + int(r3 * 2.0):
+						var offset := Vector3((_rand(cell, 40 + k) - 0.5) * 0.6, 0.0, (_rand(cell, 50 + k) - 0.5) * 0.6)
+						put(lists, "box", base + offset, Vector3(0.08, 0.08, 0.9 + 0.4 * _rand(cell, 60 + k)), turn + k * 1.1, 0.05, TRUNK_COLOR * shade)
 	_sources[first / CHUNK] = sources
 	var holder_parent := Node3D.new()
 	holder_parent.name = "Coisas"

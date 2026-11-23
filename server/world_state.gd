@@ -40,8 +40,34 @@ var inventories := {}
 var equipment := {}
 ## nome do personagem -> id da espécie (ver Species); vazio até escolher.
 var species := {}
+## nome da criatura -> { "food", "warmth" }: fome e calor, de 0 a 100 (ver Body).
+var body := {}
+## nome da criatura -> { comida: [[quantidade, dias que faltam], ...] }: os
+## lotes de cada comida na bolsa, para o estrago (ver Body.reconcile).
+var lots := {}
+## casa da árvore -> ano (DayCycle) em que as castanhas dela foram catadas.
+var nuts := {}
+## Cavalos domesticados (Herd.tame_to_save): quem os simula é o nó Horses; o
+## jogo copia para cá antes de salvar.
+var tame_horses := []
+## casa -> ms da última raiz cavada ali com a enxada.
+var _rooted := {}  # casa da rama -> golpes de enxada já dados nela
+var _food_rng := RandomNumberGenerator.new()
+## id -> segundos seguidos com alguma reserva em zero (para desfalecer; não se salva).
+var faint_clock := {}
+## id -> segundos que ainda faltam para secar depois de cruzar um vau.
+var wet_left := {}
+## Quem está com algo no forno: id -> { recipe, makes, build }. Até terminar,
+## não cozinha outra coisa.
+var cooking := {}
 ## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
 var offhand := {}
+## Roupa vestida, por nome: hoje só o manto de fibra. Não pesa na carga.
+var worn := {}
+## Pote selado de cada um, por nome: item -> [[n, dias que faltam], ...]. A
+## comida guardada ali não envelhece. Cabem JAR_CAPACITY por pote selado.
+var jars := {}
+const JAR_CAPACITY := 8
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
 var torch_until := {}
 ## id -> { method, needed, count, last_ms, first }: quem está riscando a tocha.
@@ -55,6 +81,9 @@ var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
+## Quem está montado (id -> true), mantido pelo nó dos cavalos.
+var riding := {}
+const RIDE_MAX_SPEED := 4.6  # casas por segundo: o galope montado (game.gd RIDE_SPEEDS, 4,3)
 ## Habilidades ativas (tecla H; ver Abilities).
 var _ability_ready := {}  # id -> ms em que dá para usar de novo
 var dashing := {}  # id -> { "until": ms, "tired_until": ms } (disparada)
@@ -111,6 +140,8 @@ func add_player(id: int, player_name: String) -> Vector2:
 	if not equipment.has(clean_name):
 		equipment[clean_name] = ""
 	Bag.give_starter(inventories[clean_name], equipment[clean_name])
+	if not body.has(clean_name):
+		body[clean_name] = Body.fresh()
 	builds.touch(owner_key_of_name(clean_name))
 	return pos
 
@@ -239,7 +270,12 @@ func _finish_dig(id: int, work: Dictionary, now_ms: int) -> Dictionary:
 			break
 	var amount := _ability_rng.randi_range(int(pick[1]), int(pick[2]))
 	var item := str(pick[0])
-	ground.add_items(cell, {Economy.sized(item, "media") if Economy.has_sizes(item) else item: amount})
+	var key := item
+	if item == "raiz":
+		key = Plants.root_item(Plants.root_species(world.biome_at(cell)))
+	elif Economy.has_sizes(item):
+		key = Economy.sized(item, "media")
+	ground.add_items(cell, {key: amount})
 	return {"id": id, "event": "achou", "tag": "fucar", "cell": cell, "item": item, "amount": amount, "pile": ground.items_at(cell)}
 
 
@@ -304,6 +340,7 @@ func remove_player(id: int) -> void:
 		last_pos[players[id]["name"]] = players[id]["pos"]
 	builds.touch(owner_key(id))
 	players.erase(id)
+	cooking.erase(id)
 	_ability_ready.erase(id)
 	dashing.erase(id)
 	channels.erase(id)
@@ -312,6 +349,248 @@ func remove_player(id: int) -> void:
 	_last_strike.erase(id)
 	_last_build.erase(id)
 	_last_drop.erase(id)
+	faint_clock.erase(id)
+	wet_left.erase(id)
+
+
+## Fome e calor da criatura ({} se ela não está no mundo). É o mesmo
+## dicionário guardado: mudá-lo muda o corpo dela.
+func body_of(id: int) -> Dictionary:
+	if not players.has(id):
+		return {}
+	var player_name: String = players[id]["name"]
+	if not body.has(player_name):
+		body[player_name] = Body.fresh()
+	return body[player_name]
+
+
+## A estação de agora (0 Coroada, 1 Declínio, 2 Longa Escuridão, 3 Ressurgência).
+func season() -> int:
+	return DayCycle.season_of(DayCycle.world_day(day_n, day_t))
+
+
+## O ano do mundo (conta as castanhas: uma vez por ano em cada árvore).
+func year() -> int:
+	return int(DayCycle.world_day(day_n, day_t) / DayCycle.YEAR_DAYS)
+
+
+## Os lotes de comida da criatura (o mesmo dicionário guardado).
+func lots_of(id: int) -> Dictionary:
+	if not players.has(id):
+		return {}
+	var player_name: String = players[id]["name"]
+	if not lots.has(player_name):
+		lots[player_name] = {}
+	return lots[player_name]
+
+
+## Passa o tempo na comida da bolsa de quem está no mundo ("days" de jogo, já
+## com o frio). Devolve id -> { item: quantidade estragada } de quem perdeu algo.
+func age_food(id: int, days: float) -> Dictionary:
+	var entry := body_of(id)
+	Body.settle_raw(entry, days)
+	return Body.age(lots_of(id), inventory_of(id), days)
+
+
+## Come 1 item de comida da bolsa (do lote mais velho). Devolve { ok, reason,
+## item, event } com reason "desconhecido", "nao_e_comida", "sem_item" ou
+## "cheio" (barriga cheia); event "comeu" ou "enjoou" (raiz crua demais).
+func eat(id: int, item: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Body.is_food(item):
+		return {"ok": false, "reason": "nao_e_comida", "item": item}
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var entry := body_of(id)
+	if Body.is_full(entry, item):
+		return {"ok": false, "reason": "cheio", "item": item}
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	Body.take_oldest(food_lots, item)
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	return {"ok": true, "item": item, "event": Body.eat(entry, item)}
+
+
+## Tira 1 "item" da bolsa sem comer (ex.: fruta dada a um cavalo). Comida sai
+## do lote mais velho. Devolve false se não tinha.
+func give_away(id: int, item: String) -> bool:
+	if not players.has(id):
+		return false
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return false
+	if Body.is_food(item):
+		var food_lots := lots_of(id)
+		Body.reconcile(food_lots, inv)
+		Body.take_oldest(food_lots, item)
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	return true
+
+
+## Assa na fogueira acesa ao alcance (Body.ROASTS) até "amount" itens crus.
+## "fires": posições das fogueiras acesas. Devolve { ok, reason, item, into,
+## amount } com reason "desconhecido", "nao_assa", "sem_item" ou "sem_fogo".
+func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if Body.roast_of(item).is_empty():
+		return {"ok": false, "reason": "nao_assa", "item": item}
+	var inv := inventory_of(id)
+	var have := int(inv.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var pos: Vector2 = players[id]["pos"]
+	var near := false
+	for fire: Vector2 in fires:
+		if fire.distance_to(pos) <= Body.ROAST_REACH:
+			near = true
+			break
+	if not near:
+		return {"ok": false, "reason": "sem_fogo", "item": item}
+	var count := clampi(amount, 1, have)
+	var into := Body.roast_of(item)
+	inv[item] = have - count
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	inv[into] = int(inv.get(into, 0)) + count
+	Body.reconcile(lots_of(id), inv)
+	return {"ok": true, "item": item, "into": into, "amount": count}
+
+
+## O forno aceso ao alcance de quem está em "pos" ({} se nenhum).
+func oven_near(pos: Vector2) -> Dictionary:
+	for build: Dictionary in builds.all():
+		if build["kind"] == "forno" and bool(build["done"]) and builds.is_lit(int(build["id"])) \
+				and Builds.reach_distance(build, pos) <= Cooking.REACH:
+			return build
+	return {}
+
+
+## Começa uma receita do forno (Cooking): confere o forno aceso ao alcance e
+## os ingredientes, e já os tira da bolsa. O que ela faz só entra na bolsa em
+## cook_finish, passados "seconds". Devolve { ok, reason, seconds, makes,
+## missing } com reason "desconhecido", "receita", "sem_forno", "ocupado" (já
+## há algo no forno) ou "faltam".
+func cook_start(id: int, recipe: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Cooking.RECIPES.has(recipe):
+		return {"ok": false, "reason": "receita"}
+	if cooking.has(id):
+		return {"ok": false, "reason": "ocupado"}
+	var oven := oven_near(players[id]["pos"])
+	if oven.is_empty():
+		return {"ok": false, "reason": "sem_forno"}
+	var inv := inventory_of(id)
+	var planned := Cooking.plan(inv, recipe)
+	if not planned["missing"].is_empty():
+		return {"ok": false, "reason": "faltam", "missing": planned["missing"]}
+	var take: Dictionary = planned["take"]
+	for item: String in take:
+		inv[item] = int(inv[item]) - int(take[item])
+		if int(inv[item]) <= 0:
+			inv.erase(item)
+	Body.reconcile(lots_of(id), inv)
+	var made := Cooking.makes(recipe, take)
+	cooking[id] = {"recipe": recipe, "makes": made, "build": int(oven["id"])}
+	return {"ok": true, "seconds": float(Cooking.RECIPES[recipe]["seconds"]), "makes": made, "took": take}
+
+
+## A receita de "id" terminou: o que ela fez vai para a bolsa. Devolve o que
+## entrou ({} se não havia nada no forno ou a criatura saiu do mundo).
+func cook_finish(id: int) -> Dictionary:
+	var entry: Dictionary = cooking.get(id, {})
+	cooking.erase(id)
+	if entry.is_empty() or not players.has(id):
+		return {}
+	var inv := inventory_of(id)
+	var made: Dictionary = entry["makes"]
+	for item: String in made:
+		inv[item] = int(inv.get(item, 0)) + int(made[item])
+	Body.reconcile(lots_of(id), inv)
+	return made
+
+
+## J com a enxada perto de uma rama (Plants): cava a raiz. Cada rama pede
+## Body.ROOT_DIG_HITS golpes; no último, a raiz sai (Body.ROOT_AMOUNT, um só
+## na Longa Escuridão) e a rama some até rebrotar (Harvest). "cell" é a casa
+## à frente; se não for uma rama, vale a rama mais perto ao alcance.
+## Devolve { ok, reason, amount, item, kept, left_over, pile_cell } com reason
+## "desconhecido", "sem_enxada", "terreno" (nenhuma rama ao alcance) ou
+## "cavando" (golpe dado, a raiz ainda não saiu).
+func dig_roots(id: int, cell: Vector2i, _now_ms := -1) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if wielding(id) != "enxada":
+		return {"ok": false, "reason": "sem_enxada"}
+	var pos: Vector2 = players[id]["pos"]
+	var target := _rama_near(pos, cell)
+	if target == WorldGen.NO_CELL:
+		return {"ok": false, "reason": "terreno"}
+	Body.exert(body_of(id))
+	var hits := int(_rooted.get(target, 0)) + 1
+	if hits < Body.ROOT_DIG_HITS:
+		_rooted[target] = hits
+		return {"ok": false, "reason": "cavando", "cell": target}
+	_rooted.erase(target)
+	var taken := harvest.take(target)
+	if not taken["ok"]:
+		return {"ok": false, "reason": "terreno"}
+	var amount := 1 if season() == 2 else Body.ROOT_AMOUNT
+	var item := Plants.root_item(Plants.species_at(world, target))
+	var result := _give(id, {item: amount})
+	result["item"] = item
+	result["cell"] = target
+	return result
+
+
+## A rama de pé mais perto ao alcance ("ahead" primeiro). NO_CELL se não há.
+func _rama_near(pos: Vector2, ahead: Vector2i) -> Vector2i:
+	var reach := REACH + 0.6
+	var best := WorldGen.NO_CELL
+	var best_distance := INF
+	var here := WorldGen.cell_of(pos)
+	for cell: Vector2i in [ahead] + _around(here, 2):
+		if world.thing_at(cell) != WorldGen.Thing.RAMA or not harvest.is_available(cell):
+			continue
+		var distance := pos.distance_to(WorldGen.cell_center(cell))
+		if distance > reach:
+			continue
+		if cell == ahead:
+			return cell
+		if distance < best_distance:
+			best_distance = distance
+			best = cell
+	return best
+
+
+static func _around(center: Vector2i, radius: int) -> Array:
+	var cells := []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			cells.append(center + Vector2i(dx, dy))
+	return cells
+
+
+## Põe itens na bolsa; o que não couber fica no chão, onde a criatura está.
+func _give(id: int, got: Dictionary) -> Dictionary:
+	var inv := inventory_of(id)
+	var pos: Vector2 = players[id]["pos"]
+	var split := Bag.split_to_fit(inv, wielding(id), got, offhand_of(id), species_of(id))
+	for key: String in split[0]:
+		inv[key] = int(inv.get(key, 0)) + int(split[0][key])
+	if not split[1].is_empty():
+		ground.add_items(WorldGen.cell_of(pos), split[1])
+	var amount := 0
+	for key: String in got:
+		amount += int(got[key])
+	return {"ok": true, "amount": amount, "kept": split[0], "left_over": split[1], "pile_cell": WorldGen.cell_of(pos)}
 
 
 ## Para onde o jogador olha (0 norte, 1 nordeste...; ver Compass).
@@ -386,7 +665,7 @@ func light_torch(id: int) -> Dictionary:
 		return {"ok": false, "reason": "ja_acesa"}
 	var pos: Vector2 = players[id]["pos"]
 	for build: Dictionary in builds.all():
-		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
+		if Crafting.BUILDS[build["kind"]].get("fire", false) and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
 			torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + torch_seconds(id)
 			return {"ok": true, "seconds": torch_seconds(id)}
 	var method := ignition_method(id)
@@ -554,6 +833,172 @@ func strip_resources(id: int) -> Dictionary:
 	return lost
 
 
+# --- Roupa e pote selado --------------------------------------------------------
+
+func worn_of(id: int) -> String:
+	if not players.has(id):
+		return ""
+	return str(worn.get(players[id]["name"], ""))
+
+
+## Veste o manto da bolsa. Devolve { ok, reason } ("nao_tem", "ja_veste").
+func wear(id: int, item: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if item != "manto":
+		return {"ok": false, "reason": "nao_veste", "item": item}
+	if not worn_of(id).is_empty():
+		return {"ok": false, "reason": "ja_veste", "item": item}
+	var inv := inventory_of(id)
+	if int(inv.get(item, 0)) <= 0:
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	inv[item] = int(inv[item]) - 1
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	worn[players[id]["name"]] = item
+	return {"ok": true, "item": item}
+
+
+## Tira a roupa e a põe na bolsa. Devolve { ok, reason, item }.
+func take_off(id: int) -> Dictionary:
+	var item := worn_of(id)
+	if item.is_empty():
+		return {"ok": false, "reason": "sem_roupa"}
+	var inv := inventory_of(id)
+	inv[item] = int(inv.get(item, 0)) + 1
+	worn.erase(players[id]["name"])
+	return {"ok": true, "item": item}
+
+
+## O que está no pote selado de "id": item -> quantidade.
+func jar_of(id: int) -> Dictionary:
+	var out := {}
+	if not players.has(id):
+		return out
+	var jar: Dictionary = jars.get(players[id]["name"], {})
+	for item: String in jar:
+		var total := 0
+		for lot: Array in jar[item]:
+			total += int(lot[0])
+		if total > 0:
+			out[item] = total
+	return out
+
+
+func jar_room(id: int) -> int:
+	var used := 0
+	for amount in jar_of(id).values():
+		used += int(amount)
+	return JAR_CAPACITY * int(inventory_of(id).get("pote_selado", 0)) - used
+
+
+## Guarda comida da bolsa no pote selado, com a idade que ela tem. Devolve
+## { ok, reason, amount } ("sem_pote", "nao_e_comida", "sem_item", "cheio").
+func jar_store(id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var inv := inventory_of(id)
+	if int(inv.get("pote_selado", 0)) <= 0:
+		return {"ok": false, "reason": "sem_pote"}
+	if not Body.is_food(item) or item == Body.SPOILED:
+		return {"ok": false, "reason": "nao_e_comida", "item": item}
+	var have := int(inv.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	var count := mini(mini(amount, have), jar_room(id))
+	if count <= 0:
+		return {"ok": false, "reason": "cheio"}
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	var taken := Body.split_lots(food_lots, item, count)
+	inv[item] = have - count
+	if int(inv[item]) <= 0:
+		inv.erase(item)
+	var player_name: String = players[id]["name"]
+	if not jars.has(player_name):
+		jars[player_name] = {}
+	var jar: Dictionary = jars[player_name]
+	if not jar.has(item):
+		jar[item] = []
+	for lot: Array in taken:
+		jar[item].append(lot)
+	return {"ok": true, "item": item, "amount": count}
+
+
+## Tira comida do pote selado de volta para a bolsa, com a idade que tinha.
+func jar_take(id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var player_name: String = players[id]["name"]
+	var jar: Dictionary = jars.get(player_name, {})
+	var list: Array = jar.get(item, [])
+	var taken := []
+	var count := 0
+	while count < amount and not list.is_empty():
+		var cut := mini(amount - count, int(list[0][0]))
+		taken.append([cut, float(list[0][1])])
+		list[0][0] = int(list[0][0]) - cut
+		count += cut
+		if int(list[0][0]) <= 0:
+			list.pop_front()
+	if count <= 0:
+		return {"ok": false, "reason": "sem_item", "item": item}
+	if list.is_empty():
+		jar.erase(item)
+	if jar.is_empty():
+		jars.erase(player_name)
+	var inv := inventory_of(id)
+	var food_lots := lots_of(id)
+	Body.reconcile(food_lots, inv)
+	Body.merge_lots(food_lots, item, taken)
+	inv[item] = int(inv.get(item, 0)) + count
+	Body.reconcile(food_lots, inv)
+	return {"ok": true, "item": item, "amount": count}
+
+
+## Pendura fruta ou cogumelo da bolsa no secador ao alcance.
+func rack_hang(id: int, build_id: int, item: String, amount: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty() or Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH + 0.5:
+		return {"ok": false, "reason": "longe"}
+	var inv := inventory_of(id)
+	var result := builds.hang(build_id, inv, item, amount)
+	if result["ok"]:
+		Body.reconcile(lots_of(id), inv)
+	return result
+
+
+## Recolhe o que secou no secador ao alcance.
+func rack_gather(id: int, build_id: int) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	var build := builds.get_build(build_id)
+	if build.is_empty() or Builds.reach_distance(build, players[id]["pos"]) > BUILD_REACH + 0.5:
+		return {"ok": false, "reason": "longe"}
+	var inv := inventory_of(id)
+	var result := builds.gather_rack(build_id, inv)
+	if result["ok"]:
+		Body.reconcile(lots_of(id), inv)
+	return result
+
+
+## Quem desfalece de fome ou de frio perde metade de cada recurso da bolsa
+## (arredondado para baixo: quem tem 1 fica com ele); armas, ferramentas e o
+## que está nas mãos ficam. Devolve o que foi perdido (item -> quantidade).
+func strip_half_resources(id: int) -> Dictionary:
+	var lost := {}
+	var inv := inventory_of(id)
+	for item: String in inv.keys():
+		if Economy.is_item(item) and not Bag.WIELDABLE.has(item):
+			var half := int(inv[item]) / 2
+			if half > 0:
+				lost[item] = half
+				inv[item] = int(inv[item]) - half
+	return lost
+
+
 ## Leva o jogador a outro ponto sem a conferência de velocidade (ex.: o
 ## Calado o alcançou).
 func teleport(id: int, pos: Vector2) -> void:
@@ -574,6 +1019,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	var seconds := clampf((now_ms - int(_last_move.get(id, now_ms - 1000))) / 1000.0, 0.0, 1.0)
 	# Espécies mais rápidas (cervo: leve e veloz) andam mais longe por segundo.
 	var allowed := MAX_SPEED * maxf(1.0, Species.effect(species_of(id), "speed")) * dash_boost(id, now_ms) * seconds + MOVE_SLACK
+	if riding.has(id):
+		allowed = RIDE_MAX_SPEED * seconds + MOVE_SLACK
 	if not pos.is_finite() or from.distance_to(pos) > allowed or not world.is_free(pos) \
 			or not Species.may_step(species_of(id), world, pos):
 		return {"ok": false, "pos": from}
@@ -582,8 +1029,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	return {"ok": true, "pos": pos}
 
 
-## Recolhe o recurso de uma casa ao alcance (gravetos ou frutas de um arbusto,
-## argila, pedras, ou um bambu já derrubado). Lenha e pedra entram na bolsa
+## Recolhe o recurso de uma casa ao alcance (fibra ou frutas de um arbusto,
+## galhos, argila, pedras, ou um bambu já derrubado). Madeira e pedra entram na bolsa
 ## por tamanho (Harvest.take devolve "parts"). A fonte se esgota e rebrota com o tempo
 ## (Harvest).
 ## O que não cabe na carga (Bag.CAPACITY) fica no chão, na casa da criatura.
@@ -599,6 +1046,12 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var thing := world.thing_at(cell)
 	if not Harvest.is_source(thing):
 		return {"ok": false, "reason": "nada"}
+	# A rama não se arranca com a mão: a raiz sai com a enxada.
+	if thing == WorldGen.Thing.RAMA:
+		return {"ok": false, "reason": "cavar"}
+	# Na Longa Escuridão frutas, milho e cogumelos não dão nada.
+	if season() == 2 and harvest.is_available(cell) and Plants.is_seasonal(Plants.species_at(world, cell)):
+		return {"ok": false, "reason": "sem_frutas"}
 	var now := Time.get_ticks_msec()
 	if now - int(_last_collect.get(id, -COLLECT_COOLDOWN_MS)) < COLLECT_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
@@ -608,7 +1061,16 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var carrying := wielding(id)
 	# Árvore de pé: o Espaço recolhe a resina seca ou diz como ela está.
 	var resin_haul := {}
-	if thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0:
+	# Árvore de pé no Declínio: primeiro as castanhas do chão, uma vez por ano.
+	var standing_tree := thing == WorldGen.Thing.ARVORE and builds.at(cell).is_empty() and harvest.is_available(cell) and harvest.hits_left(cell) > 0
+	if standing_tree and season() == Body.NUT_SEASON and Body.nut_tree(cell) and int(nuts.get(cell, -1)) != year():
+		if Bag.free_space(inv, carrying, offhand_of(id), species_of(id)) <= 0:
+			return {"ok": false, "reason": "cheio", "item": "castanha"}
+		nuts[cell] = year()
+		var nut_result := _give(id, {"castanha": Body.NUT_AMOUNT})
+		nut_result.merge({"reason": "", "item": "castanha", "parts": {}, "extras": {}})
+		return nut_result
+	if standing_tree:
 		var tapped := resin.collect(cell)
 		if not tapped["ok"]:
 			return {"ok": false, "reason": "arvore", "item": tapped["text"]}
@@ -621,6 +1083,7 @@ func collect(id: int, cell: Vector2i) -> Dictionary:
 	var result := {"ok": true, "reason": "", "item": item, "amount": int(resin_haul["resina"]), "parts": {}, "extras": {}} if not resin_haul.is_empty() else harvest.take(cell)
 	if not result["ok"]:
 		return result
+	item = str(result["item"])
 	var parts: Dictionary = result.get("parts", {})
 	var got: Dictionary = (parts if not parts.is_empty() else {item: int(result["amount"])}).duplicate()
 	var extras: Dictionary = result.get("extras", {})
@@ -650,8 +1113,10 @@ func drop(id: int, item: String, amount: int) -> Dictionary:
 	var now := Time.get_ticks_msec()
 	if now - int(_last_drop.get(id, -DROP_COOLDOWN_MS)) < DROP_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
-	_last_drop[id] = now
 	var moved := mini(amount, have)
+	if item == "pote_selado" and jar_room(id) - JAR_CAPACITY * moved < 0:
+		return {"ok": false, "reason": "pote_cheio", "item": item}
+	_last_drop[id] = now
 	inv[item] = have - moved
 	if int(inv[item]) <= 0:
 		inv.erase(item)
@@ -700,6 +1165,7 @@ func strike(id: int, cell: Vector2i) -> Dictionary:
 	if now - int(_last_strike.get(id, -STRIKE_COOLDOWN_MS)) < STRIKE_COOLDOWN_MS:
 		return {"ok": false, "reason": "devagar"}
 	_last_strike[id] = now
+	Body.exert(body_of(id))
 	# O terreno de uma obra tem as suas próprias fases (preparo).
 	if not builds.at(cell).is_empty():
 		return {"ok": false, "reason": "nada", "hits_left": 0, "felled": false}
@@ -884,13 +1350,15 @@ func work_build(id: int, build_id: int) -> Dictionary:
 	if float(now - int(_last_build.get(id, -BUILD_COOLDOWN_MS))) < build_cooldown_ms(id):
 		return {"ok": false, "reason": "devagar"}
 	_last_build[id] = now
+	Body.exert(body_of(id))
 	return builds.work(build_id, inventory_of(id), -1.0, pos)
 
 
 ## Intervalo mínimo entre batidas numa obra: quem trabalha mais devagar
 ## (efeito "work" da espécie) leva mais tempo por batida.
 func build_cooldown_ms(id: int) -> float:
-	return BUILD_COOLDOWN_MS / maxf(0.1, Species.effect(species_of(id), "work"))
+	var body_factor := Body.work_factor(body_of(id)) if players.has(id) else 1.0
+	return BUILD_COOLDOWN_MS / maxf(0.1, Species.effect(species_of(id), "work") * body_factor)
 
 
 ## A chave de dono de uma criatura (Builds.claim). Hoje é o nome; quando houver
@@ -1041,8 +1509,13 @@ func to_save() -> Dictionary:
 		"inventories": inventories,
 		"equipment": equipment,
 		"offhand": offhand,
+		"worn": worn,
+		"jars": jars,
 		"species": species,
 		"torch_until": torch_until,
+		"body": body,
+		"lots": lots,
+		"nuts": _cells_to_save(nuts),
 		"day_t": day_t,
 		"day_n": day_n,
 		"last_pos": positions,
@@ -1051,6 +1524,7 @@ func to_save() -> Dictionary:
 		"resin": resin.to_save(),
 		"builds": builds.to_save(),
 		"ground": ground.to_save(),
+		"horses": tame_horses,
 	}
 
 
@@ -1060,10 +1534,8 @@ static func from_save(data: Dictionary) -> WorldState:
 		var inv := {}
 		var saved: Dictionary = data["inventories"][player_name]
 		for item: String in saved:
-			var key := item
-			# Lenha de antes dos tamanhos vira lenha média.
-			if Economy.has_sizes(item):
-				key = Economy.sized(item, "media")
+			# Lenha e madeira de saves antigos viram madeira com tamanho.
+			var key := Economy.migrate(item)
 			# Itens que não existem mais no jogo ficam para trás.
 			if Economy.is_item(key) or Bag.NAMES.has(key):
 				inv[key] = int(inv.get(key, 0)) + int(saved[item])
@@ -1075,8 +1547,51 @@ static func from_save(data: Dictionary) -> WorldState:
 			state.species[player_name] = str(data["species"][player_name])
 	for player_name in data.get("offhand", {}):
 		state.offhand[player_name] = str(data["offhand"][player_name])
+	for player_name in data.get("worn", {}):
+		if str(data["worn"][player_name]) == "manto":
+			state.worn[player_name] = "manto"
+	for player_name in data.get("jars", {}):
+		var jar := {}
+		for item in data["jars"][player_name]:
+			var list := []
+			for lot in data["jars"][player_name][item]:
+				if int(lot[0]) > 0:
+					list.append([int(lot[0]), float(lot[1])])
+			if not list.is_empty():
+				jar[str(item)] = list
+		if not jar.is_empty():
+			state.jars[str(player_name)] = jar
 	for player_name in data.get("torch_until", {}):
 		state.torch_until[player_name] = float(data["torch_until"][player_name])
+	var saved_body = data.get("body", {})
+	if typeof(saved_body) == TYPE_DICTIONARY:
+		for player_name in saved_body:
+			var entry = saved_body[player_name]
+			if typeof(entry) == TYPE_DICTIONARY:
+				state.body[player_name] = {
+					"food": clampf(float(entry.get("food", Body.START)), 0.0, Body.MAX),
+					"warmth": clampf(float(entry.get("warmth", Body.START)), 0.0, Body.MAX),
+				}
+	var saved_lots = data.get("lots", {})
+	if typeof(saved_lots) == TYPE_DICTIONARY:
+		for player_name in saved_lots:
+			var per_item = saved_lots[player_name]
+			if typeof(per_item) != TYPE_DICTIONARY:
+				continue
+			var clean := {}
+			for item in per_item:
+				var list := []
+				if typeof(per_item[item]) == TYPE_ARRAY:
+					for lot in per_item[item]:
+						if typeof(lot) == TYPE_ARRAY and lot.size() == 2:
+							list.append([int(lot[0]), float(lot[1])])
+				clean[str(item)] = list
+			state.lots[player_name] = clean
+	var saved_nuts = data.get("nuts", [])
+	if typeof(saved_nuts) == TYPE_ARRAY:
+		for row in saved_nuts:
+			if typeof(row) == TYPE_ARRAY and row.size() == 3:
+				state.nuts[Vector2i(int(row[0]), int(row[1]))] = int(row[2])
 	state.day_t = fposmod(float(data.get("day_t", state.day_t)), 1.0)
 	state.day_n = maxi(int(data.get("day_n", state.day_n)), 0)
 	var positions = data.get("last_pos", {})
@@ -1099,10 +1614,20 @@ static func from_save(data: Dictionary) -> WorldState:
 	var dropped = data.get("ground", [])
 	if typeof(dropped) == TYPE_ARRAY:
 		state.ground.load_save(dropped)
+	var tamed = data.get("horses", [])
+	if typeof(tamed) == TYPE_ARRAY:
+		state.tame_horses = tamed
 	var built = data.get("builds", {})
 	if typeof(built) == TYPE_DICTIONARY:
 		state.builds.load_save(built)
 	return state
+
+
+static func _cells_to_save(cells: Dictionary) -> Array:
+	var out := []
+	for cell: Vector2i in cells:
+		out.append([cell.x, cell.y, cells[cell]])
+	return out
 
 
 func _spawn_point() -> Vector2:

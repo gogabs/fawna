@@ -47,6 +47,7 @@ const TURN_RUSTLE_DB := -4.0
 const START_STOP_DB := -4.0
 const RUSTLE_DB := -12.0
 const ANKLET_DB := 0.0
+const SKID_DB := 0.0  # derrapada do cavalo montado, em relação aos passos
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
@@ -58,7 +59,7 @@ const TREE_FALL_REACH := 3.0  # a queda de uma árvore se ouve a 3x HEARING_RADI
 const HARVEST_CHECK := 2.0  # segundos entre conferências do que rebrotou
 const HEARING_RADIUS := 8.0  # passos de outras criaturas são ouvidos até aqui
 const SAVE_INTERVAL := 10.0  # segundos entre salvamentos, se algo mudou
-const WHERE_STEPS := 2  # falas do C: posição, céu
+const WHERE_STEPS := 3  # falas do C: posição, céu, corpo (fome e frio)
 const BED_VOLUME_DB := -22.0  # fundo do bioma
 ## Vento: forte nas trilhas e na beira da lagoa (lugares abertos), fraco no
 ## mato da pradaria e quase nada dentro do bosque.
@@ -91,7 +92,9 @@ const MENU_ACTIONS := {
 var view3d: WorldView3D  # o mundo em 3D; nulo sem tela (servidor ou gráficos desligados)
 @onready var birds: Node = $Birds
 @onready var horrors: Node = $Horrors
+@onready var horses: Node = $Horses
 @onready var daytime: Node = $Daytime
+@onready var survival: Node = $Survival
 
 var state: WorldState  # só no servidor
 var _dirty := false
@@ -151,6 +154,39 @@ var _menu: FloatingMenu
 # Habilidades ativas (ms de Time.get_ticks_msec): a disparada dobra a velocidade
 # e depois cansa; o token cancela os sons repetidos de fuçar e arar.
 var _dash_until := 0
+## Montado, o cavalo anda sozinho no andar escolhido (_ride_level): -1 ré,
+## 0 parado, 1 passo, 2 trote, 3 galope. W (toque, ou segurado a cada
+## RIDE_HOLD_MS) sobe um andar; S segurado desce um a cada RIDE_BRAKE_MS até
+## parar, e parado, segurar S dá ré enquanto segura. A e D não fazem nada:
+## para ir para os lados, gira. Bateu em algo, para.
+const RIDE_SPEEDS := [2.4, 0.0, 1.9, 3.0, 4.3]  # casas/s, de -1 (ré, um pouco mais lenta que o trote) a 3 (galope)
+const RIDE_HOLD_MS := 900
+const RIDE_BRAKE_MS := 500
+const RIDE_KEY_HELD := 1 << 60
+var _ride_level := 0
+var _ride_moving := false  # andou no último quadro (para os cascos)
+var _ride_w_next := -1  # ms da próxima subida com W segurado (-1 = solto)
+var _ride_s_next := -1  # ms da próxima descida com S segurado (-1 = solto)
+## Rédea sozinha: andando para a frente, o cavalo olha adiante (RIDE_LOOK_S
+## segundos de caminho) e desvia de obstáculos pequenos, até RIDE_STEER_MAX
+## para cada lado, voltando à direção de quem monta depois. Numa trilha
+## cercada de mata, bambuzal ou água, segue as curvas dela sozinho; se a curva
+## passa de RIDE_TURN_AT, quem monta gira junto (com o clique da bússola). Sem
+## saída a tempo, trotando ou galopando, derrapa (SKID_DECEL) e para antes de
+## bater, relinchando; a passo, só para e bufa.
+const RIDE_LOOK_S := 0.7
+const RIDE_LOOK_MIN := 1.2
+const RIDE_LOOK_MAX := 3.2
+const RIDE_STEER_STEP := RideSteer.STEP  # 10°
+const RIDE_STEER_TRIES := 5  # até 50° para cada lado
+const RIDE_STEER_RATE := PI * 0.9  # rad/s
+const RIDE_TURN_AT := PI / 6.0  # 30°
+const SKID_DECEL := 7.0  # casas/s²
+const SKID_MARGIN := 0.5  # casas que sobram antes do obstáculo
+var _ride_angle := 0.0  # desvio do cavalo em relação à direção de quem monta (rad, horário)
+var _ride_last_ms := 0
+var _skid_speed := 0.0
+var _skid_dir := Vector2.ZERO
 var _tired_until := 0
 var _dash_boost := 1.0
 var _channel_token := 0
@@ -186,6 +222,7 @@ func _exit_tree() -> void:
 	_save_world()
 	Sounds.clear()
 	BirdSongs.clear()
+	BodySounds.clear()
 
 
 func _process(delta: float) -> void:
@@ -195,6 +232,9 @@ func _process(delta: float) -> void:
 		if _connect_waited >= Net.CONNECT_TIMEOUT:
 			_back_to_menu("Não foi possível conectar ao servidor: sem resposta em %d segundos. Confira o endereço e a conexão e tente de novo." % int(Net.CONNECT_TIMEOUT))
 			return
+	# O Forrageador reconhece as espécies das plantas de longe (só a fala muda).
+	if harvest != null:
+		harvest.knows_plants = Species.has_tag(_my_species(), "forrageador")
 	if state != null:
 		_save_timer += delta
 		if _save_timer >= SAVE_INTERVAL:
@@ -247,7 +287,8 @@ func _process(delta: float) -> void:
 	_walk(motion * delta)
 	# O ritmo dos passos acompanha a velocidade: de costas, de lado ou sobrecarregado, mais lento.
 	_step_clock += delta * clampf(motion.length() / WALK_SPEED, MIN_STEP_RATE, MAX_STEP_RATE)
-	_tick_my_steps(_pos != before, delta)
+	_ride_moving = _pos != before
+	_tick_my_steps(_ride_moving, delta)
 	_tick_other_steps(delta)
 	_update_torch_sounds()
 	_harvest_timer += delta
@@ -269,16 +310,18 @@ func _process(delta: float) -> void:
 
 
 ## C é circular: o primeiro toque diz onde a criatura pisa e para onde olha; o
-## seguinte, o momento do dia e o anel; e assim por diante, sem relógio de espera
-## (daqui para frente cabe o clima como mais um passo).
+## seguinte, o momento do dia e o anel; o terceiro, a fome e o frio; e assim por
+## diante, sem relógio de espera (daqui para frente cabe o clima como mais um passo).
 func _say_where() -> void:
 	var step := _where_step % WHERE_STEPS
 	_where_step = step + 1
 	match step:
 		0:
 			Speech.say(Narrator.stepping_on(world, _pos, _heading))
-		_:
+		1:
 			Speech.say(daytime.sky_text())
+		_:
+			Speech.say(survival.status_text())
 
 
 ## Onde a criatura está (casas), para quem precisa saber de fora.
@@ -316,13 +359,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action("interagir"):
 		_interact()
 	elif event.is_action("golpear"):
-		_swing()
+		if horses.riding_mine() < 0:  # montado, não golpeia
+			_swing()
 	elif event.is_action("atalho_bolsa"):
 		_open_shortcut("Bolsa")
 	elif event.is_action("atalho_caminheiro"):
 		_open_shortcut("Caminheiro")
 	elif event.is_action("habilidade"):
-		_use_ability()
+		if horses.riding_mine() < 0 or Species.has_tag(_my_species(), "uivo"):  # montado, só o uivo
+			_use_ability()
+	elif event.is_action("montar"):
+		_toggle_mount()
 	elif event.is_action("ajuda"):
 		_say_help()
 	elif event.is_action("onde_estou"):
@@ -369,6 +416,8 @@ func request_join(player_name: String, password: String) -> void:
 	debug_status.rpc_id(id, DebugTools.allowed(Net.debug_available(), Net.mode == Net.Mode.HOST, id), Bag.capacity)
 	welcome.rpc_id(id, state.world.world_seed, state.snapshot(), state.inventory_of(id))
 	daytime.sync_to(id)
+	survival.send_to(id)
+	survival.send_stash(id)
 	equipment_changed.rpc_id(id, state.inventory_of(id), state.wielding(id), "", "")
 	offhand_changed.rpc_id(id, state.inventory_of(id), state.offhand_of(id), state.torch_left(id), "", "")
 	torches_changed.rpc_id(id, state.lit_torch_ids())
@@ -398,6 +447,8 @@ func request_ability() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
+	if state.riding.has(id) and not Species.has_tag(state.species_of(id), "uivo"):
+		return  # montado, só o uivo
 	var result := state.use_ability(id)
 	if not result["ok"]:
 		if state.players.has(id):
@@ -405,6 +456,7 @@ func request_ability() -> void:
 		return
 	if float(result.get("noise", 0.0)) > 0.0:
 		horrors.hear_noise(id, float(result["noise"]))
+	horses.hear_noise(state.players[id]["pos"])
 	var data := {}
 	match str(result["event"]):
 		"salto":
@@ -610,8 +662,8 @@ func request_drop(item: String, amount: int) -> void:
 	var id := _sender_id()
 	var result := state.drop(id, item, amount)
 	if not result["ok"]:
-		if state.players.has(id) and result["reason"] == "nao_tem":
-			action_failed.rpc_id(id, "nao_tem", item)
+		if state.players.has(id) and result["reason"] in ["nao_tem", "pote_cheio"]:
+			action_failed.rpc_id(id, str(result["reason"]), item)
 		return
 	_dirty = true
 	inventory_changed.rpc_id(id, state.inventory_of(id), "", "")
@@ -641,8 +693,8 @@ func request_strike(cell: Vector2i) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	# Só golpeia quem tem o machado nas mãos (o servidor confere).
-	if state.wielding(id) != "machado":
+	# Só golpeia quem tem o machado nas mãos (o servidor confere), e a pé.
+	if state.wielding(id) != "machado" or state.riding.has(id):
 		return
 	_tell_others_handled(id, "golpeou")
 	var result := state.strike(id, cell)
@@ -659,7 +711,7 @@ func request_tap(cell: Vector2i) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	if state.wielding(id) != "faca":
+	if state.wielding(id) != "faca" or state.riding.has(id):
 		return
 	_tell_others_handled(id, "golpeou")
 	var result := state.tap_tree(id, cell)
@@ -787,7 +839,7 @@ func request_swing() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	if state.wielding(id).is_empty() and not Species.has_tag(state.species_of(id), "garras"):
+	if state.riding.has(id) or (state.wielding(id).is_empty() and not Species.has_tag(state.species_of(id), "garras")):
 		return
 	_tell_others_handled(id, "golpeou")
 
@@ -799,9 +851,10 @@ func request_horror_strike() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender_id()
-	if not state.players.has(id):
+	if not state.players.has(id) or state.riding.has(id):
 		return
 	var held := state.wielding(id)
+	horses.hear_noise(state.players[id]["pos"])
 	horrors.strike(id, held, held.is_empty() and Species.has_tag(state.species_of(id), "garras"))
 
 
@@ -1094,6 +1147,7 @@ func welcome(world_seed: int, snapshot: Dictionary, my_inventory: Dictionary) ->
 	audio.set_heading(_heading, false)
 	_setup_view3d()
 	birds.start_client(audio)
+	horses.start_client(audio, world)
 	horrors.start_client(audio)
 	daytime.start_client()
 	_setup_caminheiro()
@@ -1195,7 +1249,7 @@ func resource_changed(cell: Vector2i, data: Dictionary, event: String, by_id: in
 				audio.play_at_point(where, Sounds.tree_knock() if tree else Sounds.bamboo_knock(), 0.0, true, true)
 				audio.play_at_point(where, Sounds.tree_fall() if tree else Sounds.bamboo_fall())
 			if by_id == my_id:
-				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira e a lenha." if tree \
+				Speech.say("A árvore caiu. A passagem está aberta. Aperte Espaço para recolher a madeira." if tree \
 						else "O bambu caiu. Aperte Espaço para recolher.")
 	audio.refresh_resources()
 	_refresh_view3d()
@@ -1268,6 +1322,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"porta": Sounds.door(bool(extra.get("open", true))) if event == "porta" else null,
 		"guardou": Sounds.build_deposit(), "pegou_estoque": Sounds.build_deposit(),
 		"dono": Sounds.build_stage(), "sem_dono": Sounds.build_deposit(),
+		"secador": Sounds.build_deposit(),
 	}.get(event)
 	if near and stream != null:
 		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
@@ -1285,7 +1340,7 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		return
 	if event == "apagou":
 		if where.distance_to(_pos) <= HEARING_RADIUS * 1.5:
-			Speech.say("A fogueira apagou: acabou a lenha.", false)
+			Speech.say("%s apagou: acabou a madeira." % _capital(_the_build(build)), false)
 		return
 	if not mine:
 		return
@@ -1364,21 +1419,30 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 				Speech.say("%s está pront%s: %d por %d casas, com a porta para o %s.%s" % [
 					Crafting.build_title(build["kind"]), Crafting.BUILDS[build["kind"]]["article"], int(build["size"]), int(build["size"]), build["entrance"],
 					" " + Builds.furniture_hint(build) if Crafting.has_furniture(build["kind"]) else ""])
+			elif Builds.has_rack(build):
+				Speech.say("O secador está pronto. Espaço nele pendura frutas e cogumelos para secar; perto de uma fogueira acesa, secam na metade do tempo.")
+			elif build["kind"] == "forno":
+				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
+				Speech.say("O forno está pronto, com madeira para uns %d minuto%s. Espaço bate as pedras para acender; aceso, Espaço abre o forno para cozinhar, e ele aquece o abrigo." % [
+					minutes, "" if minutes == 1 else "s"])
 			else:
 				var minutes := ceili(builds.fuel_left(build_id) / 60.0)
-				Speech.say("A fogueira está pronta, com lenha para uns %d minuto%s. Espaço bate as pedras para acender.%s" % [
+				Speech.say("A fogueira está pronta, com madeira para uns %d minuto%s. Espaço bate as pedras para acender.%s" % [
 					minutes, "" if minutes == 1 else "s",
 					" Com o marco desta região, o lugar já pode virar um povoado: Espaço no marco para dar o nome." if builds.has_unnamed_marco(build["region"]) else ""])
 		"nomeado":
 			Speech.say("Este povoado agora se chama %s. Ele aparece em Locais, no Caminheiro." % build["name"])
 		"acesa":
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
-			Speech.say("A fogueira pegou fogo, com lenha para uns %d minuto%s. Espaço põe mais lenha." % [minutes, "" if minutes == 1 else "s"])
+			if build["kind"] == "forno":
+				Speech.say("O forno pegou fogo, com madeira para uns %d minuto%s. Espaço abre o forno: cozinhar ou pôr madeira." % [minutes, "" if minutes == 1 else "s"])
+			else:
+				Speech.say("A fogueira pegou fogo, com madeira para uns %d minuto%s. Espaço põe mais madeira." % [minutes, "" if minutes == 1 else "s"])
 		"silex":
-			Speech.say("Você pôs um sílex na fogueira. Agora Espaço bate as pedras para acender.")
+			Speech.say("Você pôs um sílex n%s. Agora Espaço bate as pedras para acender." % _the_build(build))
 		"abasteceu", "alimentou":
 			var minutes := ceili(builds.fuel_left(build_id) / 60.0)
-			Speech.say("Você pôs uma %s. Lenha para uns %d minuto%s." % [
+			Speech.say("Você pôs uma %s. Fogo para uns %d minuto%s." % [
 				Crafting.material_text(extra.get("item", ""), 1).trim_prefix("1 "), minutes, "" if minutes == 1 else "s"])
 
 
@@ -1436,8 +1500,9 @@ func crafted(new_bag: Dictionary, weapon: String) -> void:
 	_sync_menu.call_deferred()
 	inventory = new_bag
 	var recipe := Crafting.recipe(weapon)
-	var done_text := "Você fabricou %s %s. Está na bolsa: empunhe pela Bolsa, no menu das setas." % [
-		"uma" if recipe["article"] == "a" else "um", Crafting.weapon_name(weapon)]
+	var done_text := "Você fabricou %s %s. %s" % [
+		"uma" if recipe["article"] == "a" else "um", Crafting.weapon_name(weapon),
+		str(recipe.get("done", "Está na bolsa: empunhe pela Bolsa, no menu das setas."))]
 	if not Crafting.is_tool_recipe(weapon):
 		for i in CRAFT_KNOCKS:
 			get_tree().create_timer(0.3 * i).timeout.connect(_play.bind(Sounds.build_knock(), true))
@@ -1464,11 +1529,12 @@ func inventory_changed(new_inventory: Dictionary, verb: String, item: String, am
 	inventory = new_inventory
 	if verb.is_empty():
 		return
-	_play(Sounds.pickup(item))
+	# Galhos (madeira sem tora) soam como gravetos; a tora, como madeira.
+	_play(Sounds.pickup("lenha" if item == "madeira" and not parts.has("madeira_grande") else item))
 	var total := Bag.count(inventory, item)
 	if left_over.is_empty():
 		var what := "Você %s %s." % [verb, Economy.haul_text(item, amount, parts, extras)]
-		# Com dois tipos de item (madeira e lenha da árvore), o total de um só
+		# Com extras (dois tipos de item numa coleta), o total de um só
 		# confundiria: a Bolsa diz quanto há de cada.
 		Speech.say(what if not extras.is_empty() else "%s Agora tem %d." % [what, total])
 	elif kept.is_empty():
@@ -1559,8 +1625,14 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Você não tem uma tocha na mão não dominante.")
 		"golpear":
 			Speech.say("Ainda está de pé. Empunhe o machado e golpeie com J.")
+		"cavar":
+			Speech.say("A raiz está embaixo da rama. Empunhe a enxada e cave com J.")
+		"sem_frutas":
+			Speech.say("Na Longa Escuridão isto não dá nada.")
 		"cheio":
 			Speech.say("Você não consegue levar mais, %d de %d no limite absoluto. Jogue algo fora pela Bolsa, no menu das setas." % [Bag.load_of(inventory, wielded, offhand), Bag.max_load_for(_my_species())])
+		"pote_cheio":
+			Speech.say("Há comida guardada no pote selado. Tire antes de largá-lo.")
 		"nao_tem":
 			Speech.say("Não há %s na sua bolsa." % Bag.spoken_name(detail))
 		"nao_empunha":
@@ -1573,6 +1645,10 @@ func action_failed(reason: String, detail: String) -> void:
 			Speech.say("Há outra construção, a água, a trilha ou um recurso nesse lugar, ou perto demais: entre uma obra e outra ficam sempre 2 casas livres.")
 		"obra_regiao":
 			Speech.say("Esta região já tem um marco.")
+		"obra_encostar":
+			Speech.say("O forno só se começa colado do lado de fora da parede de um abrigo pronto, longe da porta. Encoste na parede, por fora, e tente de novo.")
+		"obra_ja_tem":
+			Speech.say("Este abrigo já tem um forno.")
 		"obra_ocupado":
 			Speech.say("Tem alguém nesse lugar.")
 		"obra_faltam":
@@ -1618,7 +1694,7 @@ func action_failed(reason: String, detail: String) -> void:
 		"desmontar_nao_dono":
 			Speech.say("Só o dono derruba esta construção.")
 		"desmontar_acesa":
-			Speech.say("A fogueira está acesa. Espere apagar para desmontá-la.")
+			Speech.say("O fogo está aceso. Espere apagar para desmontar.")
 		"desmontar_ferramenta":
 			Speech.say("Para desmontar uma obra, empunhe o machado.")
 		"preparo_ferramenta":
@@ -1626,13 +1702,13 @@ func action_failed(reason: String, detail: String) -> void:
 		"preparo_fase":
 			pass
 		"obra_sem_silex":
-			Speech.say("A fogueira apagada pede um sílex, e não há nenhum na sua bolsa.")
+			Speech.say("O fogo apagado pede um sílex, e não há nenhum na sua bolsa.")
 		"obra_sem_lenha":
-			Speech.say("A fogueira está sem lenha, e não há lenha na sua bolsa.")
+			Speech.say("O fogo está sem madeira, e não há madeira na sua bolsa.")
 		"obra_sem_lenha_bolsa":
-			Speech.say("Não há lenha na sua bolsa para pôr no fogo.")
+			Speech.say("Não há madeira na sua bolsa para pôr no fogo.")
 		"obra_cheia":
-			Speech.say("A fogueira já está cheia de lenha.")
+			Speech.say("Já está cheio de madeira.")
 		"nome_repetido":
 			Speech.say("Já existe um povoado chamado %s. Escolha outro nome." % detail)
 		"nome_longe":
@@ -1709,6 +1785,10 @@ func player_moved(id: int, pos: Vector2) -> void:
 	view.queue_redraw()
 	if old_pos.distance_to(pos) < 0.01:
 		return
+	if horses.is_riding_key(WorldState.owner_key_of_name(str(players[id]["name"]))):
+		# Montada: quem soa são os cascos do cavalo.
+		_others_step.erase(id)
+		return
 	var steps: Dictionary = _others_step.get(id, {"clock": STEP_INTERVAL, "idle": INF, "count": 0})
 	# Velocidade dela, estimada pelo que andou entre duas posições: os passos seguem o mesmo ritmo.
 	var now := Time.get_ticks_msec()
@@ -1765,7 +1845,7 @@ func debug_capacity(capacity: int) -> void:
 ## Servidor -> quem pediu: o que a depuração fez (ou por que não fez).
 @rpc("authority", "call_local", "reliable")
 func debug_result(text: String) -> void:
-	if world != null:
+	if world != null and not text.is_empty():
 		Speech.say(text)
 
 
@@ -1829,6 +1909,27 @@ func _run_debug(id: int, action: String, arg: String) -> String:
 		"dispensar":
 			var count: int = horrors.debug_dismiss()
 			return "%d Calado%s dispensado%s." % [count, "" if count == 1 else "s", "" if count == 1 else "s"] if count > 0 else "Nenhum Calado no mundo."
+		"corpo":
+			var entry := state.body_of(id)
+			match arg:
+				"cheio":
+					entry["food"] = Body.MAX
+					entry["warmth"] = Body.MAX
+				"fome":
+					entry["food"] = 3.0
+				"frio":
+					entry["warmth"] = 3.0
+				_:
+					return "Opção desconhecida."
+			_dirty = true
+			survival.send_to(id)
+			return "Fome %d, calor %d." % [roundi(entry["food"]), roundi(entry["warmth"])]
+		"domar":
+			var tamed: int = horses.debug_tame(id, state.players[id]["pos"])
+			return "" if tamed >= 0 else "Nenhum cavalo selvagem por perto."
+		"cavalos":
+			var come: int = horses.herd.summon(state.players[id]["pos"], Time.get_ticks_msec()) if horses.herd != null else 0
+			return "%d cavalos vêm vindo." % come if come > 0 else "Não achei lugar para os cavalos aqui."
 		"sozinho":
 			horrors.debug_set_spawning(arg == "ligar")
 			return "O Calado %s sozinho." % ("volta a aparecer" if arg == "ligar" else "não aparece mais")
@@ -1848,6 +1949,7 @@ func _load_or_create_world() -> void:
 	else:
 		print("[servidor] mundo carregado de %s" % ProjectSettings.globalize_path(Net.save_path))
 	birds.start_server(state.world)
+	horses.start_server(state.world, state.tame_horses)
 	horrors.start_server(state.world)
 	daytime.start_server(state)
 	print("[servidor] mundo único no ar, versão %s, porta %d, semente %d" % [Updater.current_version(), Net.port, state.world.world_seed])
@@ -1858,6 +1960,7 @@ func _load_or_create_world() -> void:
 func _save_world() -> void:
 	if state == null or not _dirty:
 		return
+	state.tame_horses = horses.tame_to_save()
 	if WorldSave.save_state(state, Net.save_path):
 		_dirty = false
 
@@ -1875,7 +1978,9 @@ func _on_peer_disconnected(id: int) -> void:
 	print("[servidor] %s (peer %d) saiu" % [state.players[id]["name"], id])
 	state.remove_player(id)
 	birds.forget_peer(id)
+	horses.forget_peer(id)
 	horrors.forget_peer(id)
+	survival.forget_peer(id)
 	player_left.rpc(id)
 
 
@@ -1914,7 +2019,7 @@ func _my_species() -> String:
 ## Quanto da velocidade de andar vale agora: sobrecarga e tags da espécie.
 func _speed_scale() -> float:
 	var species := _my_species()
-	var scale := Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed")
+	var scale := Bag.speed_factor(inventory, wielded, offhand, species) * Species.effect(species, "speed") * float(survival.speed_factor())
 	var now := Time.get_ticks_msec()
 	if now < _dash_until:
 		scale *= _dash_boost
@@ -1924,7 +2029,7 @@ func _speed_scale() -> float:
 
 
 func _wanted_motion() -> Vector2:
-	if horrors.is_caught():
+	if horrors.is_caught() or survival.is_out():
 		return Vector2.ZERO
 	if _auto_target != null:
 		var to_target: Vector2 = _auto_target - _pos
@@ -1932,6 +2037,10 @@ func _wanted_motion() -> Vector2:
 			_auto_target = null
 			return Vector2.ZERO
 		return to_target.normalized() * minf(WALK_SPEED * _speed_scale(), to_target.length() * 10.0)
+	if Time.get_ticks_msec() < _mount_busy_until:
+		return Vector2.ZERO  # subindo ou descendo do cavalo
+	if horses.riding_mine() >= 0:
+		return _ride_motion()
 	var ahead := Input.get_axis("andar_tras", "andar_frente")
 	var side := Input.get_axis("passo_esquerda", "passo_direita")
 	if ahead == 0.0 and side == 0.0:
@@ -1942,6 +2051,215 @@ func _wanted_motion() -> Vector2:
 	if motion.length() > 1.0:
 		motion = motion.normalized()
 	return motion * WALK_SPEED * _speed_scale()
+
+
+## Montado: W e S mudam o andar (ver _ride_level) e o cavalo segue sozinho
+## para a frente (ou para trás, na ré).
+func _ride_motion() -> Vector2:
+	if _skid_speed > 0.0:
+		return _ride_skid()
+	var now := Time.get_ticks_msec()
+	if Input.is_action_pressed("andar_frente"):
+		if _ride_w_next < 0 or now >= _ride_w_next:
+			_ride_w_next = now + RIDE_HOLD_MS
+			var before := _ride_level
+			_ride_level = clampi(_ride_level + 1, 0, _ride_top()) if _ride_level >= 0 else 0
+			if _ride_level > before:
+				_spur()
+	else:
+		_ride_w_next = -1
+	if Input.is_action_pressed("andar_tras"):
+		if _ride_s_next < 0:
+			# Apertou agora: andando, freia um andar; parado, ré.
+			_ride_s_next = now + RIDE_BRAKE_MS
+			_ride_level = _ride_level - 1 if _ride_level > 0 else -1
+		elif now >= _ride_s_next and _ride_level > 0:
+			_ride_s_next = now + RIDE_BRAKE_MS
+			_ride_level -= 1
+	else:
+		_ride_s_next = -1
+		if _ride_level < 0:
+			_ride_level = 0
+	# Com frio e sem manto (Herd.COLD_SLOW), o cavalo não galopa e vai mais devagar.
+	_ride_level = mini(_ride_level, _ride_top())
+	var slow := Herd.COLD_SLOW if horses.is_chilled(horses.riding_mine()) else 1.0
+	var speed := float(RIDE_SPEEDS[_ride_level + 1]) * slow
+	if _ride_level <= 0:
+		_ride_angle = 0.0
+		return Compass.forward(_heading) * -1.0 * speed if _ride_level < 0 else Vector2.ZERO
+	return _steer(speed)
+
+
+## Derrapando: as teclas esperam o cavalo parar.
+func _ride_skid() -> Vector2:
+	var dt := _ride_dt()
+	_skid_speed = maxf(0.0, _skid_speed - SKID_DECEL * dt)
+	if _skid_speed > 0.0 and _clearance_dir(_skid_dir, 0.45) < 0.45:
+		_skid_speed = 0.0
+	_ride_level = 0
+	if Input.is_action_pressed("andar_frente"):
+		_ride_w_next = RIDE_KEY_HELD
+	return _skid_dir * _skid_speed
+
+
+func _ride_dt() -> float:
+	var now := Time.get_ticks_msec()
+	var dt := clampf((now - _ride_last_ms) / 1000.0, 0.0, 0.1)
+	_ride_last_ms = now
+	return dt
+
+
+## Para a frente, com a rédea sozinha (ver RIDE_LOOK_S).
+func _steer(speed: float) -> Vector2:
+	var dt := _ride_dt()
+	var base := Compass.angle(_heading)
+	var look := clampf(speed * RIDE_LOOK_S, RIDE_LOOK_MIN, RIDE_LOOK_MAX)
+	var trail := _trail_offset(base)
+	var want := 0.0 if is_nan(trail) else trail
+	var chosen := NAN
+	var best := want
+	var best_clear := -1.0
+	for k in RIDE_STEER_TRIES * 2 + 1:
+		var off := want + RIDE_STEER_STEP * ((k + 1) / 2) * (1.0 if k % 2 == 1 else -1.0)
+		var clear := _clearance(base + off, look)
+		if clear >= look:
+			chosen = off
+			break
+		if clear > best_clear:
+			best_clear = clear
+			best = off
+	var stop := speed * speed / (2.0 * SKID_DECEL) + SKID_MARGIN
+	if is_nan(chosen):
+		if best_clear > stop:
+			chosen = best  # vai para o lado mais aberto enquanto há espaço
+		elif _clearance(base + _ride_angle, stop) < stop:
+			return _ride_halt(base + _ride_angle, speed)
+		else:
+			chosen = best
+	_ride_angle = move_toward(_ride_angle, chosen, RIDE_STEER_RATE * dt)
+	if not is_nan(trail) and absf(_ride_angle) > RIDE_TURN_AT:
+		# A trilha virou: quem monta gira junto, e o cavalo segue reto nela.
+		var step := 1 if _ride_angle > 0.0 else -1
+		_turn(step)
+		_ride_angle -= step * TAU / Compass.STEPS
+		base = Compass.angle(_heading)
+	var a := base + _ride_angle
+	return Vector2(sin(a), -cos(a)) * speed
+
+
+## Sem saída a tempo: trotando ou galopando, derrapa e relincha; a passo, para e bufa.
+func _ride_halt(angle: float, speed: float) -> Vector2:
+	var horse: int = horses.riding_mine()
+	_ride_level = 0
+	_ride_angle = 0.0
+	if Input.is_action_pressed("andar_frente"):
+		_ride_w_next = RIDE_KEY_HELD
+	if speed < float(RIDE_SPEEDS[3]) * 0.75:
+		horses.request_voice.rpc_id(1, horse, "bufo")
+		return Vector2.ZERO
+	_skid_dir = Vector2(sin(angle), -cos(angle))
+	_skid_speed = speed
+	var cell := WorldGen.cell_of(_pos)
+	_play(HorseSounds.skid(horses.surface_at(_pos)), true, FOOTSTEP_DB + SKID_DB)
+	horses.request_voice.rpc_id(1, horse, "derrapada")
+	horses.request_voice.rpc_id(1, horse, "relincho")
+	if not Net.auto_commands.is_empty():
+		print("[teste] derrapada em %s" % [cell])
+	return _ride_skid()
+
+
+## Quanto dá para andar em linha reta na direção "angle", até "look" casas.
+func _clearance(angle: float, look: float) -> float:
+	return RideSteer.clearance(_pos, Vector2(sin(angle), -cos(angle)), look, _can_stand)
+
+
+func _clearance_dir(dir: Vector2, look: float) -> float:
+	return RideSteer.clearance(_pos, dir, look, _can_stand)
+
+
+func _trail_offset(base: float) -> float:
+	return RideSteer.trail_offset(world, _pos, base)
+
+
+## O andar mais alto montado: galope (3), ou trote (2) com o cavalo no frio.
+func _ride_top() -> int:
+	return 2 if horses.is_chilled(horses.riding_mine()) else 3
+
+
+## Andar do cavalo em que estou montado, pelo meu movimento (Herd.Gait).
+func ride_gait() -> int:
+	if not _ride_moving or _ride_level == 0:
+		return Herd.Gait.STAND
+	return [Herd.Gait.TROT, Herd.Gait.STAND, Herd.Gait.WALK, Herd.Gait.TROT, Herd.Gait.GALLOP][_ride_level + 1]
+
+
+## Montado e de ré: o trote dos cascos fica mais lento (RIDE_BACK_TEMPO).
+func riding_back() -> bool:
+	return _ride_level < 0
+
+
+## M: monta no seu cavalo ao lado ou desmonta. Subir e descer levam
+## MOUNT_ANIM_MS (parado), com os sons encaixados: impulso, roupa, o corpo
+## assenta e o cavalo ajeita as patas; ao descer, roupa, os pés no chão (do
+## terreno) e um bufo. O pedido ao servidor sai quando o corpo assenta.
+const MOUNT_ANIM_MS := 650
+var _mount_busy_until := 0
+
+
+func _toggle_mount() -> void:
+	if Time.get_ticks_msec() < _mount_busy_until:
+		return
+	var riding: int = horses.riding_mine()
+	if riding >= 0:
+		_mount_busy_until = Time.get_ticks_msec() + MOUNT_ANIM_MS
+		var cell := WorldGen.cell_of(_pos)
+		var step := Sounds.footstep(world.biome_at(cell), world.thing_at(cell), _indoors(cell))
+		var land := MOUNT_ANIM_MS / 1000.0
+		_play_later(0.0, Sounds.cloth_rustle(), RUSTLE_DB + 6.0)
+		_play_later(land, step, FOOTSTEP_DB + 2.0)
+		_play_later(land + 0.015, Sounds.footstep(world.biome_at(cell), world.thing_at(cell), _indoors(cell)), FOOTSTEP_DB)
+		_play_later(land, HorseSounds.voice("corpo"), FOOTSTEP_DB - 8.0)
+		get_tree().create_timer(land).timeout.connect(func(): horses.request_dismount.rpc_id(1))
+		get_tree().create_timer(land + 0.35).timeout.connect(horses.snort.bind(riding))
+		return
+	var target: Variant = horses.mount_nearest(_pos)
+	if target is String:
+		if not str(target).is_empty():
+			Speech.say(target)
+		return
+	var id: int = target
+	_mount_busy_until = Time.get_ticks_msec() + MOUNT_ANIM_MS
+	var seat := MOUNT_ANIM_MS / 1000.0
+	_play_later(0.0, Sounds.move_start(), START_STOP_DB + 1.0)
+	_play_later(0.08, Sounds.cloth_rustle(), RUSTLE_DB + 6.0)
+	_play_later(seat, HorseSounds.voice("corpo"), FOOTSTEP_DB)
+	for hoof: Array in [[0.15, -4.0], [0.35, -6.0], [0.6, -7.0]]:
+		get_tree().create_timer(seat + float(hoof[0])).timeout.connect(horses.shift_hoof.bind(_pos, float(hoof[1])))
+	get_tree().create_timer(seat).timeout.connect(func(): horses.request_mount.rpc_id(1, id))
+
+
+## Toca um som da própria criatura daqui a "delay" segundos.
+func _play_later(delay: float, stream: AudioStream, volume_db: float) -> void:
+	if delay <= 0.0:
+		_play(stream, true, volume_db)
+		return
+	get_tree().create_timer(delay).timeout.connect(_play.bind(stream, true, volume_db))
+
+
+## W montado, subindo o andar: os calcanhares batem no lombo, com as conchas.
+func _spur() -> void:
+	_play(HorseSounds.voice("toque"), true, FOOTSTEP_DB - 2.0)
+	_play_later(0.02, Sounds.anklet(), ANKLET_DB - 3.0)
+
+
+## Montou ou desmontou: o cavalo começa parado.
+func ride_reset() -> void:
+	_ride_level = 0
+	_ride_angle = 0.0
+	_skid_speed = 0.0
+	# Tecla que já estava apertada só vale depois de soltar e apertar de novo.
+	_ride_w_next = RIDE_KEY_HELD if Input.is_action_pressed("andar_frente") else -1
+	_ride_s_next = RIDE_KEY_HELD if Input.is_action_pressed("andar_tras") else -1
 
 
 ## Se a criatura ficou dentro de algo sólido (uma obra que chegou enquanto ela
@@ -1977,12 +2295,17 @@ func _walk(motion: Vector2) -> void:
 	# esbarrão (som e fala), senão a criatura emperra em silêncio.
 	if slid.length() < motion.length() * BUMP_SLIDE_MIN:
 		_bump(target)
+		_ride_level = 0  # montado, o cavalo para diante do obstáculo
 
 
 ## Passos da própria criatura: seguem o relógio enquanto ela anda, num ritmo
 ## fixo, como uma animação. Parou, os passos param. O foley de movimento
 ## (início, farfalhar, conchas e parada) vai junto, no mesmo relógio.
 func _tick_my_steps(moved: bool, delta: float) -> void:
+	if horses.riding_mine() >= 0:
+		# Montado: quem soa são os cascos do cavalo.
+		_walking = false
+		return
 	if not moved:
 		if _walking and _walk_time >= MIN_WALK_FOR_STOP:
 			_play(Sounds.move_stop(), true, START_STOP_DB)
@@ -2174,6 +2497,15 @@ func _interact() -> void:
 		_play(Sounds.fire_spark())
 		request_spark.rpc_id(1)
 		return
+	# Um cavalo bem ao lado vem antes: oferecer fruta a um selvagem, dar nome ao
+	# seu. Montar e desmontar ficam no M, para o cavalo (que segue você) não
+	# atrapalhar a coleta.
+	var horse: int = horses.reach_target(_pos)
+	if horse >= 0:
+		var said: String = horses.interact(horse)
+		if not said.is_empty():
+			Speech.say(said)
+		return
 	var target := _collect_target()
 	var build := _build_target()
 	var pile := ground.nearest(_pos, COLLECT_REACH)
@@ -2204,6 +2536,10 @@ func _interact() -> void:
 			Speech.say(_menu.open_at(Builds.stock_label(build), _storage_root.bind(int(build["id"]))))
 		elif Crafting.is_large(build["kind"]) and not build["done"] and builds.phase_of(int(build["id"])) != "obra":
 			Speech.say(builds.status_text(int(build["id"])))
+		elif Builds.has_rack(build):
+			Speech.say(_menu.open_at("Secador", _rack_root.bind(int(build["id"]))))
+		elif build["kind"] == "forno" and build["done"] and builds.is_lit(int(build["id"])):
+			Speech.say(_menu.open_at("Forno aceso", _oven_root.bind(int(build["id"]))))
 		else:
 			request_build_work.rpc_id(1, int(build["id"]))
 	elif pile != WorldGen.NO_CELL and (pile_distance <= target_distance or harvest.is_ready(target)):
@@ -2337,6 +2673,10 @@ func _swing() -> void:
 			get_tree().create_timer(SWING_TO_HIT).timeout.connect(_play.bind(Sounds.axe_hit(), true))
 			request_prep.rpc_id(1, int(prep["id"]), prep["cell"])
 			return
+	if wielded == "enxada":
+		# Fora de obra, a enxada cava a terra atrás de raízes.
+		survival.request_dig.rpc_id(1, WorldGen.cell_of(_pos + Compass.forward(_heading) * 1.0))
+		return
 	if wielded == "machado":
 		# Sem bambu à frente, o machado desmonta a obra ao alcance (paredes,
 		# cantos, marco, fogueira): muitos golpes, ver Builds.wreck_hits.
@@ -2382,7 +2722,7 @@ func _use_ability() -> void:
 
 
 func _say_help() -> void:
-	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento, Fabricar e Configurações, onde ficam os Gráficos. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Espaço: coletar gravetos ou frutas de um arbusto, argila, pedras ou um bambu derrubado, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe lenha; para reacendê-la depois que apaga, Espaço põe a lenha e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
+	Speech.say("W e S: andar para frente e para trás. A e D: passo para o lado. Q e E: girar. Setas: menu flutuante, com Personagem, Caminheiro, Bolsa, Equipamento e Fabricar e Configurações, onde ficam os Gráficos. I abre a Bolsa e V abre o Caminheiro direto. " + MenuNav.help() + " A cada giro, a bússola dá um clique: agudo no norte, grave no sul, médio no leste e no oeste, abafado nas diagonais. F1: esta ajuda. H: usa a habilidade ativa da sua espécie (ver Personagem, no menu das setas). F: para onde estou olhando. C: onde estou; apertando de novo, o momento do dia, onde o anel está em relação a você e a estação; mais uma vez, como estão a sua fome e o seu frio (e assim, em ciclo). O mundo anoitece e amanhece, e o Calado só ronda de noite, com mais dificuldade sob a luz do anel. Com o tempo, a criatura sente fome e, quando faz frio, perde o calor: a barriga ronca e o corpo treme. Coma pela Bolsa: frutas (menos na Longa Escuridão), castanhas que caem de parte das árvores no Declínio (Espaço na árvore) e raízes, cavando uma rama com a enxada empunhada (J) ou fuçando; a raiz crua enjoa, e assada numa fogueira acesa (Bolsa, Assar) sustenta e aquece. A comida estraga com o tempo, mais devagar no frio, e a Bolsa avisa o que está passando. Aqueça-se perto de uma fogueira acesa ou dentro de um abrigo pronto; cada um aquece só até certo ponto: a fogueira mais quanto mais madeira tem, o abrigo pela metade e um pouco mais, e o abrigo com forno aceso quase até o fim. A tocha só freia o frio. O forno se constrói em Fabricar, Construções, colado do lado de fora da parede de um abrigo pronto, longe da porta. Aceso, Espaço nele abre o forno: broa de milho, ensopado (no pote de argila, que se modela em Fabricar, Utensílios, e se queima no próprio forno) e assar tudo de uma vez. O forno aceso aquece mais depressa quem está dentro do abrigo. Para guardar comida: o secador (Fabricar, Construções) seca frutas e cogumelos, que então duram a estação inteira, mais depressa perto de uma fogueira acesa; o pote selado (o pote queimado com resina, em Fabricar, Utensílios) guarda comida sem estragar, pela Bolsa. O manto de fibra, feito na bancada da oficina e vestido pela Bolsa, segura o calor perto do fogo e longe dele. O frio vem à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas, e cruzar um vau molha e esfria mais. Com fome ou frio você vai ficando lento, aos poucos; sem nada, desfalece e acorda no ponto seguro mais próximo. Plantas: quem não é Forrageador vê só a categoria (arbusto, rama, trepadeira) e descobre a espécie ao colher; o Forrageador reconhece de longe, no Tab e no Caminheiro. Arbustos de fruta crescem no campo aberto; os de fibra, na mata e na beira da água. A raiz sai de uma rama, com a enxada empunhada (J), em alguns golpes. Espaço: coletar fibra ou frutas de um arbusto ou de uma trepadeira, galhos caídos ao pé das árvores (madeira média e pequena), argila, pedras, um bambu derrubado ou a madeira grande de uma árvore derrubada, ou pegar itens do chão. A carga plena depende da espécie (a Bolsa diz o valor); acima dela você anda mais devagar, até um limite de 150% da carga plena. Pela Bolsa, no menu das setas, dá para jogar itens no chão. J: golpear com o machado, depois de empunhá-lo pela Bolsa, no menu das setas. A tocha vai na mão não dominante, sem tirar o que está na principal: em Equipamento, Acender acende na hora perto de uma fogueira acesa; longe de uma, com uma pedra pequena e uma faca (de graça) ou um sílex (que se gasta), você risca com Espaço, num ritmo constante, de 5 a 9 batidas, e parar por um segundo cancela; o barulho pode atrair o Calado. Acesa, ela afasta o Calado enquanto queima. Com a faca bruta de sílex empunhada, J no tronco de uma árvore, poucas vezes, faz a resina escorrer; depois de uns instantes, Espaço recolhe. Espaço numa árvore de pé conta como ela está. Golpes demais secam a árvore. Fabricar, no menu das setas: começar um marco ou uma fogueira à frente, ou fazer uma arma. Espaço perto de uma obra deposita materiais e trabalha nela; numa fogueira pronta, bate as pedras para acender ou põe madeira; para reacendê-la depois que apaga, Espaço põe a madeira e 1 sílex, e então acende. Um marco e uma fogueira na mesma região fazem um povoado: Espaço no marco pronto abre as listas para escolher o nome, e o povoado passa a aparecer em Locais, no Caminheiro. Espaço no marco de um povoado abre as obras grandes: escolha o quadrante da região (ou o lado de uma construção), o canto ou o redor de um lago, o tamanho e a porta. O terreno se prepara primeiro: com o machado empunhado, J arranca árvores, bambus e arbustos; com a enxada, que se fabrica em Fabricar, Ferramentas, J capina a grama de cada casa. Depois, cada etapa se divide em 4 cantos, e a argila do chão precisa secar. Construções, no Caminheiro, mostra as que estão a até 36 metros e leva ao que falta. Tab: radar. Diz para onde o cristal do Caminheiro leva e a distância, e depois o recurso mais próximo de cada tipo e as construções que há a até 24 metros, e os cavalos a até 48 metros (manadas selvagens e cavalos domesticados, pelo nome), do mais perto ao mais longe. Se os pássaros fugirem e o mundo for ficando abafado, algo vem atrás de você: é o Calado, mais rápido que quem anda normal. Ouça a respiração dele e o gelo estalando, mais rápido quanto mais perto. Encará-lo não adianta. Com uma arma na mão (ou garras), J quando ele está a uns 4 passos e à sua frente o empurra; correr dele e golpeá-lo o estressam, e ele acaba desistindo, com um suspiro e um clarão. Fogueira acesa e tocha também o afastam. Cavalinhos-da-bruma vivem em manadas na pradaria e no deserto gelado: quem chega andando direto os espanta. Pare perto até a manada se acalmar, chegue devagar até um cavalo e ofereça frutas com Espaço, uma de cada vez, esperando ele mastigar; depois de algumas, ele perde o medo e segue você por um tempo; então, Espaço nele com um cabresto (feito na bancada da oficina) o faz seu, e você escolhe o nome. Cada um tem um cavalo só. Seu cavalo segue você, menos quando para para comer. Perto dele, o menu das setas ganha Cavalo, para pôr o alforje e guardar ou pegar coisas nele, e o manto: no frio, sem manto, o cavalo anda mais devagar e não galopa. Ali também dá para soltar o cavalo, que volta a ser selvagem. Alforje e manto também se fazem na bancada da oficina. M monta nele e, montado, desmonta (subir e descer levam um instante); o cavalo anda sozinho: W sobe de parado para passo, trote e galope (um toque por vez, ou segurando) (os calcanhares batem no lombo); segurar S freia e, parado, dá ré enquanto segura; A e D não fazem nada, gire com Q e E. O cavalo desvia sozinho de obstáculos pequenos, segue as curvas das trilhas na mata, no bambuzal e perto da água, e derrapa e para antes de bater. Montado, não dá para golpear nem usar a habilidade da espécie, menos o uivo do Geado. P: quem está no mundo. R: repetir a última fala. Trilhas de terra ligam as regiões do mundo;")
 
 
 ## Tab: radar. Diz o alvo do Caminheiro e a distância até ele (se o cristal
@@ -2393,27 +2733,29 @@ func _say_radar() -> void:
 	if _caminheiro.active:
 		parts.append("Caminheiro, rumo %s: %s." % [Narrator.contract("a", _caminheiro.place_name), Compass.describe(_tracked_destination - _pos, _heading)])
 	var found := []  # [distância, rótulo, deslocamento]
-	var seen_things := {}
+	var seen_cells := {}
 	for entry: Array in CAMINHEIRO_RESOURCES:
-		if seen_things.has(entry[1]):
-			continue  # Lenha e Frutas apontam para o mesmo arbusto: uma linha só
-		seen_things[entry[1]] = true
 		var cell := nearest_collectable(world, harvest, _pos, entry[1], RADAR_RADIUS)
 		if cell == WorldGen.NO_CELL or (_caminheiro.active and cell == _tracked_resource):
 			continue
+		if seen_cells.has(cell):
+			continue  # dois destinos podem achar a mesma coisa: uma linha só
+		seen_cells[cell] = true
 		var offset := WorldGen.cell_center(cell) - _pos
-		found.append([offset.length(), "Arbusto" if entry[1].has(WorldGen.Thing.ARBUSTO) else entry[0], offset])
+		found.append([offset.length(), _radar_label(cell, entry[0]), offset])
 	for build: Dictionary in builds.all():
 		var distance := Builds.reach_distance(build, _pos)
 		if distance > RADAR_RADIUS:
 			continue
 		var spoken := builds.spoken_name(int(build["id"]))
 		found.append([distance, spoken.left(1).to_upper() + spoken.substr(1), WorldGen.cell_center(build["cell"]) - _pos])
+	# Cavalos: até mais longe que os recursos, porque andam (ver Horses.radar_entries).
+	found.append_array(horses.radar_entries(_pos))
 	found.sort_custom(func(a, b): return a[0] < b[0])
 	for item: Array in found:
 		parts.append("%s: %s." % [item[1], Compass.describe(item[2], _heading)])
 	if found.is_empty():
-		parts.append("Não há recursos nem construções por perto.")
+		parts.append("Não há recursos, construções nem cavalos por perto.")
 	Speech.say(" ".join(parts))
 
 
@@ -2554,7 +2896,7 @@ func _setup_view3d() -> void:
 	view3d = WorldView3D.new()
 	view3d.name = "View3D"
 	add_child(view3d)
-	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime)
+	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime, horses)
 	view.visible = false
 
 
@@ -2588,7 +2930,99 @@ func _menu_root() -> Array:
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
 		{"label": "Configurações", "open": _settings_items},
-	] + ([{"label": "Depuração", "open": _debug_items}] if _debug else [])
+	] + _horse_menu() + ([{"label": "Depuração", "open": _debug_items}] if _debug else [])
+
+
+## "Cavalo": com o seu cavalo perto (ou montado), o equipamento e o alforje.
+func _horse_menu() -> Array:
+	var id: int = horses.gear_target(_pos)
+	if id < 0:
+		return []
+	return [{"label": "Cavalo, %s" % horses.horse_name_of(id), "open": _horse_items.bind(id)}]
+
+
+func _horse_items(id: int) -> Array:
+	var gear: Dictionary = horses.gear_of(id)
+	var items := []
+	if not gear.has("alforje"):
+		if int(inventory.get("alforje", 0)) > 0:
+			items.append({"label": "Pôr o alforje", "run": _ask_gear.bind(id, "alforje", true)})
+		else:
+			items.append({"label": "Sem alforje", "info": "Faça um alforje na bancada da oficina, com %s, e ponha no cavalo por aqui." % Crafting.materials_text(Crafting.recipe("alforje")["materials"])})
+	else:
+		var pack: Dictionary = horses.pack_of(id)
+		items.append_array([
+			{"label": "Guardar no alforje", "open": _pack_put_items.bind(id), "empty": "a bolsa está vazia"},
+			{"label": "Pegar do alforje", "open": _pack_take_items.bind(id), "empty": "o alforje está vazio"},
+			{"label": "Alforje, carga %d de %d" % [Bag.weight_of_items(pack), Herd.PACK_CAPACITY], "info": "O alforje fica com o cavalo e leva até %d de carga, com os mesmos pesos da bolsa. %s" % [Herd.PACK_CAPACITY, Bag.load_label(inventory, wielded, offhand, _my_species())]},
+			{"label": "Tirar o alforje", "run": _ask_gear.bind(id, "alforje", false)},
+		])
+	if gear.has("manto_cavalo"):
+		items.append({"label": "Tirar o manto", "run": _ask_gear.bind(id, "manto_cavalo", false)})
+	elif int(inventory.get("manto_cavalo", 0)) > 0:
+		items.append({"label": "Pôr o manto", "run": _ask_gear.bind(id, "manto_cavalo", true)})
+	else:
+		var cold := "Agora ele treme de frio. " if horses.is_chilled(id) else ""
+		items.append({"label": "Sem manto", "info": "%sNo frio, sem manto, o cavalo anda mais devagar e não galopa. Faça um manto na bancada da oficina, com %s, e ponha nele por aqui." % [cold, Crafting.materials_text(Crafting.recipe("manto_cavalo")["materials"])]})
+	items.append({"label": "Soltar o cavalo", "open": _release_items.bind(id)})
+	return items
+
+
+## Soltar o cavalo não tem volta: pede confirmação.
+func _release_items(id: int) -> Array:
+	return [
+		{"label": "Não, ficar com %s" % horses.horse_name_of(id), "run": func() -> String: return "", "close": true},
+		{"label": "Sim, tirar o cabresto e deixar %s ir. Ele volta a ser selvagem" % horses.horse_name_of(id), "run": _ask_release.bind(id), "close": true},
+	]
+
+
+func _ask_release(id: int) -> String:
+	horses.request_release.rpc_id(1, id)
+	return ""
+
+
+func _ask_gear(id: int, item: String, on: bool) -> String:
+	horses.request_gear.rpc_id(1, id, item, on)
+	return ""
+
+
+func _pack_put_items(id: int) -> Array:
+	var items := []
+	var keys := inventory.keys()
+	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
+	for key: String in keys:
+		if int(inventory[key]) > 0 and key != "alforje":
+			items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _pack_amounts.bind(id, key, true)})
+	return items  # vazia: o menu volta ao Cavalo
+
+
+func _pack_take_items(id: int) -> Array:
+	var items := []
+	var pack: Dictionary = horses.pack_of(id)
+	var keys: Array = pack.keys()
+	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
+	for key: String in keys:
+		items.append({"label": "%s, %d" % [Bag.display_name(key), int(pack[key])], "open": _pack_amounts.bind(id, key, false)})
+	return items  # vazio: o menu volta ao Cavalo
+
+
+func _pack_amounts(id: int, item: String, putting: bool) -> Array:
+	var amount := int(inventory.get(item, 0)) if putting else int(horses.pack_of(id).get(item, 0))
+	var actions := []
+	if amount <= 0:
+		return actions
+	var verb := "Guardar" if putting else "Pegar"
+	actions.append({"label": "%s 1" % verb, "run": _pack_move.bind(id, item, 1, putting)})
+	if amount > 5:
+		actions.append({"label": "%s 5" % verb, "run": _pack_move.bind(id, item, 5, putting)})
+	if amount > 1:
+		actions.append({"label": "%s tudo, %d" % [verb, amount], "run": _pack_move.bind(id, item, amount, putting)})
+	return actions
+
+
+func _pack_move(id: int, item: String, amount: int, putting: bool) -> String:
+	horses.request_pack.rpc_id(1, id, item, amount, putting)
+	return ""
 
 
 ## Configurações, no menu das setas, com a categoria Gráficos: as mesmas opções da tela de Configurações, aplicadas
@@ -2655,13 +3089,44 @@ func _debug_items() -> Array:
 		{"label": "Estação", "open": _debug_season_items},
 		{"label": "Teleporte", "open": _debug_teleports},
 		{"label": "Calado", "open": _debug_horror_items},
+		{"label": "Chamar cavalos para perto", "run": _debug_ask.bind("cavalos", "")},
+		{"label": "Domesticar o cavalo mais perto", "run": _debug_ask.bind("domar", ""), "close": true},
+		{"label": "Som dos cavalos: %s" % ("estéreo largo (trocar para o normal)" if horses.wide else "normal (trocar para estéreo largo)"), "run": _debug_horse_panning},
+		{"label": "Fome e frio", "open": _debug_body_items},
 		{"label": "Falar o FPS atual", "run": _debug_fps},
 		{"label": "Posição: %s" % _debug_position(), "info": "Posição: %s." % _debug_position()},
 	]
 
 
+## Encher ou quase esvaziar as reservas, para testar sem esperar.
+func _debug_body_items() -> Array:
+	return [
+		{"label": "Fome e calor cheios", "run": _debug_ask.bind("corpo", "cheio")},
+		{"label": "Fome quase no fim", "run": _debug_ask.bind("corpo", "fome")},
+		{"label": "Calor quase no fim", "run": _debug_ask.bind("corpo", "frio")},
+		{"label": "Ouvir as reservas em números", "run": func(): return "Fome %d, calor %d." % [roundi(survival.food), roundi(survival.warmth)]},
+	]
+
+
 func _debug_position() -> String:
 	return "x %.0f, y %.0f, região %d, %d" % [_pos.x, _pos.y, _region.x, _region.y]
+
+
+## Só no seu computador: troca o panorama dos cavalos entre largo e o normal.
+func _debug_horse_panning() -> String:
+	horses.set_wide(not horses.wide)
+	return "Som dos cavalos: %s." % ("estéreo largo" if horses.wide else "panorama normal")
+
+
+## A chave de dono desta criatura (igual à do servidor, WorldState.owner_key).
+func my_owner_key() -> String:
+	return WorldState.owner_key_of_name(str(players.get(my_id, {}).get("name", Net.player_name)))
+
+
+## Abre o menu das setas num submenu (para outros nós, como Horses). Devolve
+## o que falar.
+func open_menu(title: String, source: Callable) -> String:
+	return _menu.open_at(title, source)
 
 
 func _debug_fps() -> String:
@@ -2794,6 +3259,16 @@ func _bag_items() -> Array:
 		var item: String = entry[0]
 		var label := Bag.entry_label(item, entry[1], inventory)
 		var keys := Bag.keys_of(inventory, item)
+		var soon := 0
+		for key: String in keys:
+			soon += int(survival.spoiling.get(key, 0))
+		if soon > 0:
+			label += ", %d passando" % soon if soon < int(entry[1]) else ", passando"
+		if item == "pote_selado" and not survival.jar.is_empty():
+			var inside := 0
+			for amount in survival.jar.values():
+				inside += int(amount)
+			label += ", com %d comida%s dentro" % [inside, "" if inside == 1 else "s"]
 		if keys.size() == 1 and keys[0] == item:
 			items.append({"label": label, "open": _bag_item_actions.bind(item)})
 		else:
@@ -2808,8 +3283,87 @@ func _bag_items() -> Array:
 func _bag_sizes(base: String) -> Array:
 	var items := []
 	for key: String in Bag.keys_of(inventory, base):
-		items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _bag_item_actions.bind(key)})
+		var label := "%s, %d" % [Bag.display_name(key), int(inventory[key])]
+		var soon := int(survival.spoiling.get(key, 0))
+		if soon > 0:
+			label += ", %d passando" % soon if soon < int(inventory[key]) else ", passando"
+		items.append({"label": label, "open": _bag_item_actions.bind(key)})
 	return items
+
+
+func _wear(item: String) -> String:
+	survival.request_wear.rpc_id(1, item)
+	return ""
+
+
+func _take_off() -> String:
+	survival.request_take_off.rpc_id(1)
+	return ""
+
+
+## "Dentro do pote selado: 3 broas de milho e 2 frutas secas. Cabem mais 3."
+func _jar_text() -> String:
+	var used := 0
+	for amount in survival.jar.values():
+		used += int(amount)
+	var room := WorldState.JAR_CAPACITY * int(inventory.get("pote_selado", 0)) - used
+	if survival.jar.is_empty():
+		return "O pote selado está vazio. Cabem %d comidas, e ali elas não estragam." % room
+	return "Dentro do pote selado: %s. Cabem mais %d." % [Economy.items_text(survival.jar), room]
+
+
+func _jar_store_items() -> Array:
+	var items := []
+	for key: String in inventory:
+		if not Body.is_food(key) or key == Body.SPOILED:
+			continue
+		var amount := int(inventory[key])
+		items.append({"label": "%s, %d" % [Bag.display_name(key), amount], "run": _jar_store.bind(key, amount)})
+	return items
+
+
+func _jar_take_items() -> Array:
+	var items := []
+	for key: String in survival.jar:
+		var amount := int(survival.jar[key])
+		items.append({"label": "%s, %d: tirar 1" % [Bag.display_name(key), amount], "run": _jar_take.bind(key, 1)})
+		if amount > 1:
+			items.append({"label": "%s: tirar todas, %d" % [Bag.display_name(key), amount], "run": _jar_take.bind(key, amount)})
+	return items
+
+
+func _jar_store(item: String, amount: int) -> String:
+	survival.request_jar_store.rpc_id(1, item, amount)
+	return ""
+
+
+func _jar_take(item: String, amount: int) -> String:
+	survival.request_jar_take.rpc_id(1, item, amount)
+	return ""
+
+
+## Espaço no secador pronto: pendurar fruta ou cogumelo da bolsa, recolher o
+## que secou e como está.
+func _rack_root(build_id: int) -> Array:
+	var items := []
+	for key: String in inventory:
+		if not Builds.dries_into(key).is_empty():
+			var amount := int(inventory[key])
+			items.append({"label": "Pendurar %s, %d" % [Economy.names_of(key)[1 if amount > 1 else 0], amount],
+				"run": _rack_hang.bind(build_id, key, amount)})
+	items.append({"label": "Recolher o que secou", "run": _rack_gather.bind(build_id)})
+	items.append({"label": "Como está", "info": builds.rack_text(build_id)})
+	return items
+
+
+func _rack_hang(build_id: int, item: String, amount: int) -> String:
+	survival.request_rack_hang.rpc_id(1, build_id, item, amount)
+	return ""
+
+
+func _rack_gather(build_id: int) -> String:
+	survival.request_rack_gather.rpc_id(1, build_id)
+	return ""
 
 
 func _bag_item_actions(item: String) -> Array:
@@ -2817,8 +3371,20 @@ func _bag_item_actions(item: String) -> Array:
 	var actions := []
 	if amount <= 0:
 		return actions  # o item acabou: o menu devolve o foco ao pai
+	if Body.is_food(item):
+		actions.append({"label": "Comer", "run": _eat.bind(item)})
+	if not Body.roast_of(item).is_empty():
+		actions.append({"label": "Assar 1", "run": _roast.bind(item, 1)})
+		if amount > 1:
+			actions.append({"label": "Assar todas, %d" % amount, "run": _roast.bind(item, amount)})
 	if Bag.can_wield(item):
 		actions.append({"label": "Empunhar", "run": _equip.bind(item)})
+	if item == "manto":
+		actions.append({"label": "Vestir", "run": _wear.bind(item)})
+	if item == "pote_selado":
+		actions.append({"label": "Guardar comida", "open": _jar_store_items, "empty": "não há comida na bolsa"})
+		actions.append({"label": "Tirar comida", "open": _jar_take_items, "empty": "o pote está vazio"})
+		actions.append({"label": "O que tem dentro", "info": _jar_text()})
 	actions.append({"label": "Jogar 1", "run": _drop.bind(item, 1)})
 	if amount > 1:
 		actions.append({"label": "Jogar tudo, %d" % amount, "run": _drop.bind(item, amount)})
@@ -2834,6 +3400,18 @@ func _sync_menu() -> void:
 		Speech.say(_menu.sync(), false)
 
 
+## Comer passa pelo servidor; a resposta (Survival.ate) é que fala e toca.
+func _eat(item: String) -> String:
+	survival.request_eat.rpc_id(1, item)
+	return ""
+
+
+## Assar passa pelo servidor (precisa de fogueira acesa ao lado).
+func _roast(item: String, amount: int) -> String:
+	survival.request_roast.rpc_id(1, item, amount)
+	return ""
+
+
 ## Jogar passa pelo servidor; a resposta (ground_changed) é que fala e toca.
 func _drop(item: String, amount: int) -> String:
 	request_drop.rpc_id(1, item, amount)
@@ -2845,6 +3423,9 @@ func _equipment_items() -> Array:
 	var items := []
 	if not wielded.is_empty():
 		items.append({"label": Bag.display_name(wielded), "open": _equipment_actions})
+	if not survival.worn.is_empty():
+		items.append({"label": "%s, vestido" % Bag.display_name(survival.worn),
+			"open": func(): return [{"label": "Tirar", "run": _take_off}] if not survival.worn.is_empty() else []})
 	if not offhand.is_empty():
 		var lit := _torch_ends > Time.get_unix_time_from_system()
 		items.append({"label": "%s, mão não dominante%s" % [Bag.display_name(offhand), ", acesa" if lit else ", apagada"],
@@ -2894,18 +3475,22 @@ func _stow() -> String:
 ## Recursos que o Caminheiro sabe achar: rótulo no menu, coisas do mundo que
 ## contam e como se fala do destino (com artigo, para "rumo ao bambu").
 const CAMINHEIRO_RESOURCES := [
-	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
-	["Lenha", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "a lenha"],
-	["Madeira", [WorldGen.Thing.ARVORE], "a árvore"],
-	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
+	["Arbustos", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
-	["Cipó", [WorldGen.Thing.CIPO], "o cipó"],
-	["Frutas", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "as frutas"],
-	["Fibra vegetal", [WorldGen.Thing.FIBRA], "a fibra vegetal"],
+	["Árvores", [WorldGen.Thing.ARVORE, WorldGen.Thing.GALHOS], "a árvore"],
+	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
+	["Capim", [WorldGen.Thing.FIBRA], "o capim"],
+	["Cogumelos", [WorldGen.Thing.COGUMELO], "o cogumelo"],
+	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
+	["Ramas", [WorldGen.Thing.RAMA], "a rama"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
+	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
 ]
-## Lenha e Frutas aparecem separadas, mas levam ao mesmo arbusto: o jogo não
-## diz qual deles dá o quê (só ao coletar).
+## Quem não é Forrageador vê só a categoria da planta (arbusto, rama,
+## trepadeira, capim, cogumelo): a espécie se descobre ao colher. Árvores
+## leva também aos galhos caídos, que ficam ao pé delas.
+## O Forrageador tem ainda "Espécies de plantas", com cada espécie (Plants):
+## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
 ## meia região para cada lado (24 casas, 36 m), então vale para tudo que está
 ## na região de agora ou na vizinha, sem depender de limites de região.
@@ -2969,8 +3554,17 @@ func _neighbor_region_items() -> Array:
 	return items
 
 
+## Rótulo de um recurso no radar: as plantas pelo nome falado (a categoria,
+## ou a espécie para o Forrageador); o resto, pelo rótulo do Caminheiro.
+func _radar_label(cell: Vector2i, label: String) -> String:
+	if world.thing_at(cell) in [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA, WorldGen.Thing.COGUMELO]:
+		var spoken := harvest.spoken_name(cell)
+		return spoken.left(1).to_upper() + spoken.substr(1)
+	return label
+
+
 ## Os montes da região de agora, do mais perto ao mais longe, para escolher
-## qual rastrear: "Pilha com pedras e lenhas, 12 metros".
+## qual rastrear: "Pilha com pedras e madeiras, 12 metros".
 func _caminheiro_piles() -> Array:
 	var items := []
 	var cells: Array = ground.cells().filter(func(c: Vector2i): return WorldGen.cell_center(c).distance_to(_pos) <= _search_radius())
@@ -2983,7 +3577,7 @@ func _caminheiro_piles() -> Array:
 	return items
 
 
-## "pilha com pedras e lenhas": só o que há nela, sem quantidades nem tamanhos.
+## "pilha com pedras e madeiras": só o que há nela, sem quantidades nem tamanhos.
 func _pile_name(cell: Vector2i) -> String:
 	var bases := []
 	for key: String in ground.items_at(cell):
@@ -3014,7 +3608,7 @@ func _pile_pick_items(cell: Vector2i, resource := WorldGen.NO_CELL) -> Array:
 func _resource_pick_label(cell: Vector2i) -> String:
 	var text := harvest.spoken_name(cell)
 	var thing := world.thing_at(cell)
-	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.CIPO, WorldGen.Thing.FIBRA]:
+	if thing in [WorldGen.Thing.ARGILA, WorldGen.Thing.PEDRAS, WorldGen.Thing.SILEX, WorldGen.Thing.GALHOS]:
 		text += " no chão"
 	return text[0].to_upper() + text.substr(1)
 
@@ -3033,6 +3627,19 @@ func _caminheiro_resources() -> Array:
 	var items := []
 	for entry: Array in CAMINHEIRO_RESOURCES:
 		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
+	if Species.has_tag(_my_species(), "forrageador"):
+		items.append({"label": "Espécies de plantas", "open": _caminheiro_species})
+	return items
+
+
+## Forrageador: cada espécie de planta, com a categoria entre parênteses
+## ("Pé de batata (rama)"), para ir direto a ela.
+func _caminheiro_species() -> Array:
+	var items := []
+	for species: String in Plants.ORDER:
+		var spoken := Plants.name_of(species)
+		var label := "%s (%s)" % [spoken.left(1).to_upper() + spoken.substr(1), Plants.category_name(species)]
+		items.append({"label": label, "run": _track_resource.bind([species], Plants.with_article(species)), "stay": true})
 	return items
 
 
@@ -3044,10 +3651,15 @@ func _track_resource(things: Array, place: String) -> String:
 	return _track(resource_destination(world, cell, _pos), place, cell)
 
 
+## Coisas do mundo que são plantas com espécie (Plants.species_at).
+const PLANT_THINGS := [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS, WorldGen.Thing.RAMA, WorldGen.Thing.CIPO, WorldGen.Thing.ARVORE, WorldGen.Thing.FIBRA, WorldGen.Thing.COGUMELO]
+
+
 ## A casa do recurso coletável mais próximo (em linha reta), entre as coisas
-## pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
+## (ou espécies de planta) pedidas, que esteja lá agora (não recolhido). NO_CELL se não houver
 ## nenhum no raio.
 static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: Vector2, things: Array, radius: int) -> Vector2i:
+	var by_species := things.any(func(t): return t is String)
 	var here := WorldGen.cell_of(pos)
 	var best := WorldGen.NO_CELL
 	var best_distance := INF
@@ -3056,7 +3668,8 @@ static func nearest_collectable(the_world: WorldGen, the_harvest: Harvest, pos: 
 			if dx * dx + dy * dy > radius * radius:
 				continue
 			var cell := here + Vector2i(dx, dy)
-			if not things.has(the_world.thing_at(cell)):
+			var thing := the_world.thing_at(cell)
+			if not things.has(thing) and not (by_species and PLANT_THINGS.has(thing) and things.has(Plants.species_at(the_world, cell))):
 				continue
 			if the_harvest != null and not the_harvest.is_available(cell):
 				continue
@@ -3189,6 +3802,7 @@ func _craft_root() -> Array:
 		{"label": "Construções", "open": _build_kinds},
 		{"label": "Armas", "open": _weapon_kinds},
 		{"label": "Ferramentas", "open": _tool_kinds},
+		{"label": "Utensílios", "open": _utensil_kinds},
 	]
 
 
@@ -3225,8 +3839,40 @@ func _build_actions(kind: String) -> Array:
 
 ## O lugar é a casa que está à frente quando a criatura escolhe Iniciar.
 func _start_build(kind: String) -> String:
-	request_build_start.rpc_id(1, kind, _front_cell())
+	var cell := _front_cell()
+	if not Crafting.attach_to(kind).is_empty():
+		cell = _attach_cell(kind, cell)
+	request_build_start.rpc_id(1, kind, cell)
 	return ""
+
+
+## Construção colada (o forno): a casa à frente, se serve; senão a casa ao
+## alcance, junto da parede de fora, mais perto da frente (nunca a casa em que
+## a criatura está). Sem nenhuma, a da frente, e o servidor explica.
+func _attach_cell(kind: String, front: Vector2i) -> Vector2i:
+	if builds.refusal(kind, front).is_empty():
+		return front
+	var here := WorldGen.cell_of(_pos)
+	var best := front
+	var best_score := INF
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var cell := here + Vector2i(dx, dy)
+			if cell == here or not builds.refusal(kind, cell).is_empty():
+				continue
+			var distance := _pos.distance_to(WorldGen.cell_center(cell))
+			if distance > 1.9:
+				continue
+			var score := distance + WorldGen.cell_center(cell).distance_to(WorldGen.cell_center(front)) * 0.5
+			if score < best_score:
+				best_score = score
+				best = cell
+	return best
+
+
+## "a fogueira", "o forno".
+func _the_build(build: Dictionary) -> String:
+	return "%s %s" % [Crafting.BUILDS[build["kind"]]["article"], Crafting.build_name(build["kind"])]
 
 
 ## Armazenamento de uma construção pronta: guardar da bolsa e pegar do estoque,
@@ -3510,6 +4156,38 @@ func _tool_kinds() -> Array:
 	return items
 
 
+## Espaço no forno aceso: as receitas (Cooking), pôr madeira e como está.
+func _oven_root(build_id: int) -> Array:
+	var items := []
+	for recipe: String in Cooking.ORDER:
+		var planned := Cooking.plan(inventory, recipe)
+		if planned["missing"].is_empty():
+			items.append({"label": Cooking.title(recipe), "run": _cook.bind(recipe)})
+		else:
+			items.append({"label": "%s, falta ingrediente" % Cooking.title(recipe),
+				"info": "%s: %s. Na sua bolsa falta %s." % [Cooking.title(recipe), Cooking.needs_text(recipe), Cooking.missing_text(planned["missing"])]})
+	items.append({"label": "Pôr madeira", "run": _feed_oven.bind(build_id)})
+	items.append({"label": "Como está", "info": builds.status_text(build_id)})
+	return items
+
+
+func _cook(recipe: String) -> String:
+	survival.request_cook.rpc_id(1, recipe)
+	return ""
+
+
+func _feed_oven(build_id: int) -> String:
+	request_build_work.rpc_id(1, build_id)
+	return ""
+
+
+func _utensil_kinds() -> Array:
+	var items := []
+	for utensil: String in Crafting.UTENSIL_ORDER:
+		items.append({"label": Crafting.weapon_title(utensil), "open": _weapon_actions.bind(utensil)})
+	return items
+
+
 func _weapon_actions(weapon: String) -> Array:
 	var materials: Dictionary = Crafting.recipe(weapon)["materials"]
 	var missing := Crafting.missing(inventory, materials)
@@ -3588,6 +4266,15 @@ func _run_auto_commands() -> void:
 			get_viewport().get_texture().get_image().save_png("user://%s.png" % command.get_slice("_", 1))
 			print("FOTO %s: %s, %d pedaços 3D, %d fps" % [command.get_slice("_", 1), Narrator.where_am_i(world, _pos, _heading), view3d.chunk_count(), Engine.get_frames_per_second()])
 			continue
+		if command.begins_with("SEGURAR_") or command.begins_with("SOLTAR_"):  # testes: SEGURAR_W / SOLTAR_W (W, S) segura ou solta a tecla
+			var action: String = {"W": "andar_frente", "S": "andar_tras"}.get(command.get_slice("_", 1), "")
+			if not action.is_empty():
+				if command.begins_with("SEGURAR_"):
+					Input.action_press(action)
+				else:
+					Input.action_release(action)
+			print("[teste] andar montado: %d, a %.1f casas/s" % [_ride_level, float(RIDE_SPEEDS[_ride_level + 1])])
+			continue
 		if command.begins_with("DBG_"):  # testes: DBG_acao_argumento pede uma ação de depuração (ver request_debug)
 			var parts := command.split("_", true, 2)
 			request_debug.rpc_id(1, parts[1], parts[2] if parts.size() > 2 else "")
@@ -3619,6 +4306,8 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"CAVALOS":
+				print("[teste] cavalos por perto: %d" % horses.horse_count())
 			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás
 				print("[teste] calado chamado: %d" % horrors.summon(my_id, 12.0))
 			"IR_MEIO_DIA", "IR_ENTARDECER", "IR_GRILOS", "IR_NOITE", "IR_MEIA_NOITE", "IR_CORO", "IR_DIA":  # testes, só quem hospeda: vai para um momento (DayCycle.MOMENTS)
@@ -3644,6 +4333,8 @@ func _run_auto_commands() -> void:
 				await get_tree().create_timer(1.0).timeout
 			"ESPACO":
 				_interact()
+			"MONTAR":
+				_toggle_mount()
 			"INV":
 				_say_inventory()
 			"EMPUNHAR":
@@ -3664,7 +4355,7 @@ func _run_auto_commands() -> void:
 			"KIT":  # testes, só quem hospeda: materiais para construir e fabricar
 				if state != null:
 					var inv := state.inventory_of(my_id)
-					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "bambu", "madeira", "silex", "cipo", "fibra", "resina"]:
+					for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "madeira_grande", "madeira_media", "madeira_pequena", "bambu", "silex", "cipo", "fibra", "resina"]:
 						inv[item] = int(inv.get(item, 0)) + 10
 					equipment_changed(inv, state.wielding(my_id), "", "")
 			"LIVRE":  # testes: vai até um chão livre e fica de frente para ele (norte)
@@ -3683,12 +4374,46 @@ func _run_auto_commands() -> void:
 					await _auto_walk(WorldGen.cell_center(spot + Vector2i(0, 1)), 30.0)
 					while _heading != 0:
 						_turn(1)
-			"MARCO", "FOGUEIRA":
+			"MARCO", "FOGUEIRA", "FORNO":
 				_start_build(command.to_lower())
+			"FORNO_PRONTO":  # testes, só quem hospeda: um forno pronto e aceso colado no abrigo mais perto
+				_test_oven()
+			"POTE":
+				_craft("pote_cru")
+			"SECADOR":
+				_start_build("secador")
+			"OFICINA":  # testes, só quem hospeda: uma oficina 5x5 pronta perto (para o manto na bancada)
+				_test_workshop()
+			"BROA":  # testes, só quem hospeda: 3 espigas e a broa no forno aceso ao lado
+				if state != null:
+					state.inventory_of(my_id)["milho"] = 3
+					for build: Dictionary in state.builds.all():
+						if build["kind"] == "forno":
+							state.players[my_id]["pos"] = Builds.nearest_point(build, _pos) + Vector2(-0.9, 0)
+							_pos = state.players[my_id]["pos"]
+					_cook("broa")
+					await get_tree().create_timer(7.0).timeout
+					print("[teste] bolsa: ", state.inventory_of(my_id))
 			"OBRA":  # Espaço várias vezes, devagar
 				for i in 12:
 					_interact()
 					await get_tree().create_timer(0.35).timeout
+			"COMER":  # testes: come uma fruta da bolsa
+				var fruits := Bag.keys_of(inventory, "frutas")
+				if not fruits.is_empty():
+					_eat(fruits[0])
+			"CAVAR":  # testes, só quem hospeda: empunha uma enxada e cava 6 vezes à frente
+				if state != null:
+					state.inventory_of(my_id)["enxada"] = 1
+					_equip("enxada")
+					await get_tree().create_timer(0.5).timeout
+					for i in 6:
+						_swing_cooldown = 0.0
+						_swing()
+						await get_tree().create_timer(0.6).timeout
+			"ASSAR":  # testes: assa todas as raízes (precisa de fogueira acesa perto)
+				for key: String in Bag.keys_of(inventory, "raiz"):
+					_roast(key, 99)
 			"JOGAR":  # testes: larga uma pedra grande (do KIT) no chão
 				_drop("pedra_grande", 1)
 			"JOGAR_TUDO":
@@ -3740,6 +4465,62 @@ func _test_shelters() -> void:
 			if placed:
 				break
 	build_snapshot.rpc(state.builds.snapshot())
+
+
+## Teste: uma oficina 5x5 pronta, com a porta ao sul, perto de quem hospeda.
+func _test_workshop() -> void:
+	if state == null:
+		return
+	if not state.builds.has_settlement(world.region_of(WorldGen.cell_of(_pos))):
+		_test_settlement()
+	var here := WorldGen.cell_of(_pos)
+	for r in range(5, 60, 2):
+		for dx in range(-r, r + 1, 2):
+			for dy in [-r, r]:
+				for spot: Vector2i in [here + Vector2i(dx, dy), here + Vector2i(dy, dx)]:
+					if not state.builds.site_refusal("oficina", spot, 5, "sul").is_empty():
+						continue
+					var made: Dictionary = state.builds.start_site("oficina", spot, 5, "sul")
+					var build: Dictionary = state.builds.get_build(int(made["id"]))
+					build["done"] = true
+					build["phase"] = "obra"
+					build["stage"] = Crafting.stage_count("oficina")
+					build["prep"] = {}
+					build["removed"] = Builds.footprint_cells(spot, 5)
+					state.builds._register_walls(build)
+					print("[teste] oficina 5x5 em %s" % spot)
+					build_snapshot.rpc(state.builds.snapshot())
+					return
+
+
+## Teste: um forno pronto e aceso colado no abrigo pronto mais perto de quem
+## hospeda, com madeira para uma hora.
+func _test_oven() -> void:
+	if state == null:
+		return
+	var best := WorldGen.NO_CELL
+	var best_distance := INF
+	for build: Dictionary in state.builds.all():
+		if build["kind"] != "abrigo" or not build["done"]:
+			continue
+		var size := int(build["size"])
+		for y in range(-1, size + 1):
+			for x in range(-1, size + 1):
+				var cell: Vector2i = build["cell"] + Vector2i(x, y)
+				if state.builds.refusal("forno", cell).is_empty() and _pos.distance_to(WorldGen.cell_center(cell)) < best_distance:
+					best_distance = _pos.distance_to(WorldGen.cell_center(cell))
+					best = cell
+	if best == WorldGen.NO_CELL:
+		print("[teste] sem lugar para o forno")
+		return
+	var oven: Dictionary = state.builds.get_build(int(state.builds.start("forno", best)["id"]))
+	oven["done"] = true
+	oven["stage"] = Crafting.stage_count("forno")
+	oven["ignited"] = true
+	oven["burn_until"] = Builds.now() + Crafting.MAX_FUEL
+	print("[teste] forno em %s" % best)
+	build_snapshot.rpc(state.builds.snapshot())
+	_refresh_fires()
 
 
 ## Teste: um marco com nome e uma fogueira prontos perto de quem hospeda.

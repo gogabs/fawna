@@ -139,7 +139,7 @@ func _test_fire() -> void:
 	var state := _state_with_player(cell)
 	var id: int = state.start_build(2, "fogueira", cell)["id"]
 	var inv := state.inventory_of(2)
-	for item in ["pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "silex"]:
+	for item in ["pedra_media", "pedra_pequena", "madeira_media", "madeira_pequena", "silex"]:
 		inv[item] = 10
 	var result := {}
 	for i in 20:
@@ -148,7 +148,7 @@ func _test_fire() -> void:
 			break
 	_check(result.get("event", "") == "pronta", "a fogueira fica pronta")
 	var builds := state.builds
-	var expected := 2 * Crafting.FUEL_SECONDS["lenha_media"] + 3 * Crafting.FUEL_SECONDS["lenha_pequena"]
+	var expected := 2 * Crafting.FUEL_SECONDS["madeira_media"] + 3 * Crafting.FUEL_SECONDS["madeira_pequena"]
 	_check(is_equal_approx(builds.fuel_left(id), expected), "a lenha da última etapa é o primeiro combustível")
 	_check(not builds.is_lit(id), "pronta, mas apagada")
 	var t := Builds.now()
@@ -160,20 +160,20 @@ func _test_fire() -> void:
 	result = builds.work(id, inv, t)
 	_check(result["event"] == "acesa" and builds.is_lit(id, t), "acende na quarta batida")
 	_check(not inv.has("silex"), "a primeira vez não gasta sílex da bolsa")
-	var lenha_before := int(inv["lenha_media"])
+	var madeira_before := int(inv["madeira_media"])
 	result = builds.work(id, inv, t)
-	_check(result["event"] == "alimentou" and int(inv["lenha_media"]) == lenha_before - 1, "acesa, Espaço põe uma lenha média")
-	_check(is_equal_approx(builds.fuel_left(id, t), expected + Crafting.FUEL_SECONDS["lenha_media"]), "e ela queima mais tempo")
+	_check(result["event"] == "alimentou" and int(inv["madeira_media"]) == madeira_before - 1, "acesa, Espaço põe uma lenha média")
+	_check(is_equal_approx(builds.fuel_left(id, t), expected + Crafting.FUEL_SECONDS["madeira_media"]), "e ela queima mais tempo")
 	var out_at := t + builds.fuel_left(id, t) + 1.0
 	_check(builds.burn_out(t + 10.0).is_empty(), "não apaga antes da hora")
 	_check(builds.burn_out(out_at) == [id] and not builds.is_lit(id, out_at), "apaga quando a lenha acaba")
-	inv.erase("lenha_media")
-	inv.erase("lenha_pequena")
+	inv.erase("madeira_media")
+	inv.erase("madeira_pequena")
 	result = builds.work(id, inv, out_at)
 	_check(not result["ok"] and result["reason"] == "sem_lenha", "apagada e sem lenha, avisa")
-	inv["lenha_pequena"] = 1
+	inv["madeira_pequena"] = 1
 	result = builds.work(id, inv, out_at)
-	_check(result["event"] == "abasteceu" and is_equal_approx(builds.fuel_left(id, out_at), Crafting.FUEL_SECONDS["lenha_pequena"]), "lenha numa fogueira apagada fica guardada")
+	_check(result["event"] == "abasteceu" and is_equal_approx(builds.fuel_left(id, out_at), Crafting.FUEL_SECONDS["madeira_pequena"]), "lenha numa fogueira apagada fica guardada")
 	result = builds.work(id, inv, out_at)
 	_check(not result["ok"] and result["reason"] == "sem_silex", "apagada, com lenha e sem sílex na bolsa: avisa")
 	inv["silex"] = 1
@@ -198,7 +198,7 @@ func _test_weapons() -> void:
 	_check(result["ok"] and int(inv["lanca"]) == 1, "faz a lança")
 	_check(int(inv["bambu"]) == 1 and not inv.has("silex"), "gastando 1 bambu e 1 sílex")
 	_check(state.equip(2, "lanca")["ok"] and state.wielding(2) == "lanca", "a lança pode ser empunhada")
-	inv["lenha_media"] = 1
+	inv["madeira_media"] = 1
 	inv["pedra_media"] = 1
 	_check(state.craft(2, "clava")["ok"] and int(inv["clava"]) == 1, "faz a clava")
 	_check(Bag.with_article("lanca") == "a lança de bambu" and Bag.with_article("machado") == "o machado", "artigos certos na fala")
@@ -244,7 +244,7 @@ func _test_texts() -> void:
 ## Constrói até o fim, com a bolsa cheia do que for preciso.
 func _finish(state: WorldState, id: int) -> void:
 	var inv := state.inventory_of(2)
-	for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "lenha_media", "lenha_pequena", "silex"]:
+	for item: String in ["pedra_grande", "pedra_media", "pedra_pequena", "madeira_media", "madeira_pequena", "silex"]:
 		inv[item] = 20
 	for i in 40:
 		if state.builds.get_build(id)["done"]:

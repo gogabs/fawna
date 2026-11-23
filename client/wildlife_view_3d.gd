@@ -26,6 +26,8 @@ const LOOKS := [
 ]
 
 var _birds_node: Node
+var _horses_node: Node
+var _herd := {}  # id -> Node3D (cavalinhos)
 var _horrors_node: Node
 var _shapes := {}
 var _flock := {}  # id -> Node3D
@@ -36,8 +38,9 @@ var _cloud_mesh: SphereMesh
 var _cloud_material: StandardMaterial3D
 
 
-func setup(birds: Node, horrors: Node, shapes: Dictionary) -> void:
+func setup(birds: Node, horrors: Node, shapes: Dictionary, horses: Node = null) -> void:
 	_birds_node = birds
+	_horses_node = horses
 	_horrors_node = horrors
 	_shapes = shapes
 	_cloud_mesh = SphereMesh.new()
@@ -58,6 +61,7 @@ func setup(birds: Node, horrors: Node, shapes: Dictionary) -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	_sync_birds()
+	_sync_horses(delta)
 	_sync_horrors(delta)
 
 
@@ -102,6 +106,69 @@ func _make_bird(species: int) -> Node3D:
 		wing.position = Vector3((-1 if side == "AsaE" else 1) * size * 0.35, size * 0.15, 0.0)
 		_piece(wing, "box", Vector3((-1 if side == "AsaE" else 1) * size * 0.8, 0.0, 0.0), Vector3(size * 1.6, size * 0.05, size * 0.7), material)
 		node.add_child(wing)
+	return node
+
+
+## Pelagens dos cavalinhos (ordem de Herd.COATS).
+const COAT_COLORS := [Color("6b6a66"), Color("4a3a2c"), Color("1f1e22"), Color("a39a8c")]
+const HORSE_TROT_HZ := 1.7
+
+
+func _sync_horses(delta: float) -> void:
+	var coats: Dictionary = _horses_node.horse_coats() if _horses_node != null else {}
+	for id: int in _herd.keys():
+		if not coats.has(id):
+			_herd[id].queue_free()
+			_herd.erase(id)
+	for id: int in coats:
+		var point: Vector2 = _horses_node.horse_point(id)
+		var goal := Vector3(point.x * METERS, 0.0, point.y * METERS)
+		if not _herd.has(id):
+			var made := _make_horse(int(coats[id]))
+			_herd[id] = made
+			add_child(made)
+			made.position = goal
+		var node: Node3D = _herd[id]
+		var gait: int = _horses_node.horse_gait(id)
+		var heading: Vector2 = _horses_node.horse_heading(id)
+		if gait != Herd.Gait.STAND and heading.length() > 0.01:
+			node.rotation.y = lerp_angle(node.rotation.y, atan2(-heading.x, -heading.y), minf(1.0, delta * 6.0))
+		node.position = goal
+		# Pernas balançam andando; de cabeça baixa, pastando, quando parado.
+		var hz: float = HORSE_TROT_HZ * (1.8 if gait == Herd.Gait.GALLOP else (1.4 if gait == Herd.Gait.TROT else 1.0)) * _horses_node.horse_tempo(id)
+		var swing := sin(_time * TAU * hz + id) * (0.5 if gait == Herd.Gait.GALLOP else 0.3) if gait != Herd.Gait.STAND else 0.0
+		for i in 4:
+			var leg: Node3D = node.get_node("Perna%d" % i)
+			leg.rotation.x = swing * (1.0 if i % 3 == 0 else -1.0)
+		var neck: Node3D = node.get_node("Pescoco")
+		neck.rotation.x = lerpf(neck.rotation.x, 0.0 if gait != Herd.Gait.STAND else -0.9, minf(1.0, delta * 2.0))
+
+
+## Um cavalinho baixo e atarracado, de pelo grosso: corpo, pescoço com
+## cabeça (que abaixa para pastar) e quatro pernas que balançam.
+func _make_horse(coat: int) -> Node3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = COAT_COLORS[clampi(coat, 0, COAT_COLORS.size() - 1)]
+	material.roughness = 1.0
+	var mane := StandardMaterial3D.new()
+	mane.albedo_color = Color("141316")
+	mane.roughness = 1.0
+	var node := Node3D.new()
+	_piece(node, "blob", Vector3(0.0, 0.85, 0.0), Vector3(0.55, 0.55, 1.2), material)
+	_piece(node, "box", Vector3(0.0, 0.95, 0.62), Vector3(0.08, 0.2, 0.3), mane)  # cauda
+	var neck := Node3D.new()
+	neck.name = "Pescoco"
+	neck.position = Vector3(0.0, 1.0, -0.5)
+	_piece(neck, "blob", Vector3(0.0, 0.2, -0.12), Vector3(0.26, 0.5, 0.3), material)
+	_piece(neck, "box", Vector3(0.0, 0.3, -0.02), Vector3(0.06, 0.45, 0.12), mane)  # crina
+	_piece(neck, "blob", Vector3(0.0, 0.42, -0.36), Vector3(0.22, 0.24, 0.48), material)  # cabeça
+	node.add_child(neck)
+	for i in 4:
+		var leg := Node3D.new()
+		leg.name = "Perna%d" % i
+		leg.position = Vector3(0.17 * (-1 if i % 2 == 0 else 1), 0.62, -0.38 if i < 2 else 0.38)
+		_piece(leg, "box", Vector3(0.0, -0.3, 0.0), Vector3(0.1, 0.62, 0.1), material)
+		node.add_child(leg)
 	return node
 
 

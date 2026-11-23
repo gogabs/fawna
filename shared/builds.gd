@@ -1,7 +1,7 @@
 class_name Builds
 extends RefCounted
 ## Construções no mundo (marcos, fogueiras): onde estão, em que etapa, o que
-## já foi depositado e, nas fogueiras, se estão acesas e quanta lenha têm.
+## já foi depositado e, nas fogueiras, se estão acesas e quanta madeira têm.
 ## As receitas ficam em Crafting.
 ##
 ## Povoado: um marco e uma fogueira prontos na mesma região. Só então o marco
@@ -25,9 +25,9 @@ extends RefCounted
 ## para a argila secar (Crafting, "dry"): dá para trabalhar antes, mas cada
 ## batida vale metade; uma fogueira acesa na região seca em metade do tempo.
 ## Fogueira pronta:
-##   apagada com lenha -> batidas de pedra (faíscas; reacender pede lenha e 1 sílex dentro da fogueira) -> acesa -> queima a
-##   lenha com o tempo -> apagada. Espaço com ela acesa (ou sem lenha) põe
-##   mais uma lenha.
+##   apagada com madeira -> batidas de pedra (faíscas; reacender pede madeira e 1 sílex dentro da fogueira) -> acesa -> queima a
+##   madeira com o tempo -> apagada. Espaço com ela acesa (ou sem madeira) põe
+##   mais uma madeira.
 
 ## Quantas casas livres ficam entre uma construção e outra (2 casas, 3 m).
 const SPACING := 2
@@ -365,7 +365,7 @@ func is_lit(id: int, at_time := -1.0) -> bool:
 	return float(build["burn_until"]) > at_time
 
 
-## Segundos de lenha que a fogueira ainda tem (queimando ou guardada).
+## Segundos de madeira que a fogueira ainda tem (queimando ou guardada).
 func fuel_left(id: int, at_time := -1.0) -> float:
 	var build := get_build(id)
 	if build.is_empty():
@@ -469,14 +469,28 @@ func cell_status(cell: Vector2i, region: Vector2i, ignore := -1) -> int:
 ## Por que não dá para começar uma construção pequena nesta casa ("" = dá).
 ## "lugar": a casa não está livre (água, trilha, recurso...);
 ## "perto": outra construção colada; "regiao": já há um marco nesta região.
+## Nas coladas (Crafting "attach", o forno): "encostar" (a casa não fica
+## junto da parede de fora de uma construção pronta do tipo certo) e
+## "ja_tem" (essa construção já tem a sua); a distância de SPACING não conta
+## para a construção em que ela se cola.
 func refusal(kind: String, cell: Vector2i) -> String:
 	if not Crafting.BUILDS.has(kind) or Crafting.is_large(kind):
 		return "desconhecida"
-	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell):
+	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell) or _by_cell.has(cell):
 		return "lugar"
+	var host_id := -1
+	var attach := Crafting.attach_to(kind)
+	if not attach.is_empty():
+		var host := wall_host(cell, attach)
+		if host.is_empty():
+			return "encostar"
+		if not attached_to(int(host["id"]), kind).is_empty():
+			return "ja_tem"
+		host_id = int(host["id"])
 	for dy in range(-SPACING, SPACING + 1):
 		for dx in range(-SPACING, SPACING + 1):
-			if _by_cell.has(cell + Vector2i(dx, dy)):
+			var other: int = _by_cell.get(cell + Vector2i(dx, dy), -1)
+			if other != -1 and other != host_id:
 				return "perto"
 	if Crafting.BUILDS[kind].get("one_per_region", false):
 		var region := world.region_of(cell)
@@ -484,6 +498,46 @@ func refusal(kind: String, cell: Vector2i) -> String:
 			if build["kind"] == kind and build["region"] == region:
 				return "regiao"
 	return ""
+
+
+## A construção grande e pronta, de um dos tipos "kinds", em cuja parede de
+## fora a casa "cell" encosta (de lado, não na diagonal, e nunca na porta).
+## {} se nenhuma.
+func wall_host(cell: Vector2i, kinds: Array) -> Dictionary:
+	for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var host := at(cell + dir)
+		if host.is_empty() or not kinds.has(str(host["kind"])) or not bool(host["done"]) or int(host["size"]) < 3:
+			continue
+		if cell + dir == door_cell(host["cell"], int(host["size"]), str(host["entrance"])) \
+				or Builds.footprint_cells(host["cell"], int(host["size"])).has(cell):
+			continue
+		return host
+	return {}
+
+
+## A construção colada (Crafting "attach") desta, do tipo "kind" ({} se não há).
+func attached_to(host_id: int, kind := "forno") -> Dictionary:
+	for build: Dictionary in _builds.values():
+		if build["kind"] != kind:
+			continue
+		var host := wall_host(build["cell"], Crafting.attach_to(kind))
+		if not host.is_empty() and int(host["id"]) == host_id:
+			return build
+	return {}
+
+
+## A construção em que esta está colada ({} se nenhuma ou se não é colada).
+func host_of(id: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or Crafting.attach_to(build["kind"]).is_empty():
+		return {}
+	return wall_host(build["cell"], Crafting.attach_to(build["kind"]))
+
+
+## Para quem está dentro de uma construção: ela tem um forno colado aceso?
+func warm_oven(host_id: int, at_time := -1.0) -> bool:
+	var oven := attached_to(host_id, "forno")
+	return not oven.is_empty() and bool(oven["done"]) and is_lit(int(oven["id"]), at_time)
 
 
 ## Começa uma construção pequena (vazia, na primeira etapa). Devolve { ok, reason, id }.
@@ -502,7 +556,7 @@ func _new_build(id: int, kind: String, cell: Vector2i, size: int, entrance: Stri
 		"deposited": {}, "work": 0, "done": false, "fuel": 0.0, "burn_until": 0.0, "sparks": 0, "ignited": false, "flint": 0,
 		"name": "", "size": size, "entrance": entrance, "phase": "obra", "prep": {}, "removed": [],
 		"posts": _zero_posts(size), "dry_until": 0.0, "slack": false, "door_open": true, "stock": {}, "owners": [], "lockers": {},
-		"since": {}, "votes": [], "cool": {}, "approved": false, "voters": []}
+		"since": {}, "votes": [], "cool": {}, "approved": false, "voters": [], "rack": []}
 
 
 static func _zero_posts(size: int) -> Array:
@@ -651,11 +705,11 @@ func prep_hit(id: int, cell: Vector2i, tool: String) -> Dictionary:
 ##   o canteiro, e "post_left", o que falta a ele; "slow" se a argila ainda seca e a batida valeu menos);
 ##   "etapa": a etapa terminou ("next": nome da próxima; "dry": segundos de secagem, se houver);
 ##   "pronta": a construção terminou;
-##   "abasteceu" / "alimentou": lenha na fogueira apagada / acesa ("item");
+##   "abasteceu" / "alimentou": madeira na fogueira apagada / acesa ("item");
 ##   "faisca": uma batida de pedra ("sparks_left"); "acesa": pegou fogo.
 ## Recusas (ok = false): "faltam" (a bolsa não tem nada do que falta;
-## "missing"), "pronta" (nada mais a fazer), "sem_lenha" (fogueira sem lenha
-## e bolsa sem lenha), "cheia" (fogueira com lenha no máximo), "preparo" (a
+## "missing"), "pronta" (nada mais a fazer), "sem_lenha" (fogueira sem madeira
+## e bolsa sem madeira), "cheia" (fogueira com madeira no máximo), "preparo" (a
 ## obra grande ainda está na limpeza ou na capina), "canto" (nenhum canteiro
 ## com trabalho a fazer ao alcance; "posts": os cantos que ainda têm).
 func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -> Dictionary:
@@ -733,7 +787,7 @@ func work(id: int, bag: Dictionary, at_time := -1.0, pos := Vector2(INF, INF)) -
 	if Crafting.has_furniture(build["kind"]):
 		done_result["walls"] = true  # os móveis ocupam casas: quem estava nelas é levado para o lado
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
-		# A lenha da última etapa fica como o primeiro combustível.
+		# A madeira da última etapa fica como o primeiro combustível.
 		var fuel := 0.0
 		for item: String in finished["materials"]:
 			fuel += float(Crafting.FUEL_SECONDS.get(item, 0.0)) * int(finished["materials"][item])
@@ -995,7 +1049,7 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 				break
 		if wood.is_empty():
 			return {"ok": false, "reason": "sem_lenha" if not lit else "sem_lenha_bolsa"}
-		# Não aceita lenha que ia sobrar (mais da metade passando do máximo).
+		# Não aceita madeira que ia sobrar (mais da metade passando do máximo).
 		if fuel_left(id, at_time) + float(Crafting.FUEL_SECONDS[wood]) * 0.5 > Crafting.MAX_FUEL:
 			return {"ok": false, "reason": "cheia"}
 		bag[wood] = int(bag[wood]) - 1
@@ -1008,8 +1062,8 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 		build["fuel"] = minf(float(build["fuel"]) + seconds, Crafting.MAX_FUEL)
 		return {"ok": true, "event": "abasteceu", "item": wood}
 	# A primeira vez usa o sílex que entrou na obra. Reacender (depois que o fogo
-	# já pegou uma vez) pede lenha e um sílex dentro da fogueira: Espaço põe a
-	# lenha, depois o sílex (que passa a fazer parte dela) e só então acende,
+	# já pegou uma vez) pede madeira e um sílex dentro da fogueira: Espaço põe a
+	# madeira, depois o sílex (que passa a fazer parte dela) e só então acende,
 	# gastando esse sílex.
 	var relight := bool(build.get("ignited", false))
 	if relight and int(build.get("flint", 0)) <= 0:
@@ -1031,7 +1085,7 @@ func _tend_fire(build: Dictionary, bag: Dictionary, at_time: float) -> Dictionar
 	return {"ok": true, "event": "acesa"}
 
 
-## Fogueiras que apagaram desde a última vez (a lenha acabou). Devolve os ids.
+## Fogueiras que apagaram desde a última vez (a madeira acabou). Devolve os ids.
 func burn_out(at_time := -1.0) -> Array:
 	if at_time < 0.0:
 		at_time = now()
@@ -1056,6 +1110,126 @@ func dried(at_time := -1.0) -> Array:
 			build["slack"] = false
 			out.append(build["id"])
 	return out
+
+
+# --- Secador ---------------------------------------------------------------------
+
+## O que cada coisa vira ao secar (pela chave do grupo: toda fruta vira fruta seca).
+const DRIES := {"frutas": "fruta_seca", "cogumelo": "cogumelo_seco"}
+## Segundos para secar; com uma fogueira acesa a até DRY_FIRE_REACH casas, metade.
+const DRY_SECONDS := 600.0
+const DRY_FIRE_REACH := 4.0
+## Quanto cabe pendurado num secador.
+const RACK_CAPACITY := 12
+
+
+static func dries_into(item: String) -> String:
+	return str(DRIES.get(Economy.base_of(item), ""))
+
+
+static func has_rack(build: Dictionary) -> bool:
+	return bool(Crafting.BUILDS.get(str(build.get("kind", "")), {}).get("rack", false)) and bool(build.get("done", false))
+
+
+## Quantos itens estão pendurados (secando ou já secos).
+static func rack_count(build: Dictionary) -> int:
+	var total := 0
+	for entry: Array in build.get("rack", []):
+		total += int(entry[1])
+	return total
+
+
+## O secador está perto de uma fogueira acesa?
+func fire_near_rack(build: Dictionary, at_time := -1.0) -> bool:
+	for other: Dictionary in _builds.values():
+		if other["kind"] == "fogueira" and is_lit(int(other["id"]), at_time) \
+				and Vector2(other["cell"]).distance_to(Vector2(build["cell"])) <= DRY_FIRE_REACH:
+			return true
+	return false
+
+
+## Pendura até "amount" de "item" (fruta ou cogumelo) da bolsa no secador.
+## Devolve { ok, reason, amount, seconds } com reason "desconhecida",
+## "nao_seca", "sem_item" ou "cheio".
+func hang(id: int, bag: Dictionary, item: String, amount: int, at_time := -1.0) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or not has_rack(build):
+		return {"ok": false, "reason": "desconhecida"}
+	if dries_into(item).is_empty():
+		return {"ok": false, "reason": "nao_seca"}
+	if at_time < 0.0:
+		at_time = now()
+	var have := int(bag.get(item, 0))
+	if have <= 0:
+		return {"ok": false, "reason": "sem_item"}
+	var room := RACK_CAPACITY - rack_count(build)
+	if room <= 0:
+		return {"ok": false, "reason": "cheio"}
+	var count := mini(mini(amount, have), room)
+	bag[item] = have - count
+	if int(bag[item]) <= 0:
+		bag.erase(item)
+	var seconds := DRY_SECONDS * (0.5 if fire_near_rack(build, at_time) else 1.0)
+	build["rack"].append([item, count, at_time + seconds])
+	return {"ok": true, "amount": count, "seconds": seconds}
+
+
+## Recolhe do secador o que já secou. Devolve { ok, reason, items } com
+## reason "nada" (nada pendurado) ou "secando" (ainda nada seco; "left":
+## segundos até o primeiro).
+func gather_rack(id: int, bag: Dictionary, at_time := -1.0) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or not has_rack(build):
+		return {"ok": false, "reason": "desconhecida"}
+	if at_time < 0.0:
+		at_time = now()
+	var items := {}
+	var keep := []
+	var soonest := INF
+	for entry: Array in build["rack"]:
+		if float(entry[2]) <= at_time:
+			var into := dries_into(str(entry[0]))
+			items[into] = int(items.get(into, 0)) + int(entry[1])
+		else:
+			keep.append(entry)
+			soonest = minf(soonest, float(entry[2]) - at_time)
+	if items.is_empty():
+		return {"ok": false, "reason": "nada" if keep.is_empty() else "secando", "left": soonest}
+	build["rack"] = keep
+	for item: String in items:
+		bag[item] = int(bag.get(item, 0)) + int(items[item])
+	return {"ok": true, "items": items}
+
+
+## "Secador: 4 amoras secando, uns 6 minutos; 3 cogumelos secos."
+func rack_text(id: int, at_time := -1.0) -> String:
+	var build := get_build(id)
+	if build.is_empty():
+		return ""
+	if at_time < 0.0:
+		at_time = now()
+	var drying := {}
+	var ready := {}
+	var soonest := INF
+	for entry: Array in build.get("rack", []):
+		if float(entry[2]) <= at_time:
+			var into := dries_into(str(entry[0]))
+			ready[into] = int(ready.get(into, 0)) + int(entry[1])
+		else:
+			drying[str(entry[0])] = int(drying.get(str(entry[0]), 0)) + int(entry[1])
+			soonest = minf(soonest, float(entry[2]) - at_time)
+	var parts: PackedStringArray = []
+	if not drying.is_empty():
+		parts.append("secando: %s, a primeira em uns %s" % [Economy.items_text(drying), _minutes_text(soonest)])
+	if not ready.is_empty():
+		parts.append("pronto para recolher: %s" % Economy.items_text(ready))
+	if parts.is_empty():
+		return "O varal está vazio. Cabem %d frutas ou cogumelos." % RACK_CAPACITY
+	return _capital_text("; ".join(parts)) + "."
+
+
+static func _capital_text(text: String) -> String:
+	return text.left(1).to_upper() + text.substr(1)
 
 
 # --- Rede e salvamento -----------------------------------------------------------
@@ -1083,6 +1257,7 @@ func info(id: int, at_time := -1.0) -> Dictionary:
 		"votes": build["votes"].map(func(vote): return {"target": vote["target"], "by": vote["by"], "age": at_time - float(vote["opened"]),
 			"yes": vote["yes"], "no": vote["no"]}),
 		"lockers": build["lockers"].duplicate(true),
+		"rack": (build.get("rack", []) as Array).map(func(entry): return [entry[0], entry[1], maxf(0.0, float(entry[2]) - at_time)]),
 	}
 
 
@@ -1093,7 +1268,7 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 	var cell := Vector2i(int(data["x"]), int(data["y"]))
 	var deposited := {}
 	for item in data.get("deposited", {}):
-		deposited[str(item)] = int(data["deposited"][item])
+		deposited[Economy.migrate(str(item))] = int(deposited.get(Economy.migrate(str(item)), 0)) + int(data["deposited"][item])
 	var burn_left := float(data.get("burn_left", 0.0))
 	var dry_left := float(data.get("dry_left", 0.0))
 	_add(_fill({"id": int(data["id"]), "kind": str(data["kind"]), "cell": cell, "region": world.region_of(cell),
@@ -1102,6 +1277,17 @@ func apply_info(data: Dictionary, at_time := -1.0) -> void:
 		"burn_until": at_time + burn_left if burn_left > 0.0 else 0.0, "sparks": int(data.get("sparks", 0)),
 		"ignited": bool(data.get("ignited", false)), "flint": int(data.get("flint", 0)),
 		"name": str(data.get("name", ""))}, data, at_time + dry_left if dry_left > 0.0 else 0.0))
+	_builds[int(data["id"])]["rack"] = _read_rack(data.get("rack", []), at_time)
+
+
+## [[item, n, segundos]] -> [[item, n, hora em que fica seco]] ("base" soma a
+## hora de agora; no arquivo a hora já vem absoluta, base 0).
+static func _read_rack(list: Array, base: float) -> Array:
+	var out := []
+	for entry in list:
+		if typeof(entry) == TYPE_ARRAY and entry.size() >= 3 and int(entry[1]) > 0:
+			out.append([str(entry[0]), int(entry[1]), base + float(entry[2])])
+	return out
 
 
 func snapshot(at_time := -1.0) -> Array:
@@ -1145,6 +1331,7 @@ func to_save() -> Dictionary:
 			"posts": build["posts"], "dry_until": build["dry_until"], "door_open": build["door_open"],
 			"stock": build["stock"], "owners": build["owners"], "lockers": build["lockers"],
 			"since": build["since"], "votes": build["votes"], "cool": build["cool"], "approved": build["approved"],
+			"rack": build.get("rack", []),
 		})
 	return {"next_id": _next_id, "list": list, "cleared": _cells_to_list(_cleared.keys()), "seen": seen}
 
@@ -1160,7 +1347,7 @@ func load_save(data: Dictionary) -> void:
 		var cell := Vector2i(int(entry["x"]), int(entry["y"]))
 		var deposited := {}
 		for item in entry.get("deposited", {}):
-			deposited[str(item)] = int(entry["deposited"][item])
+			deposited[Economy.migrate(str(item))] = int(deposited.get(Economy.migrate(str(item)), 0)) + int(entry["deposited"][item])
 		_add(_fill({"id": int(entry["id"]), "kind": str(entry["kind"]), "cell": cell, "region": world.region_of(cell),
 			"stage": int(entry.get("stage", 0)), "deposited": deposited, "work": int(entry.get("work", 0)),
 			"done": bool(entry.get("done", false)), "fuel": float(entry.get("fuel", 0.0)),
@@ -1169,6 +1356,7 @@ func load_save(data: Dictionary) -> void:
 			# Mundos antigos davam o nome ao começar o marco: em obra, ele some.
 			"name": str(entry.get("name", "")) if bool(entry.get("done", false)) and str(entry["kind"]) == "marco" else ""},
 			entry, float(entry.get("dry_until", 0.0))))
+		_builds[int(entry["id"])]["rack"] = _read_rack(entry.get("rack", []), 0.0)
 		_next_id = maxi(_next_id, int(entry["id"]) + 1)
 	# Donos de antes do registro de atividade começam ativos agora.
 	for build: Dictionary in _builds.values():
@@ -1212,7 +1400,7 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 	var stock := {}
 	for item in data.get("stock", {}):
 		if int(data["stock"][item]) > 0:
-			stock[str(item)] = int(data["stock"][item])
+			stock[Economy.migrate(str(item))] = int(stock.get(Economy.migrate(str(item)), 0)) + int(data["stock"][item])
 	build["stock"] = stock
 	var owners := []
 	for owner in data.get("owners", []):
@@ -1240,7 +1428,7 @@ func _fill(build: Dictionary, data: Dictionary, dry_until: float) -> Dictionary:
 		var locker := {}
 		for item in data["lockers"][owner]:
 			if int(data["lockers"][owner][item]) > 0:
-				locker[str(item)] = int(data["lockers"][owner][item])
+				locker[Economy.migrate(str(item))] = int(locker.get(Economy.migrate(str(item)), 0)) + int(data["lockers"][owner][item])
 		if not locker.is_empty():
 			lockers[str(owner)] = locker
 	build["lockers"] = lockers
@@ -1703,7 +1891,7 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 				return text + ", obra em fase de capina"
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
-		return text + (" acesa" if is_lit(id, at_time) else " apagada")
+		return text + " " + Crafting.agree(build["kind"], "acesa" if is_lit(id, at_time) else "apagada")
 	if owner_slots(build) > 0:
 		return text + (" sem dono" if build["owners"].is_empty() else " de " + " e ".join(build["owners"]))
 	return text
@@ -1745,14 +1933,17 @@ func status_text(id: int, at_time := -1.0) -> String:
 		return text + dry_note
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		var minutes := ceili(fuel_left(id, at_time) / 60.0)
+		var lit_word := Crafting.agree(build["kind"], "acesa")
+		var out_word := Crafting.agree(build["kind"], "apagada")
 		if is_lit(id, at_time):
-			return "%s acesa, com lenha para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
+			var cook := " Espaço abre o forno: cozinhar ou pôr madeira." if build["kind"] == "forno" else ""
+			return "%s %s, com madeira para uns %d minuto%s.%s" % [title, lit_word, minutes, "" if minutes == 1 else "s", cook]
 		var needs_flint: bool = bool(build.get("ignited", false)) and int(build.get("flint", 0)) <= 0
 		if float(build["fuel"]) > 0.0:
 			if needs_flint:
-				return "%s apagada, com lenha para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-			return "%s apagada, com lenha para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-		return "%s apagada e sem lenha%s. Espaço põe uma lenha." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
+				return "%s %s, com madeira para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, out_word, minutes, "" if minutes == 1 else "s"]
+			return "%s %s, com madeira para uns %d minuto%s. Espaço bate as pedras para acender." % [title, out_word, minutes, "" if minutes == 1 else "s"]
+		return "%s %s e sem madeira%s. Espaço põe uma madeira." % [title, out_word, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
 		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]
@@ -1763,6 +1954,8 @@ func status_text(id: int, at_time := -1.0) -> String:
 			text += " Guarda %s: %s. Espaço longe da porta abre o armazenamento." % [
 				Crafting.STORAGE[build["kind"]]["label"], stock_label(build).trim_prefix(title + ", ")]
 		return text
+	if has_rack(build):
+		return "Secador pronto. %s Espaço nele pendura frutas e cogumelos, ou recolhe o que secou." % rack_text(id, at_time)
 	if build["kind"] == "marco":
 		if not str(build["name"]).is_empty():
 			return "Marco do povoado %s." % build["name"]

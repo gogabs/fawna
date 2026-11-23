@@ -137,10 +137,10 @@ func _test_save_round_trip() -> void:
 	var state := _state_with_player()
 	state.ground.add(Vector2i(3, 4), "pedra_media", 2)
 	state.ground.add(Vector2i(3, 4), "bambu", 1)
-	state.ground.add(Vector2i(-5, 9), "frutas", 4)
+	state.ground.add(Vector2i(-5, 9), "frutas_amora", 4)
 	var loaded := WorldState.from_save(JSON.parse_string(JSON.stringify(state.to_save())))
 	_check(loaded.ground.items_at(Vector2i(3, 4)) == {"pedra_media": 2, "bambu": 1}, "o chão é salvo com o mundo")
-	_check(int(loaded.ground.items_at(Vector2i(-5, 9)).get("frutas", 0)) == 4, "inclusive em coordenadas negativas")
+	_check(int(loaded.ground.items_at(Vector2i(-5, 9)).get("frutas_amora", 0)) == 4, "inclusive em coordenadas negativas")
 	# Mundo salvo antes dos itens no chão carrega sem erro.
 	var old := state.to_save()
 	old.erase("ground")

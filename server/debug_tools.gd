@@ -18,13 +18,13 @@ const HIGH_CAPACITY := 1000
 const KIT_ORDER := ["materiais", "raros", "comida", "ferramentas", "tudo"]
 const KITS := {
 	"materiais": ["Materiais de obra", {
-		"lenha_grande": 10, "lenha_media": 10, "lenha_pequena": 10,
+		"madeira_grande": 10, "madeira_media": 10, "madeira_pequena": 10,
 		"pedra_grande": 6, "pedra_media": 6, "pedra_pequena": 6,
-		"bambu": 10, "argila": 10, "madeira": 10,
+		"bambu": 10, "argila": 10,
 	}],
 	"raros": ["Raros: sílex, cipó, fibra e resina", {"silex": 10, "cipo": 10, "fibra": 10, "resina": 10}],
-	"comida": ["Frutas", {"frutas": 20}],
-	"ferramentas": ["Ferramentas e armas", {"faca": 1, "enxada": 1, "lanca": 1, "clava": 1, "tocha": 1}],
+	"comida": ["Frutas e raízes", {"frutas_amora": 10, "frutas_pitanga": 10, "raiz_batata": 5, "raiz_mandioca": 5, "raiz_cara": 5, "raiz_cenoura": 5, "cogumelo_pardo": 5, "milho": 5}],
+	"ferramentas": ["Ferramentas e armas", {"faca": 1, "enxada": 1, "lanca": 1, "clava": 1, "tocha": 1, "pote": 1, "alforje": 1, "cabresto": 1, "manto_cavalo": 1, "pote_selado": 1, "manto": 1}],
 }
 
 ## Distância dos saltos para os pontos cardeais, em casas.

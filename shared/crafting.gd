@@ -11,19 +11,18 @@ extends RefCounted
 ## ajudar em qualquer obra.
 ##
 ## Os materiais usam os subtipos da bolsa: pedra_grande, pedra_media,
-## pedra_pequena, lenha_media, lenha_pequena (lenha_grande só vem das
-## árvores, junto com a madeira).
+## pedra_pequena, madeira_grande (a tora, só da árvore derrubada),
+## madeira_media e madeira_pequena (galhos catados no chão).
 
 ## Nome falado de cada material: [singular, plural].
 const MATERIAL_NAMES := {
 	"pedra_grande": ["pedra grande", "pedras grandes"],
 	"pedra_media": ["pedra média", "pedras médias"],
 	"pedra_pequena": ["pedra pequena", "pedras pequenas"],
-	"lenha_grande": ["lenha grande", "lenhas grandes"],
-	"lenha_media": ["lenha média", "lenhas médias"],
-	"lenha_pequena": ["lenha pequena", "lenhas pequenas"],
+	"madeira_grande": ["madeira grande", "madeiras grandes"],
+	"madeira_media": ["madeira média", "madeiras médias"],
+	"madeira_pequena": ["madeira pequena", "madeiras pequenas"],
 	"bambu": ["bambu", "bambus"],
-	"madeira": ["madeira", "madeiras"],
 	"argila": ["argila", "argilas"],
 	"frutas": ["fruta", "frutas"],
 	"silex": ["sílex", "sílex"],
@@ -36,7 +35,9 @@ const MATERIAL_NAMES := {
 ## e "work" (batidas depois que os materiais entram).
 ##   name: [singular, plural]; article: "o"/"a" (para "o marco", "a fogueira");
 ##   one_per_region: só uma por região (o marco marca a região como um local);
-##   fire: pode ser acesa depois de pronta.
+##   fire: pode ser acesa depois de pronta;
+##   attach: só se começa colada do lado de fora da parede de uma destas
+##   construções grandes, pronta (o forno, no abrigo), uma por construção.
 const BUILDS := {
 	"marco": {
 		"name": ["marco", "marcos"],
@@ -54,7 +55,32 @@ const BUILDS := {
 		"fire": true,
 		"stages": [
 			{"name": "o anel de pedras", "materials": {"pedra_media": 4, "pedra_pequena": 4}, "work": 3},
-			{"name": "a lenha", "materials": {"lenha_media": 2, "lenha_pequena": 3, "silex": 1}, "work": 2},
+			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 3, "silex": 1}, "work": 2},
+		],
+	},
+	# Forno de argila: colado na parede de fora de um abrigo pronto (e da
+	# taverna, quando houver). A cúpula de argila precisa secar antes da
+	# madeira. Aceso, cozinha (Cooking) e aquece quem está dentro do abrigo.
+	"forno": {
+		"name": ["forno", "fornos"],
+		"article": "o",
+		"fire": true,
+		"attach": ["abrigo"],
+		"stages": [
+			{"name": "a base de pedras", "materials": {"pedra_grande": 2, "pedra_media": 4}, "work": 3},
+			{"name": "a cúpula de argila", "materials": {"argila": 6}, "work": 4, "dry": 180.0},
+			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 2, "silex": 1}, "work": 2},
+		],
+	},
+	# Secador: um varal de bambu amarrado com cipó. Fruta e cogumelo pendurados
+	# nele secam (Drying) e duram a estação inteira; perto de uma fogueira
+	# acesa secam na metade do tempo.
+	"secador": {
+		"name": ["secador", "secadores"],
+		"article": "o",
+		"rack": true,
+		"stages": [
+			{"name": "os esteios e o varal", "materials": {"bambu": 4, "cipo": 2}, "work": 3},
 		],
 	},
 	"abrigo": {
@@ -65,9 +91,9 @@ const BUILDS := {
 		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 12},
 			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
+			{"name": "o telhado", "materials": {"bambu": 12, "madeira_media": 6}, "work": 12},
 		],
 	},
 	# Barracão com porta e dois móveis dentro (Builds.furniture_cells): a bancada,
@@ -82,10 +108,10 @@ const BUILDS := {
 		"size": {"min": 5, "max": 8, "default": 5, "reference": 5},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 6, "argila": 8}, "work": 10, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 12},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 12},
 			{"name": "as paredes", "materials": {"bambu": 16, "argila": 8}, "work": 16, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 12, "lenha_media": 6}, "work": 12},
-			{"name": "a bancada e as prateleiras", "materials": {"madeira": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
+			{"name": "o telhado", "materials": {"bambu": 12, "madeira_media": 6}, "work": 12},
+			{"name": "a bancada e as prateleiras", "materials": {"madeira_grande": 4, "bambu": 6, "pedra_media": 2}, "work": 8},
 		],
 	},
 	"armazem": {
@@ -95,15 +121,15 @@ const BUILDS := {
 		"size": {"min": 3, "max": 6, "default": 4, "reference": 4},
 		"stages": [
 			{"name": "o chão", "materials": {"pedra_grande": 4, "argila": 6}, "work": 8, "dry": 240.0},
-			{"name": "os esteios", "materials": {"madeira": 6}, "work": 10},
+			{"name": "os esteios", "materials": {"madeira_grande": 6}, "work": 10},
 			{"name": "as paredes", "materials": {"bambu": 14, "argila": 6}, "work": 14, "walls": true},
-			{"name": "o telhado", "materials": {"bambu": 10, "lenha_media": 4}, "work": 10},
+			{"name": "o telhado", "materials": {"bambu": 10, "madeira_media": 4}, "work": 10},
 		],
 	},
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
+const BUILD_ORDER := ["marco", "fogueira", "secador", "abrigo", "forno", "armazem", "oficina"]
 
 ## Armazenamento: construções grandes prontas guardam itens, cada uma só de
 ## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
@@ -139,14 +165,14 @@ const WEED_HITS := 2
 ## Ferramenta de cada fase de preparo.
 const PREP_TOOLS := {"limpeza": "machado", "capina": "enxada"}
 
-## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada lenha queima e o máximo
-## que a fogueira guarda. A lenha da última etapa da fogueira já é o
+## Fogo: batidas até acender (a primeira vez usa o sílex da obra; reacender gasta 1 sílex da bolsa), quanto cada madeira queima e o máximo
+## que a fogueira guarda. A madeira da última etapa da fogueira já é o
 ## primeiro combustível.
 const SPARKS_TO_LIGHT := 4
-const FUEL_SECONDS := {"lenha_pequena": 180.0, "lenha_media": 420.0, "lenha_grande": 900.0}
+const FUEL_SECONDS := {"madeira_pequena": 180.0, "madeira_media": 420.0, "madeira_grande": 900.0}
 const MAX_FUEL := 3600.0
-## Ao alimentar, gasta primeiro a lenha que queima mais.
-const FUEL_ORDER := ["lenha_grande", "lenha_media", "lenha_pequena"]
+## Ao alimentar, gasta primeiro a madeira que queima mais.
+const FUEL_ORDER := ["madeira_grande", "madeira_media", "madeira_pequena"]
 
 ## Armas: feitas na hora com o que está na bolsa. Vão para a bolsa e podem
 ## ser empunhadas (Bag.WIELDABLE).
@@ -154,7 +180,7 @@ const WEAPONS := {
 	"lanca": {"name": ["lança de bambu", "lanças de bambu"], "article": "a",
 		"materials": {"bambu": 1, "silex": 1}},
 	"clava": {"name": ["clava de pedra", "clavas de pedra"], "article": "a",
-		"materials": {"lenha_media": 1, "pedra_media": 1}},
+		"materials": {"madeira_media": 1, "pedra_media": 1}},
 }
 const WEAPON_ORDER := ["lanca", "clava"]
 
@@ -170,10 +196,10 @@ const TOOLS := {
 		]},
 	# Dois sílex: um vira a lâmina, o outro se perde nas lascas.
 	"faca": {"name": ["faca bruta de sílex", "facas brutas de sílex"], "article": "a",
-		"materials": {"silex": 2, "lenha_pequena": 1},
+		"materials": {"silex": 2, "madeira_pequena": 1},
 		"steps": [
 			{"say": "Você lasca o sílex contra a pedra, até sair um fio.", "knocks": 6, "sound": "pedra"},
-			{"say": "Você afeiçoa o cabo de lenha.", "knocks": 3, "sound": "madeira"},
+			{"say": "Você afeiçoa o cabo de madeira.", "knocks": 3, "sound": "madeira"},
 			{"say": "Você prende a lâmina no cabo.", "knocks": 2, "sound": "encaixe"},
 		]},
 }
@@ -183,14 +209,70 @@ const TOOL_ORDER := ["enxada", "faca"]
 ## oficina liga aqui). Mesmo formato das ferramentas; Crafting.recipe as acha.
 const WORKSHOP := {
 	"tocha": {"name": ["tocha", "tochas"], "article": "a",
-		"materials": {"lenha_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
+		"materials": {"madeira_media": 1, "resina": 2, "fibra": 2, "cipo": 1},
 		"steps": [
-			{"say": "Você enrola a fibra na ponta da lenha.", "knocks": 4, "sound": "madeira"},
+			{"say": "Você enrola a fibra na ponta da madeira.", "knocks": 4, "sound": "madeira"},
 			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
 			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Manto de fibra trançada: nada de pele (regra do Gabs: recursos não vêm
+	# de matar animais). Vestido, aquece (Body.CLOAK_BONUS).
+	"manto": {"name": ["manto de fibra", "mantos de fibra"], "article": "o",
+		"materials": {"fibra": 8, "cipo": 2, "resina": 1},
+		"done": "Está na bolsa: vista pela Bolsa, no menu das setas.",
+		"steps": [
+			{"say": "Você torce a fibra em fios compridos.", "knocks": 5, "sound": "encaixe"},
+			{"say": "Você trança os fios em tiras largas e as costura com cipó.", "knocks": 6, "sound": "encaixe"},
+			{"say": "Você passa resina nas costuras, para a chuva não entrar.", "knocks": 3, "sound": "encaixe"},
+		]},
+	# Equipamento do cavalo (ver Herd.GEAR): bolsa extra que fica com ele.
+	"alforje": {"name": ["alforje", "alforjes"], "article": "o",
+		"materials": {"fibra": 10},
+		"steps": [
+			{"say": "Você trança a fibra em tiras largas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as duas bolsas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você une as bolsas por uma faixa que vai sobre o lombo.", "knocks": 2, "sound": "encaixe"},
+		]},
+	# Para domar: Espaço com ele num cavalo que perdeu o medo (Herd.halter).
+	"cabresto": {"name": ["cabresto", "cabrestos"], "article": "o",
+		"materials": {"fibra": 4, "cipo": 1},
+		"steps": [
+			{"say": "Você torce a fibra numa corda macia.", "knocks": 3, "sound": "encaixe"},
+			{"say": "Você dá as voltas da cabeçada e amarra com o cipó.", "knocks": 2, "sound": "encaixe"},
+		]},
+	# Protege o cavalo do frio (Herd.cold_slow).
+	"manto_cavalo": {"name": ["manto de cavalo", "mantos de cavalo"], "article": "o",
+		"materials": {"fibra": 16, "resina": 2},
+		"steps": [
+			{"say": "Você trança a fibra em tiras grossas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as tiras em duas camadas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você passa resina por cima, para a água escorrer.", "knocks": 3, "sound": "encaixe"},
+		]},
 }
-const WORKSHOP_ORDER := ["tocha"]
+const WORKSHOP_ORDER := ["tocha", "manto", "cabresto", "alforje", "manto_cavalo"]
+
+## Utensílios: também da bolsa, com passos, mas não se empunham. O pote sai
+## cru; só serve depois de queimado num forno aceso (Cooking, "pote").
+const UTENSILS := {
+	"pote_cru": {"name": ["pote de argila cru", "potes de argila crus"], "article": "o",
+		"materials": {"argila": 3},
+		"done": "Está na bolsa. Para servir, queime-o num forno aceso: Espaço no forno, Cozinhar.",
+		"steps": [
+			{"say": "Você amassa a argila com água até ela ficar lisa.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você enrola cordões de argila e sobe as paredes do pote.", "knocks": 5, "sound": "encaixe"},
+			{"say": "Você alisa o pote por dentro e por fora.", "knocks": 3, "sound": "encaixe"},
+		]},
+	# Pote selado: o pote queimado com a boca fechada por resina. Comida
+	# guardada nele não estraga (WorldState.jars).
+	"pote_selado": {"name": ["pote selado", "potes selados"], "article": "o",
+		"materials": {"pote": 1, "resina": 2, "fibra": 1},
+		"done": "Está na bolsa. Pela Bolsa, no pote, guarde comida: ali ela não estraga.",
+		"steps": [
+			{"say": "Você amolece a resina perto do corpo, até ficar mole.", "knocks": 3, "sound": "encaixe"},
+			{"say": "Você faz uma tampa de fibra e a cola na boca do pote com a resina.", "knocks": 4, "sound": "encaixe"},
+		]},
+}
+const UTENSIL_ORDER := ["pote_cru", "pote_selado"]
 
 
 static func material_text(item: String, amount: int) -> String:
@@ -264,6 +346,8 @@ static func build_title(kind: String) -> String:
 
 
 static func weapon_name(kind: String) -> String:
+	if UTENSILS.has(kind):
+		return UTENSILS[kind]["name"][0]
 	if TOOLS.has(kind):
 		return TOOLS[kind]["name"][0]
 	if WORKSHOP.has(kind):
@@ -277,6 +361,8 @@ static func recipe(kind: String) -> Dictionary:
 		return WEAPONS[kind]
 	if WORKSHOP.has(kind):
 		return WORKSHOP[kind]
+	if UTENSILS.has(kind):
+		return UTENSILS[kind]
 	return TOOLS.get(kind, {})
 
 
@@ -299,7 +385,19 @@ static func has_furniture(kind: String) -> bool:
 
 
 static func is_tool_recipe(kind: String) -> bool:
-	return TOOLS.has(kind) or WORKSHOP.has(kind)
+	return TOOLS.has(kind) or WORKSHOP.has(kind) or UTENSILS.has(kind)
+
+
+## Construções em que esta precisa ficar colada ([] se fica em qualquer lugar).
+static func attach_to(kind: String) -> Array:
+	return BUILDS.get(kind, {}).get("attach", [])
+
+
+## "acesa" ou "aceso", conforme o artigo da construção.
+static func agree(kind: String, feminine: String) -> String:
+	if BUILDS.get(kind, {}).get("article", "a") == "a":
+		return feminine
+	return feminine.left(-1) + "o"
 
 
 static func weapon_title(kind: String) -> String:

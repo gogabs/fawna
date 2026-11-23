@@ -17,6 +17,7 @@ const WALL := Color("7d6c4f")
 const ROOF := Color("4f4031")
 const FURNITURE := Color("65472e")
 const NOSE := Color("e6d6b8")
+const CLAY := Color("9a5a3c")
 const BODY_SLOTS := 6
 
 var _world: WorldGen
@@ -139,7 +140,11 @@ func _add_build(lists: Dictionary, build: Dictionary) -> void:
 	var finished := Crafting.stage_count(kind) if bool(build.get("done", false)) else int(build["stage"])
 	var size := int(build.get("size", 1))
 	if size <= 1:
-		if Crafting.BUILDS[kind].get("fire", false):
+		if kind == "forno":
+			_add_oven(lists, build, finished)
+		elif kind == "secador":
+			_add_rack(lists, build, finished)
+		elif Crafting.BUILDS[kind].get("fire", false):
 			_add_fire(lists, build, finished)
 		else:
 			_add_marker(lists, build, finished)
@@ -183,6 +188,35 @@ func _add_fire(lists: Dictionary, build: Dictionary, finished: int) -> void:
 			_flickers.append({"light": light, "base": FIRE_ENERGY, "phase": randf() * TAU})
 		else:
 			WorldView3D.put(lists, "blob", at, Vector3(0.7, 0.1, 0.7), 0.0, 0.05, ASH)
+
+
+## Secador: dois esteios de bambu e o varal entre eles.
+func _add_rack(lists: Dictionary, build: Dictionary, finished: int) -> void:
+	if finished < 1:
+		return
+	var at := _cell_at(build["cell"])
+	for side in [-0.6, 0.6]:
+		WorldView3D.put(lists, "box", at + Vector3(side, 0.0, 0.0), Vector3(0.1, 1.6, 0.1), 0.0, 0.8, POST)
+	WorldView3D.put(lists, "box", at, Vector3(1.3, 0.06, 0.06), 0.0, 1.5, POST)
+	if not (build.get("rack", []) as Array).is_empty():
+		WorldView3D.put(lists, "box", at, Vector3(1.0, 0.3, 0.08), 0.0, 1.3, CLAY)
+
+
+## Forno: base de pedras, a cúpula de argila por cima e, aceso, a brasa na boca.
+func _add_oven(lists: Dictionary, build: Dictionary, finished: int) -> void:
+	var at := _cell_at(build["cell"])
+	if finished >= 1:
+		WorldView3D.put(lists, "box", at, Vector3(1.4, 0.4, 1.4), 0.0, 0.2, STONE)
+	if finished >= 2:
+		WorldView3D.put(lists, "blob", at, Vector3(1.2, 1.0, 1.2), 0.0, 0.85, CLAY)
+	if finished >= 3 and _builds.is_lit(int(build["id"])):
+		var light := OmniLight3D.new()
+		light.light_color = FLAME_COLOR
+		light.light_energy = FIRE_ENERGY * 0.4
+		light.omni_range = FIRE_RANGE * 0.5
+		light.position = at + Vector3.UP * 0.7
+		_built_root.add_child(light)
+		_flickers.append({"light": light, "base": FIRE_ENERGY * 0.4, "phase": randf() * TAU})
 
 
 func _add_house(lists: Dictionary, build: Dictionary, finished: int, size: int) -> void:

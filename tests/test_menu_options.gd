@@ -48,6 +48,11 @@ func _ready() -> void:
 	_check(vp.gui_get_focus_owner() == main.connect_button, "direita volta à primeira")
 	await _key(KEY_TAB)
 	_check(vp.gui_get_focus_owner() == main.connect_button, "Tab não move o foco")
+	# Entrar, Hospedar, Entrar em jogo privado, Opções, Sair.
+	await _key(KEY_RIGHT)
+	_check(vp.gui_get_focus_owner() == main.host_button, "direita vai para Hospedar")
+	await _key(KEY_RIGHT)
+	_check(vp.gui_get_focus_owner() == main.join_button, "direita vai para Entrar em jogo privado")
 	await _key(KEY_RIGHT)
 	_check(vp.gui_get_focus_owner() == main.options_button, "direita vai para Configurações")
 	await _key(KEY_DOWN)  # voltar na página principal: nada acontece

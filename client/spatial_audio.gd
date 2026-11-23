@@ -13,9 +13,12 @@ extends Node3D
 const METERS_PER_CELL := WorldGen.METERS_PER_CELL
 const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâneo
 const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
-const SCENE_CUSTOM_GODOT_PHYSICS := 3  # ResonanceRuntimeConfig.scene_type
 ## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa.
 const HRTF_GAIN_DB := 6.0
+## Reforço de lado por cima do HRTF: o panorama do Godot com força 2 deixa um
+## som bem do lado só naquele ouvido (com 1, só 6 dB a mais). Medido no PC do
+## Gabs; acima de 2 o panorama do Godot fica errático (3 deu 6 dB, 4 deu 0).
+const HRTF_PANNING := 2.0
 const AMBIENT_RADIUS := 6  # casas
 const MAX_AMBIENT_SOURCES := 8
 const AMBIENT_VOLUME_DB := -12.0
@@ -100,6 +103,8 @@ func _ready() -> void:
 		player.name = "Monte_%d" % i
 		_pile_players.append(player)
 	print("[audio] HRTF (Steam Audio): %s" % ("sim" if using_hrtf else "não, usando o áudio 3D do Godot"))
+	if "--diag-hrtf" in OS.get_cmdline_user_args():
+		get_tree().create_timer(5.0).timeout.connect(_diag_hrtf)
 
 
 func setup(world: WorldGen, harvest: Harvest = null) -> void:
@@ -437,6 +442,7 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 	if using_hrtf and hrtf:
 		player = ClassDB.instantiate("ResonancePlayer")
 		player.set("player_config", _player_config)
+		player.panning_strength = HRTF_PANNING
 		volume_db += HRTF_GAIN_DB
 	else:
 		player = AudioStreamPlayer3D.new()
@@ -458,26 +464,12 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 func _setup_resonance() -> void:
 	if not ClassDB.class_exists("ResonanceRuntime") or not ClassDB.class_exists("ResonancePlayer"):
 		return
-	var config := _new_resonance_object("ResonanceRuntimeConfig") as Resource
-	_player_config = _new_resonance_object("ResonancePlayerConfig") as Resource
+	var config := ResonanceSetup.new_object("ResonanceRuntimeConfig") as Resource
+	_player_config = ResonanceSetup.new_object("ResonancePlayerConfig") as Resource
 	if config == null or _player_config == null:
 		push_warning("Nexus Resonance incompleto; usando o áudio 3D do Godot.")
 		return
-	config.set("direct_binaural", true)
-	# Sem geometria, a cena padrão do Steam Audio fica com 0 triângulos, a
-	# simulação nunca começa e todo ResonancePlayer sai mudo. A cena "Custom"
-	# (raios da física do Godot) faz a simulação rodar mesmo sem geometria.
-	config.set("scene_type", SCENE_CUSTOM_GODOT_PHYSICS)
-	config.set("realtime_rays", 0)
-	config.set("pathing_enabled", false)
-	# Mesmo sem reflexões, o Steam Audio reserva e processa a cauda de reverb
-	# de cada fonte com a duração daqui (padrão 2 s), na thread principal: com
-	# umas 60 fontes, isso dava quadros de 150 ms (7 por segundo), e os passos
-	# saíam lentos e aos trancos. Com 0,1 s o jogo volta a mais de 100 quadros.
-	config.set("realtime_simulation_duration", 0.1)
-	# O padrão do addon é 32 fontes; bússola, vozes, pássaros, ambiente e o
-	# Caminheiro passam disso, e as fontes que ficam sem vaga saem mudas.
-	config.set("max_simulation_sources", MAX_SIMULATION_SOURCES)
+	ResonanceSetup.configure_runtime(config, MAX_SIMULATION_SOURCES)
 	var runtime: Node = ClassDB.instantiate("ResonanceRuntime")
 	runtime.name = "ResonanceRuntime"
 	runtime.set("runtime", config)
@@ -486,17 +478,7 @@ func _setup_resonance() -> void:
 	var listener: Node3D = ClassDB.instantiate("ResonanceListener")
 	_camera.add_child(listener)
 
-	_player_config.set("reflections_enabled", false)
-	_player_config.set("simulation_occlusion_enabled", false)
-	_player_config.set("air_absorption_enabled", false)
-	# Reflexões desligadas: zera também a mistura delas, senão o addon avisa
-	# a cada som que não recebeu parâmetros de reflexão.
-	for prop in _player_config.get_property_list():
-		var prop_name: String = prop["name"]
-		if prop_name.contains("reflection") and prop_name.contains("mix"):
-			_player_config.set(prop_name, 0.0)
-	_player_config.set("min_distance", METERS_PER_CELL)
-	_player_config.set("max_distance", METERS_PER_CELL * (AMBIENT_RADIUS + 2))
+	ResonanceSetup.configure_player(_player_config, METERS_PER_CELL, METERS_PER_CELL * (AMBIENT_RADIUS + 2))
 	using_hrtf = true
 	get_tree().create_timer(2.0).timeout.connect(_log_resonance_state)
 
@@ -509,13 +491,50 @@ func _log_resonance_state() -> void:
 		print("[audio] Steam Audio simulando: %s" % ("sim" if server.is_simulating() else "não (os sons com HRTF vão sair mudos)"))
 
 
-## Cria uma classe do Nexus Resonance pelo nome. Algumas são nativas
-## (GDExtension) e outras são scripts com class_name, como as configs.
-## Não usamos os nomes direto no código para o jogo funcionar sem o addon.
-static func _new_resonance_object(class_name_str: String) -> Object:
-	if ClassDB.class_exists(class_name_str):
-		return ClassDB.instantiate(class_name_str)
-	for entry in ProjectSettings.get_global_class_list():
-		if entry["class"] == class_name_str:
-			return load(entry["path"]).new()
-	return null
+
+## Teste do HRTF dentro do jogo (--diag-hrtf): toca um ruído alto a 6 m à
+## esquerda e depois à direita do ouvinte, numa fonte igual às do jogo e sem o
+## panorama do Godot, e mede quanto cada ouvido recebe no Master.
+func _diag_hrtf() -> void:
+	var capture := AudioEffectCapture.new()
+	capture.buffer_length = 4.0
+	var master := AudioServer.get_bus_index("Master")
+	AudioServer.add_bus_effect(master, capture)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = 48000
+	var data := PackedByteArray()
+	data.resize(48000 * 2)
+	for i in 48000:
+		data.encode_s16(i * 2, int(randf_range(-0.3, 0.3) * 32767))
+	stream.data = data
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_end = 48000
+	var player := _new_player(stream, 0.0)
+	player.panning_strength = 0.0
+	add_child(player)
+	var server = Engine.get_singleton("ResonanceServer") if Engine.has_singleton("ResonanceServer") else null
+	print("[diag-jogo] câmera atual: %s, fontes no nó de áudio: %d, classe: %s" % [get_viewport().get_camera_3d().name if get_viewport().get_camera_3d() else "nenhuma", get_child_count(), player.get_class()])
+	for side in [-1.0, 1.0]:
+		var yaw := facing_yaw()
+		var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+		player.global_position = _camera.global_position + right * side * 6.0
+		if not player.playing:
+			player.play()
+		await get_tree().create_timer(0.6).timeout
+		capture.clear_buffer()
+		await get_tree().create_timer(1.2).timeout
+		var buffer := capture.get_buffer(capture.get_frames_available())
+		var left_e := 0.0
+		var right_e := 0.0
+		for v in buffer:
+			left_e += v.x * v.x
+			right_e += v.y * v.y
+		var gate = server.is_spatial_audio_output_ready() if server != null else "sem Steam Audio"
+		var src_gate = player.call("is_spatial_output_ready") if player.has_method("is_spatial_output_ready") else "?"
+		print("[diag-jogo] %s: diferença esquerdo-direito %+.1f dB (portão: %s, fonte pronta: %s)" % ["esquerda" if side < 0 else "direita", 10.0 * log(maxf(left_e, 1e-12) / maxf(right_e, 1e-12)) / log(10.0), gate, src_gate])
+	player.queue_free()
+	for i in AudioServer.get_bus_effect_count(master):
+		if AudioServer.get_bus_effect(master, i) == capture:
+			AudioServer.remove_bus_effect(master, i)
+			break

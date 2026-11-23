@@ -44,7 +44,7 @@ Opções: `--server`, `--host`, `--debug` (liga o menu de depuração, veja abai
 
 ### Depuração (só para testes)
 
-O menu das setas ganha **Depuração** quando o servidor a liga: num servidor dedicado de testes com `--debug` (use outra porta que a do servidor principal, ex. `--server --debug --port=7351`; qualquer jogador que entrar nele usa) e em jogo hospedado pelo menu ou com `--host` (só quem hospeda usa, mesmo com convidados). Sem isso o menu não aparece e o servidor recusa os pedidos. Tem: dar pacotes de recursos (materiais de obra, raros, frutas, ferramentas ou tudo), esvaziar a bolsa, limite de carga alto (1000, sem sobrecarga), hora do dia (momentos como noite, coro do amanhecer ou meio-dia; o mundo vai sempre para a frente), estação (começo de cada uma), teleporte (40 casas para cada lado, miolo da faixa do anel ou longe dela, povoados e fogueiras), Calado (chamar atrás de você, dispensar, ligar/desligar as aparições sozinhas) e a posição atual. Comando de teste: `--auto=DBG_ação_argumento`.
+O menu das setas ganha **Depuração** quando o servidor a liga: num servidor dedicado de testes com `--debug` (use outra porta que a do servidor principal, ex. `--server --debug --port=7351`; qualquer jogador que entrar nele usa) e em jogo hospedado pelo menu ou com `--host` (só quem hospeda usa, mesmo com convidados). Sem isso o menu não aparece e o servidor recusa os pedidos. Tem: dar pacotes de recursos (materiais de obra, raros, frutas, ferramentas ou tudo), esvaziar a bolsa, limite de carga alto (1000, sem sobrecarga), hora do dia (momentos como noite, coro do amanhecer ou meio-dia; o mundo vai sempre para a frente), estação (começo de cada uma), teleporte (40 casas para cada lado, miolo da faixa do anel ou longe dela, povoados e fogueiras), Calado (chamar atrás de você, dispensar, ligar/desligar as aparições sozinhas), chamar cavalos para perto (a manada mais próxima, ou uma nova, vem andando até umas 8 casas de você), fome e frio (encher, quase esvaziar uma reserva, ouvir os números) e a posição atual. Comando de teste: `--auto=DBG_ação_argumento`.
 
 ## Controles
 
@@ -60,7 +60,7 @@ O menu das setas ganha **Depuração** quando o servidor a liga: num servidor de
 | Ajuda (lista de comandos) | H |
 | Radar: alvo do Caminheiro com a distância, o recurso mais próximo de cada tipo e as construções, num raio de 24 m | Tab |
 | Com o Calado por perto: a respiração dele soa sozinha (some quando você fica de frente para ele) | virar (Q/E) |
-| Onde estou; apertando de novo, o momento do dia, o anel e a estação (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
+| Onde estou; apertando de novo, o momento do dia, o anel e a estação; mais uma vez, a fome e o frio (circular; o mundo anoitece e amanhece, e o Calado só ronda de noite) | C |
 | Quem está no mundo | P |
 | Repetir a última fala | R |
 
@@ -87,8 +87,10 @@ As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
 O Caminheiro tem três submenus: **Locais** (os povoados com nome),
-**Construções** (só as da região em que você está) e **Recursos** (Bambu, Lenha,
-Pedras, Argila, Frutas), que acende o cristal rumo ao coletável mais próximo
+**Construções** (só as da região em que você está) e **Recursos** (Arbustos, Argila,
+Árvores, Bambu, Capim, Cogumelos, Pedras, Ramas, Sílex, Trepadeiras; o
+Forrageador tem também Espécies de plantas, com cada espécie, como "Pé de
+batata (rama)"), que acende o cristal rumo ao coletável mais próximo
 daquele tipo, até uns 100 m em linha reta. Ao chegar, a fala diz onde ele
 está: "Você chegou às pedras, atrás e à direita, 2 metros."
 
@@ -106,10 +108,12 @@ Ao passar de uma região para outra soa um sopro grave e baixinho, sem fala
 
 ### Bolsa e Equipamento
 
-A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Lenha e
+A **Bolsa** lista o que a criatura carrega, agrupado: "Argila, 2". Madeira e
 pedra têm tamanhos (grande, média, pequena), guardados como itens separados
-(`pedra_grande`, `lenha_pequena`...) e falados juntos, só com os tamanhos que
-a criatura tem: "Pedra, 3 grandes, 1 pequena". Itens sem
+(`pedra_grande`, `madeira_pequena`...) e falados juntos, só com os tamanhos que
+a criatura tem: "Pedra, 3 grandes, 1 pequena". Frutas e raízes se agrupam do
+mesmo jeito, por espécie: "Fruta, 2 amoras, 1 pitanga"; "Raiz, 3 batatas". As
+espécies e onde nascem ficam em `shared/plants.gd`. Itens sem
 ação só repetem o nome. Alguns itens têm ação: o **machado** (toda criatura
 chega ao mundo com um) tem **Empunhar**, que o tira da bolsa e o põe nas mãos.
 O **Equipamento** mostra o que está nas mãos ("mãos livres" se nada), com o
@@ -119,14 +123,14 @@ golpeia.
 #### Carga e itens no chão
 
 A criatura aguenta uma **carga** limitada (`Bag.CAPACITY`, 24), e cada item
-pesa o seu tanto (`Bag.WEIGHTS`): fruta e lenha pequena 1, lenha média, bambu e
-argila 2, pedra média 3, pedra grande 6, machado 3. Contam a bolsa e o que está
+pesa o seu tanto (`Bag.WEIGHTS`): fruta e madeira pequena 1, madeira média, bambu e
+argila 2, pedra média 3, madeira grande 4, pedra grande 6, machado 3. Contam a bolsa e o que está
 nas mãos. Dá para levar uma fogueira inteira (23), mas um marco (25) exige mais
 de uma viagem, e quem sai carregado de pedras grandes só traz quatro. Para
 deixar mais fácil ou difícil, mude só essas duas tabelas.
 
 No fim da Bolsa há a linha "Carga, 18 de 24". Cada item abre **Jogar 1** e
-**Jogar tudo** (e Empunhar, nas armas); lenha e pedra abrem antes a lista de
+**Jogar tudo** (e Empunhar, nas armas); madeira e pedra abrem antes a lista de
 tamanhos. O que se joga cai na casa da criatura e vira um **monte no chão**, que
 qualquer criatura pode pegar com **Espaço** (leva o que couber, do mais pesado
 ao mais leve). Ao coletar com a carga quase cheia, o que não cabe também fica no
@@ -153,17 +157,37 @@ novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
 um destino, o foco do menu fica onde está; escolher de novo o destino aceso
 apaga o cristal.
 
+### Fome e frio
+
+A criatura tem duas reservas invisíveis, fome e calor. A fome cai sempre, mais depressa na Longa Escuridão. O calor só cai quando faz frio: à noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas; cruzar um vau molha e esfria mais por um minuto. Cada fonte de calor aquece até um teto, e acima dele o frio puxa de volta: fogueira acesa por perto, de 35% (quase sem madeira) a 90% (cheia), em uns 2 minutos; abrigo pronto (estando dentro) até 60%, devagar; com o forno colado aceso, até 90%; a tocha freia a perda pela metade e segura em 20%. Sem frio, o calor volta a cheio. O manto, quando vier, soma ao teto. Come-se pela Bolsa. Comidas: frutas dos arbustos de fruta e do maracujá-do-mato (nada na Longa Escuridão); castanhas, no Declínio, com Espaço numa parte das árvores de pé (uma vez por ano em cada); raízes, cavando uma rama com a enxada empunhada (J) ou fuçando. A raiz crua sacia pouco e, comida demais em seguida, enjoa; assada numa fogueira acesa ao lado (Bolsa > Raiz > Assar) sustenta e aquece. A comida estraga com o tempo (fruta em 2 dias de jogo, raiz crua em 6, assada em 3, castanha em um ano), na metade da velocidade no frio; a Bolsa diz quantas estão "passando", e a que estraga vira comida estragada. A barriga ronca e o corpo treme, mais seguido quanto pior, e uma frase avisa só quando um limiar piora (50%, 25% e vazio). Barra sonora: a cada 20 pontos que uma reserva cruza (100, 80, 60, 40, 20, 0), um toque soa no estéreo, da direita (cheia) para a esquerda (vazia); grave e amadeirado para a fome, agudo de vidro para o calor. Na tela, as barras de saciedade e calor ficam no canto de baixo à esquerda. Abaixo de 50% na reserva pior, a criatura vai ficando mais lenta aos poucos, até 70% da velocidade (e 60% do trabalho nas obras) com a reserva vazia. Com uma reserva vazia por 1 minuto, desfalece, perde metade de cada recurso da bolsa e acorda no ponto seguro mais próximo. Os números ficam em `shared/body.gd`. Espécies: Pesado sente mais fome, Leve menos fome e mais frio, Pelagem (Troncudo e Geado) aguenta o frio, Mestre do fogo se aquece mais depressa.
+
+### Forno e pote de argila
+
+O forno se constrói em Fabricar > Construções, colado do lado de fora da parede de um abrigo pronto (de lado, longe da porta), um por abrigo: base de pedras (2 grandes, 4 médias), cúpula de argila (6, que seca uns 3 minutos) e a madeira com 1 sílex. Acende e queima madeira como a fogueira. Aceso, Espaço nele abre o forno: **Broa de milho** (3 espigas; sustenta bem e dura 6 dias), **Ensopado** (1 cenoura, 2 raízes e 1 cogumelo, no pote; enche e aquece muito, mas estraga em meio dia), **Assar tudo** (raízes e milho da bolsa, de uma vez) e **Queimar o pote de argila**. O pote se modela em Fabricar > Utensílios com 3 argilas, sai cru e só serve depois de queimado; não se gasta. Com o forno aceso, quem está dentro do abrigo se aquece mais depressa; do lado de fora, o forno não aquece como a fogueira. Receitas em `shared/cooking.gd`. Comandos de teste: `FORNO` (começa à frente), `FORNO_PRONTO` (um forno aceso no abrigo mais perto, para quem hospeda), `POTE`, `BROA`.
+
+### Secador, pote selado e manto
+
+- **Secador** (Fabricar > Construções): um varal de 4 bambus e 2 cipós. Espaço nele pendura frutas e cogumelos da bolsa (cabem 12) e recolhe o que secou: secam em 10 minutos (5 com uma fogueira acesa a até 4 casas) e viram fruta seca e cogumelo seco, que saciam menos mas duram 30 dias.
+- **Pote selado** (Fabricar > Utensílios): o pote de argila queimado, 2 resinas e 1 fibra. Pela Bolsa, no pote, guarda e tira comida: cabem 8 por pote, e lá dentro a comida não envelhece (volta com a idade que tinha). Pote com comida não se larga.
+- **Manto de fibra** (bancada da oficina): 8 fibras, 2 cipós e 1 resina, sem pele (nada no jogo vem de matar animais, só o peixe). Vestido pela Bolsa (e tirado em Equipamento), soma 25 ao teto de qualquer fonte de calor (sozinho, segura 25 no frio) e a perda no frio cai para 60%. Não pesa na carga enquanto vestido.
+
+Comando de teste: `SECADOR` (começa um secador à frente).
+
 ## Como se joga (por enquanto)
 
 1. Procure os recursos de ouvido e aperte **Espaço** perto deles para pôr na bolsa. O bambu e as frutas têm um som baixinho e próprio, em 3D:
    - **Touceira de bambu** (no bambuzal, mais cheio na orla dele, e em moitas na beira de lagoas, riachos e charcos do brejo): os colmos batem e rangem ao vento. Não se recolhe com a mão: com o machado empunhado, golpeie com **J** (de 3 a 5 golpes, conforme a touceira). No último golpe ela cai, e aí o Espaço recolhe 3 bambus. Golpes deixados pela metade se perdem depois de 3 minutos. **O bambuzal é uma parede**: fora das trilhas todas as casas são touceiras, e ao esbarrar o jogo avisa "Bambuzal fechado" e bate os colmos. Só se passa pelas trilhas ou abrindo caminho: bambu derrubado ou recolhido deixa passar. No bambuzal o caminho aberto fica para sempre; na beira da água o bambu rebrota em 15 minutos, mas espera se houver alguém em cima.
-   - **Árvore** (bosque fechado): derrubada a machadadas (J), abre passagem para sempre; dá 2 madeiras (para as construções grandes que virão) e 2 lenhas grandes (para o fogo), itens separados. Os últimos golpes fazem o tronco ranger, e a queda se ouve de longe. Trocar de volta para "tudo lenha" é uma linha em `Harvest.SOURCES`.
-   - **Arbusto com gravetos** (na orla da mata, onde ela encosta em campo aberto, clareiras incluídas; longe dali só um ou outro): quase todo arbusto dá gravetos para lenha (2 lenhas, cada uma média ou pequena; lenha grande só virá das árvores). Não tem som próprio: soa como os outros arbustos.
+   - **Árvore** (bosque fechado): derrubada a machadadas (J), abre passagem para sempre; dá 4 madeiras grandes (as toras, para os esteios das construções e para o fogo). Os últimos golpes fazem o tronco ranger, e a queda se ouve de longe.
+   - **Galhos caídos** (no chão do bosque, ao pé das árvores): dão 2 madeiras, cada uma média ou pequena, e rebrotam em 10 minutos. Lenha e madeira são uma coisa só: toda madeira serve para construir e para queimar, e a grande queima mais.
+   - **Arbusto** (na orla da mata, onde ela encosta em campo aberto, clareiras incluídas; longe dali só um ou outro): no campo aberto é **de fruta** (pé de amora, pitangueira; nas terras geladas, baga-de-cinza), que dá 2 frutas e farfalha baixinho, com gotinhas; do lado da mata e na beira da água é **de fibra** (embira, sisal-do-brejo), que dá 1 fibra vegetal. Todos parecem iguais: quem não é Forrageador só descobre a espécie ao colher.
+   - **Rama** (uma ou outra no campo, no brejo e no bosque): em cima, só folhas; embaixo, a raiz (batata ou cenoura no campo, cará no brejo, mandioca no bosque; a cenoura se come crua sem enjoar, e o cavalo gosta mais dela que de fruta). Não sai com a mão: com a enxada empunhada, 3 golpes de J tiram 2 raízes (uma só na Longa Escuridão), e a rama volta em 20 minutos. O Javali também acha raízes fuçando.
+   - **Capim**: o de fibra (nas matas fechadas e na beira da água) dá 2 fibras vegetais; o de milho (um ou outro no campo, longe da água) dá 2 espigas, que cruas enjoam como a raiz e assadas na fogueira sustentam e aquecem. Sem milho na Longa Escuridão.
+   - **Cogumelo** (no chão das matas fechadas e, menos, no brejo): chapéu-pardo e orelha-de-pau no bosque, cogumelo-da-neve na floresta gelada. Dá 2, todos de comer, que estragam depressa. Sem cogumelos na Longa Escuridão.
+   - **Trepadeira** (nas matas fechadas): cipó-de-amarra, que dá cipó, ou maracujá-do-mato, que dá uma fruta.
    - **Argila**, só na beira da água (margens das lagoas e dos riachos). Não tem som próprio: a água ao lado guia até ela. Dá 1 argila.
    - **Pedras** soltas, pelo mundo todo e bem mais comuns na beira dos riachos e lagoas. Dão 3 pedras, cada uma grande, média ou pequena (1/3 de chance cada); na beira da água saem mais pequenas (60% pequenas, 25% médias, 15% grandes). Não têm som próprio.
-   - **Arbusto com frutas**, raro (uns poucos por região): em vez de gravetos, dá 2 frutas. Farfalha baixinho, com gotinhas.
 
-   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: gravetos em 5 minutos, argila em 8, pedras em 10, bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
+   O que é recolhido some (sem som e sem fala no Tab; o arbusto fica, vazio, e o Tab o chama só de "arbusto") e rebrota com o tempo: argila em 8 minutos, galhos e pedras em 10, fibra do arbusto e bambu em 15 e frutas em 30. O mundo é um só, então o que alguém colheu some para todos. As regras ficam em `shared/harvest.gd`.
 2. Quem entra pela primeira vez nasce no cruzamento de trilhas do centro do mundo. Os minigames de profissão e a horta comunitária saíram para serem refeitos com outra roupagem.
 
 O servidor salva o mundo em `user://mundo.json` (no Windows, `%APPDATA%\Godot\app_userdata\Fawna`). Use `--novo-mundo` para recomeçar ou `--mundo=caminho` para outro arquivo.
@@ -222,6 +246,16 @@ O servidor é autoritativo: os clientes só enviam intenções, como andar, e o 
 Os primeiros seres vivos além das criaturas. Cada pássaro é uma entidade com posição própria, simulada no servidor (`shared/aviary.gd`): voa entre árvores e arbustos, canta só quando está pousado e foge de quem chega perto demais. Vivem em grupos: o sabiá-da-névoa e a coruja-do-breu andam sozinhos no bosque, o corvo-cinza em bandos pequenos no alto das árvores, o gavião-peneira sozinho nas árvores da pradaria, a rolinha-do-junco em casal e o periquito-do-brejo em bando perto da lagoa, e a carriça-do-cardo em bandos de 4 a 7 nos arbustos. Só existem perto de alguém, e cada jogador só recebe o que acontece até uns 48 m dele. No cliente (`scenes/birds.gd`), os cantos e as asas tocam em 3D com HRTF, numa altura de verdade (no alto da árvore, no arbusto, subindo no voo).
 
 Os cantos são gerados por código (`client/bird_songs.gd`), discretos e meio inumanos. Gravações em `assets/sounds/passaros/` entram no lugar deles: `<espécie>_<voz>_<frase>` para os cantos (cada pássaro nasce com uma das vozes da espécie), `<espécie>_alarme` para o susto e `asas_<n>` para o voo. Uma voz sem arquivos usa os cantos gerados. `tools/comparar_passaros/` tem a página usada para escolher os sons. `tests/test_birds.gd -- --exportar=PASTA` salva os cantos gerados em .wav para ouvir.
+
+## Cavalinhos-da-bruma
+
+Manadas de 3 a 6 cavalinhos selvagens na pradaria de girassóis e no deserto gelado, simuladas no servidor (`shared/herd.gd`), do mesmo jeito que os pássaros: só existem perto de alguém e voltam iguais para a mesma semente. A manada pasta parada, depois anda devagar para outro ponto perto de casa. Quem chega a umas 9 casas é notado e ouve um bufo de alerta; quem continua vindo enquanto ela desconfia a faz fugir a galope. Quem para e espera uns 4 segundos passa a ser tolerado e pode chegar bem perto (só espanta se esbarrar). Golpes e habilidades por perto espantam na hora. De noite, quando o Calado se aproxima, relincham de alarme e fogem dele.
+
+No cliente (`scenes/horses.gd`), 16 fontes fixas tocam os cascos (que mudam com o chão: grama, terra, neve, ponte de madeira, água rasa), o bufo, o relincho, o alarme e o mastigar do capim. Os sons são gerados por código (`client/horse_sounds.gd`); gravações em `assets/sounds/cavalos/` entram no lugar deles, sorteadas a cada vez: `casco_<chão>_<n>`, `galope_<chão>_<n>`, `pasto_<n>`, `bufo_<n>`, `relincho_<n>` e `alarme_<n>`. `tests/test_horses.gd -- --exportar=PASTA` salva os sons gerados em .wav.
+
+**Domesticar.** Depois de tolerado, chegue devagar a até 1,6 casa de um cavalo e aperte Espaço com frutas na bolsa: ele come uma da sua mão (gasta a fruta) e precisa de uns 5 segundos para mastigar antes da próxima. Com 4 ou 5 frutas ele perde o medo e segue você por 2 minutos (um pouco afastado, a 2,2 casas, para não tomar o Espaço da coleta; de mais de 24 casas, desiste). Nesse tempo, Espaço nele com um cabresto na bolsa (feito na bancada da oficina com 4 fibras e 1 cipó) o faz seu, e o cabresto fica nele (`Herd.halter`). Cada criatura tem um cavalo só: quem já tem pode fazer amizade com outro, mas não pôr o cabresto. Nada no jogo vem de matar animais (fora os peixes): os itens do cavalo são de fibra vegetal. Abre a escolha do nome, como nos povoados: primeiro um começo (prefixo), depois o nome inteiro com cada final (sufixo), 6 por vez, com "Outros prefixos" e "Outros sufixos" (listas em `Herd.PREFIXES` e `Herd.SUFFIXES`; ex.: Bram + ion = Bramion). Susto que faz a manada fugir, ou ir para longe, perde a confiança ganha. O domesticado sai da manada, fica salvo no mundo (`horses` no `mundo.json`) com dono e nome, não some quando todos vão embora e relincha manso quando o dono chega perto. Espaço no seu cavalo sem nome abre a escolha do nome; o seu com nome e o de outra criatura não tomam o Espaço, que segue para a coleta. Tab (radar) diz as manadas selvagens a até 32 casas (uma linha por manada, no centro, com "fugindo" se galopam) e os cavalos domesticados pelo nome. Depuração: "Domesticar o cavalo mais perto".
+
+**Seguir e montar.** O domesticado segue o dono sempre, menos quando para para comer (de vez em quando, 4 a 8 segundos): quando você se afasta mais de 3,2 casas, ele vem a passo (2,2 casas/s) até 1,4 casa atrás de você; de mais de 10 casas vem a galope, e de mais de 40 (teleporte, desmaio) surge ao seu lado. M monta no seu cavalo, a até 2 casas, e desmonta (o Espaço fica para a coleta, já que o cavalo segue você): o cavalo anda sozinho para a frente no andar escolhido: W (um toque, ou segurado a cada 0,9 s) sobe de parado para passo (1,9 casa/s), trote (3) e galope (4,3); segurar S desce um andar a cada 0,5 s até parar, e parado, segurar S dá ré enquanto segura, num trote um pouco mais lento (2,4 casas/s, cascos e pernas 25% mais lentos). A e D não fazem nada: para ir para os lados, gire com Q e E. Andando para a frente, o cavalo olha o caminho adiante (0,7 s, entre 1,2 e 3,2 casas) e desvia sozinho de obstáculos pequenos, como um bambu, até 50° para cada lado, voltando à direção de quem monta depois. Numa trilha cercada de mata, bambuzal ou água, segue as curvas dela sozinho (`RideSteer.trail_offset`); se a curva passa de 30°, quem monta gira junto, com o clique da bússola; virando para sair da trilha, a rédea solta. Sem saída a tempo, trotando ou galopando, derrapa e para antes de bater (7 casas/s²), relinchando; a passo, só para e bufa. A derrapada sorteia entre `derrapada_<chão>_<n>` em `assets/sounds/cavalos` (terra, grama e neve; madeira e água usam as de terra). Quem monta ouve a derrapada embaixo de si; os outros a ouvem no lugar do cavalo, junto com o relincho. Se ainda assim esbarrar, o cavalo para. O servidor aceita até 4,6 casas/s de quem está montado (`WorldState.riding`). Montado, os seus passos dão lugar aos cascos do cavalo (passo, trote ou galope conforme a velocidade, `Herd.RIDE_TROT` e `Herd.RIDE_GALLOP`): para você, embaixo de você, perto do volume dos passos (`RIDDEN_DB`); para os outros, no lugar do cavalo. Desmontando, o cavalo fica ali e volta a seguir. Sair do mundo montado desmonta. Montado, J (golpe, garras, machado, faca, enxada) e H (habilidade da espécie) não fazem nada, sem aviso, menos o uivo do Geado; o servidor também recusa. Perto do seu cavalo (a até 3 casas) ou montado, o menu das setas ganha **Cavalo**: o alforje, feito na bancada da oficina com 10 fibras, vai no lombo e leva até 24 de carga (os mesmos pesos da bolsa); dá para guardar e pegar por ali, ele fica com o cavalo e é salvo no mundo (`gear` e `pack` em `horses`), e só sai vazio (`Herd.set_gear`, `Herd.move_pack`). Também ali vai o **manto**, feito na bancada com 16 fibras e 2 resinas: onde a criatura perderia calor (`Body.cold_days`, a noite no Declínio e na Ressurgência, o dia todo na Longa Escuridão e sempre nas terras geladas), longe de fogueira acesa e sem manto, o cavalo treme de frio (avisa ao começar e ao parar), segue a 80% da velocidade e não vem a galope; montado, não passa do trote e anda a 80% (`Herd.COLD_SLOW`). Em **Soltar o cavalo** (com confirmação), o cabresto, o manto, o alforje e o que houver nele voltam para a bolsa, e o cavalo volta a ser selvagem, sem dono nem nome, na manada mais perto (a até 48 casas) ou sozinho; fica uns 20 segundos manso perto de você (dá para pôr o cabresto de novo) e depois vai embora (`Herd.release`). Assim dá para trocar de cavalo. A depuração dá alforje, cabresto e manto no pacote de ferramentas.
 
 ## Senha do personagem
 

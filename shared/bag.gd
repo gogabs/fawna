@@ -44,9 +44,9 @@ static func apply_limit(limit: int) -> void:
 ## Peso de cada item. O que não estiver aqui pesa DEFAULT_WEIGHT.
 const WEIGHTS := {
 	"frutas": 1,
-	"lenha_pequena": 1,
-	"lenha_media": 2,
-	"lenha_grande": 4,
+	"madeira_pequena": 1,
+	"madeira_media": 2,
+	"madeira_grande": 4,
 	"pedra_pequena": 1,
 	"pedra_media": 3,
 	"pedra_grande": 6,
@@ -62,6 +62,19 @@ const WEIGHTS := {
 	"resina": 1,
 	"faca": 2,
 	"tocha": 2,
+	"alforje": 2,
+	"cabresto": 1,
+	"manto_cavalo": 3,
+	"raiz": 1,
+	"raiz_assada": 1,
+	"castanha": 1,
+	"estragada": 1,
+	"broa": 2,
+	"ensopado": 2,
+	"pote": 3,
+	"pote_cru": 3,
+	"pote_selado": 3,
+	"manto": 3,
 }
 const DEFAULT_WEIGHT := 1
 
@@ -74,6 +87,21 @@ const CATEGORIES := {
 	"lanca": "arma",
 	"clava": "arma",
 	"frutas": "comida",
+	"raiz": "comida",
+	"raiz_assada": "comida",
+	"cogumelo": "comida",
+	"milho": "comida",
+	"milho_assado": "comida",
+	"broa": "comida",
+	"ensopado": "comida",
+	"pote": "utensilio",
+	"pote_cru": "utensilio",
+	"pote_selado": "utensilio",
+	"fruta_seca": "comida",
+	"cogumelo_seco": "comida",
+	"manto": "roupa",
+	"castanha": "comida",
+	"estragada": "comida",
 }
 const DEFAULT_CATEGORY := "material"
 
@@ -87,7 +115,7 @@ const WIELDABLE := {
 	"machado": "J para golpear.",
 	"lanca": "J para golpear.",
 	"clava": "J para golpear.",
-	"enxada": "J para capinar a grama de uma obra.",
+	"enxada": "J para capinar a grama de uma obra, ou para cavar a terra atrás de raízes.",
 	"faca": "J no tronco de uma árvore, poucas vezes, para tirar resina.",
 	"tocha": "Vai na mão não dominante. Para acendê-la, use Equipamento perto de uma fogueira acesa; longe de uma, risque faca ou sílex numa pedra pequena com Espaço.",
 }
@@ -104,16 +132,26 @@ const NAMES := {
 	"enxada": ["enxada", "enxadas"],
 	"faca": ["faca bruta de sílex", "facas brutas de sílex"],
 	"tocha": ["tocha", "tochas"],
+	"alforje": ["alforje", "alforjes"],
+	"cabresto": ["cabresto", "cabrestos"],
+	"manto_cavalo": ["manto de cavalo", "mantos de cavalo"],
+	"pote_cru": ["pote de argila cru", "potes de argila crus"],
+	"pote": ["pote de argila", "potes de argila"],
+	"pote_selado": ["pote selado", "potes selados"],
+	"manto": ["manto de fibra", "mantos de fibra"],
 }
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "lenha", "lenha_grande", "lenha_media", "lenha_pequena", "frutas", "madeira", "faca", "tocha", "fibra", "resina"]
+const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "madeira", "madeira_grande", "madeira_media", "madeira_pequena", "frutas", "faca", "tocha", "fibra", "resina", "broa", "fruta_seca"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".
 static func with_article(item: String) -> String:
-	return ("a " if item in FEMININE else "o ") + spoken_name(item)
+	var feminine: bool = item in FEMININE
+	if Economy.KIND_NAMES.has(Economy.size_of(item)):
+		feminine = Economy.is_feminine(item)
+	return ("a " if feminine else "o ") + spoken_name(item)
 
 
 ## Nome do item com a primeira letra maiúscula, no singular: "Argila".
@@ -152,7 +190,7 @@ static func count(bag: Dictionary, item: String) -> int:
 		return int(bag.get(item, 0))
 	var total := int(bag.get(item, 0))
 	if Economy.has_sizes(item):
-		for size: String in Economy.SIZE_ORDER:
+		for size: String in Economy.subtypes_of(item):
 			total += int(bag.get(Economy.sized(item, size), 0))
 	return total
 
@@ -183,7 +221,7 @@ static func give_starter(bag: Dictionary, wielded: String) -> void:
 
 
 static func weight_of(item: String) -> int:
-	return int(WEIGHTS.get(item, DEFAULT_WEIGHT))
+	return int(WEIGHTS.get(item, WEIGHTS.get(Economy.base_of(item), DEFAULT_WEIGHT)))
 
 
 ## Peso de um punhado de itens (item -> quantidade).
@@ -266,7 +304,7 @@ static func keys_of(bag: Dictionary, base: String) -> Array:
 	if int(bag.get(base, 0)) > 0:
 		keys.append(base)
 	if Economy.has_sizes(base):
-		for size: String in Economy.SIZE_ORDER:
+		for size: String in Economy.subtypes_of(base):
 			if int(bag.get(Economy.sized(base, size), 0)) > 0:
 				keys.append(Economy.sized(base, size))
 	return keys

@@ -80,7 +80,7 @@ um é sorteado, sem repetir o anterior. Ainda fora do repositório, até o Gabs
 autorizar publicar: copie para `assets/sounds/recursos/` para ouvir.
 
 Loops para achar de ouvido (em 3D, na posição do recurso): `amb_bambu`,
-`amb_frutas`. Os gravetos saem dos arbustos e não têm loop próprio. A argila não tem loop: fica
+`amb_frutas`. Os galhos caídos (madeira média e pequena) não têm loop próprio; `coleta_lenha` soa ao catá-los. A argila não tem loop: fica
 sempre na beira da água, que já soa. Sem os arquivos, o jogo usa sons do
 pacote `world/` e sons gerados por código (`client/sound_bank.gd`).
 
@@ -102,7 +102,7 @@ filtrados e nivelados; publicados com autorização dele. Todos CC0 1.0.
 - `recursos/coleta_argila_1..3.ogg`: "MudSquelch" ([ahill86, 207142](https://freesound.org/s/207142/)).
 - `recursos/coleta_frutas_1..3.ogg`: "Rustling foliage" ([DDT197, 445788](https://freesound.org/s/445788/)) com o estalo de "pencil snap..." ([kyles, 637746](https://freesound.org/s/637746/)).
 - `recursos/amb_bambu.ogg` e `recursos/amb_frutas.ogg`: gerados por código para o projeto (`tools/sons_recursos.py`): madeira oca batendo, e farfalhar baixinho com gotinhas ascendentes (a frutinha).
-- Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos gravetos (eles saem dos arbustos, que já soam).
+- Sem som próprio, de propósito: o emissor da argila (a água por perto já soa) e o dos galhos caídos ao pé das árvores.
 
 ## Árvores
 
@@ -113,3 +113,47 @@ queda são gerados por código (`SoundBank.tree_knock`, `tree_creak`,
 pôr em `recursos/` com os nomes `arvore_golpe_1..4.ogg`,
 `arvore_rangido_1..3.ogg`, `arvore_queda_1..3.ogg` e `coleta_madeira_1..4.ogg`:
 o jogo passa a usá-las sozinho.
+
+## Cavalinhos-da-bruma (cavalos/)
+
+Sons dos cavalos selvagens (`client/horse_sounds.gd`), escolhidos pelo Gabs
+em várias rodadas de comparação. Recortados, limpos de ruído, em mono 48 kHz.
+Publicados com autorização do Gabs (2026-11-22).
+
+- `casco_<chão>_<n>.ogg`: uma pisada. Cada uma junta um casco gravado e uma
+  pisada do "World Sounds Audio Pack" (CC0, ver `world/`) num tom mais grave:
+  grama com `grassstep`/`brushstep`, terra com `dirtstep`, neve com
+  `deepsnowstep` (casco abafado), madeira com `bridge2step`/`creekywoodstep`.
+  Grama, terra e neve com o casco um pouco mais baixo e a cauda suavizada.
+- `galope_<chão>_<n>.ogg`: uma passada inteira de galope: quatro batidas
+  (na grama, as mesmas pisadas do passo), o corpo (galope gravado, grave e baixo) e uma bufada curta de fôlego.
+- `relincho_<n>`, `bufo_<n>`, `manso_<n>` (relincho manso), `pasto_<n>`.
+- `corpo_<n>` (o corpo assentando no lombo, ao montar) e `toque_<n>` (os
+  calcanhares no lombo, ao apertar W montado): gerados por código, sem gravação.
+- `derrapada_<chão>_<n>.ogg`: a freada com derrapada antes de bater, sorteada
+  por chão. Terra com e sem uma camada de terra arrastando; grama e neve são
+  as mesmas freadas abafadas.
+
+Gravações de origem, todas no Freesound:
+
+- Relinchos: ["Horse_Whinny", de foxen10](https://freesound.org/s/149024/) (CC0),
+  ["horse's whinny", de Kubuzz](https://freesound.org/s/347036/) (CC0),
+  ["horse neigh shortened", de shadoWisp](https://freesound.org/s/269571/) (CC0),
+  ["Horse Whinny, Close, A", de InspectorJ](https://freesound.org/s/419231/) (CC BY 4.0).
+- Bufos: ["horse snort", de bruno.auzet](https://freesound.org/s/538697/) (CC0),
+  ["Horse (snort) 3", de o_ciz](https://freesound.org/s/475483/) (CC0),
+  ["horse snort, breathe, eat", de Garuda1982](https://freesound.org/s/531429/) (CC0),
+  ["horse snort 7", de ERH](https://freesound.org/s/32044/) (CC BY),
+  ["Horse Snort 2", de GoodListener](https://freesound.org/s/322454/) (CC BY).
+- Relincho manso: ["Horses, Soft Nicker", de TheKingOfGeeks360](https://freesound.org/s/861234/) (CC0),
+  ["Horse Nicker 2", de GoodListener](https://freesound.org/s/322449/) (CC BY).
+- Pastando: ["Horse Eating", de crattray1997](https://freesound.org/s/578138/) (CC BY).
+- Cascos: ["Horse Clip Clopping Downhill", de swiftoid](https://freesound.org/s/182504/) (CC0),
+  ["horse steps 01", de gastonsaenz](https://freesound.org/s/362959/) (CC BY).
+- Galope: ["Foley Horse Galloping", de StephenSaldanha](https://freesound.org/s/165532/) (CC0).
+- Derrapada: recortada de ["Horse_Running_And_Stop_In_Dirt 02", de n_audioman](https://freesound.org/s/321956/) (CC BY 4.0)
+  e ["Horse_Gallop_And_Slide 01", de n_audioman](https://freesound.org/s/321952/) (CC BY 4.0), com a camada
+  de terra de ["RunningtoStopInDirt", de gbnelso](https://freesound.org/s/684452/) (CC0). As de grama e neve são abafadas.
+
+Obrigado a todos. Os gravados CC BY pedem crédito: InspectorJ, ERH,
+GoodListener, crattray1997, gastonsaenz e n_audioman.

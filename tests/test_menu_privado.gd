@@ -8,6 +8,7 @@ var _failures := 0
 func _ready() -> void:
 	Net.mode = Net.Mode.NONE  # sem tela o Net escolhe servidor; aqui queremos o menu
 	Net.player_name = ""
+	Net.password = ""
 	var menu: Control = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	add_child(menu)
 	await get_tree().process_frame
@@ -19,6 +20,7 @@ func _ready() -> void:
 	menu.join_button.pressed.emit()
 	_check(Net.mode == Net.Mode.NONE and not menu.join_page.visible, "sem nome não hospeda nem procura")
 	Net.player_name = "Ana"
+	Net.password = "abcdef"  # desde o login, nome e senha são obrigatórios
 	menu._show_main(false)
 	_check(menu.connect_button.text == "Entrar no mundo como Ana", "botão com nome")
 	menu.join_button.pressed.emit()
