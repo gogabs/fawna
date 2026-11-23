@@ -75,6 +75,9 @@ var _strike_rng := RandomNumberGenerator.new()
 
 var _last_collect := {}  # id -> Time.get_ticks_msec()
 var _last_move := {}  # id -> Time.get_ticks_msec()
+## Quem está montado (id -> true), mantido pelo nó dos cavalos.
+var riding := {}
+const RIDE_MAX_SPEED := 4.6  # casas por segundo: o galope montado (game.gd RIDE_SPEEDS, 4,3)
 ## Habilidades ativas (tecla H; ver Abilities).
 var _ability_ready := {}  # id -> ms em que dá para usar de novo
 var dashing := {}  # id -> { "until": ms, "tired_until": ms } (disparada)
@@ -859,6 +862,8 @@ func move_to(id: int, pos: Vector2, now_ms := -1) -> Dictionary:
 	var seconds := clampf((now_ms - int(_last_move.get(id, now_ms - 1000))) / 1000.0, 0.0, 1.0)
 	# Espécies mais rápidas (cervo: leve e veloz) andam mais longe por segundo.
 	var allowed := MAX_SPEED * maxf(1.0, Species.effect(species_of(id), "speed")) * dash_boost(id, now_ms) * seconds + MOVE_SLACK
+	if riding.has(id):
+		allowed = RIDE_MAX_SPEED * seconds + MOVE_SLACK
 	if not pos.is_finite() or from.distance_to(pos) > allowed or not world.is_free(pos) \
 			or not Species.may_step(species_of(id), world, pos):
 		return {"ok": false, "pos": from}

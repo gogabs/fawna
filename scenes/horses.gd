@@ -18,6 +18,10 @@ const STEP_REACH := 22.0  # casas: mais longe que isso, os cascos não tocam
 ## GALLOP_STRIDE. O andamento flutua devagar, sem passar dos limites, para não
 ## soar como metrônomo nem correr ou arrastar demais.
 const WALK_GAPS := [0.26, 0.24, 0.26, 0.24]
+## Trote (só montado): duas batidas por passada, diagonais, bem marcadas.
+const TROT_GAPS := [0.29, 0.31]
+const RIDE_GRACE := 0.35  # segundos
+const RIDE_BACK_TEMPO := 1.25  # de ré, o trote soa 25% mais lento (a velocidade também é menor)
 const WALK_TEMPO := [0.9, 1.1]
 const GALLOP_STRIDE := 0.55  # era 0,42: as passadas emendavam umas nas outras
 ## Galopando, a manada vai no mesmo compasso (cada cavalo até GALLOP_SPREAD
@@ -37,6 +41,20 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## 6 dB, os cascos mais 4 e o galope mais 8.
 const HORSES_DB := -16.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
+## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
+## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
+## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
+## arquivos, contra HOOF_PEAK_DB) e somado a RIDDEN_DB: o Gabs quis trote e
+## galope um pouco acima dos passos. HOOF_PEAK_DB foi medido com a camada do
+## casco em +9 dB; ela desceu para +4,5 (estava alto) e a tabela ficou, para a
+## redução valer também montado.
+const RIDDEN_DB := {"casco": -4.0, "trote": -1.0, "galope": 1.0}  # 0/3/3 ficou alto: meio do caminho
+const RIDDEN_VOICES := 3
+const STEP_PEAK_DB := -11.5
+const HOOF_PEAK_DB := {
+	"casco": {"grama": -17.9, "terra": -9.3, "neve": -14.9, "madeira": -8.2},
+	"galope": {"grama": -6.5, "terra": -5.2, "neve": -11.9, "madeira": -3.6},
+}
 const HEAD_HEIGHT := 1.3  # metros: de onde saem bufo e relincho
 const HOOF_HEIGHT := 0.1
 ## Força do panorama estéreo nas fontes dos cavalos (ver set_wide). Medido
@@ -58,6 +76,8 @@ var _clock := 0.0
 var wide := true
 var _gallop_next := 0.0  # próxima batida comum do galope
 var _gallop_drift := 0.0
+var _riding := -1  # o cavalo em que estou montado (riding_mine)
+var _ridden_voices := []  # AudioStreamPlayer dos cascos do cavalo montado
 
 
 ## "tame": os domesticados salvos no mundo (Herd.tame_to_save).
@@ -141,7 +161,7 @@ func _server_step() -> void:
 		var args: Array = message[2]
 		match message[1]:
 			"appear":
-				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11])
+				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12])
 			"gone":
 				horse_gone.rpc_id(peer, args[0])
 			"move":
@@ -153,6 +173,17 @@ func _server_step() -> void:
 			"tamed":
 				game._dirty = true
 				horse_tamed.rpc_id(peer, args[0])
+			"rider":
+				horse_rider.rpc_id(peer, args[0], args[1])
+	_sync_riding(game)
+
+
+## Quem está montado (WorldState.riding): a velocidade permitida muda.
+func _sync_riding(game: Node) -> void:
+	game.state.riding.clear()
+	for horse: Dictionary in herd.horses.values():
+		if int(horse["rider"]) >= 0:
+			game.state.riding[int(horse["rider"])] = true
 
 
 # --- Domesticar (pedidos dos clientes, no servidor) -----------------------------
@@ -197,6 +228,34 @@ func request_name(horse_id: int, new_name: String) -> void:
 		named_result.rpc_id(id, new_name)
 
 
+## Espaço no próprio cavalo (com nome): monta.
+@rpc("any_peer", "call_local", "reliable")
+func request_mount(horse_id: int) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var result := herd.mount(id, horse_id, game.state.players[id]["pos"], Time.get_ticks_msec())
+	_sync_riding(game)
+	mount_result.rpc_id(id, horse_id, result)
+
+
+## Montado, o Espaço desmonta.
+@rpc("any_peer", "call_local", "reliable")
+func request_dismount() -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var horse_id := herd.dismount(id, Time.get_ticks_msec())
+	_sync_riding(game)
+	if horse_id >= 0:
+		mount_result.rpc_id(id, horse_id, "desmontou")
+
+
 ## Depuração: domestica o cavalo selvagem mais perto de quem pediu.
 func debug_tame(id: int, point: Vector2) -> int:
 	if herd == null:
@@ -210,18 +269,21 @@ func debug_tame(id: int, point: Vector2) -> int:
 # --- Avisos do servidor (executados nos clientes) ------------------------------
 
 @rpc("authority", "call_local", "reliable")
-func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int, owner: String, horse_name: String, herd_id: int) -> void:
+func horse_appeared(id: int, pitch: float, coat: int, from: Vector2, to: Vector2, delay: float, duration: float, elapsed: float, gait: int, owner: String, horse_name: String, herd_id: int, rider_key: String) -> void:
 	_horses[id] = {
-		"pitch": pitch, "coat": coat, "from": from, "to": to, "owner": owner, "name": horse_name, "herd": herd_id,
+		"pitch": pitch, "coat": coat, "from": from, "to": to, "owner": owner, "name": horse_name, "herd": herd_id, "rider": rider_key,
 		"start": _clock + delay - elapsed, "duration": duration, "gait": gait,
 		"next_step": _clock + randf() * 0.5, "beat": 0, "drift": 0.0,
 		"next_snort": _clock + _snort_gap(gait) * 0.5, "last_hoof": null,
 	}
+	_set_rider(id, rider_key)
 
 
 @rpc("authority", "call_local", "reliable")
 func horse_gone(id: int) -> void:
 	_horses.erase(id)
+	if _riding == id:
+		_riding = -1
 	for voice in _voices:
 		if voice["horse"] == id:
 			voice["horse"] = -1
@@ -232,11 +294,18 @@ func horse_moved(id: int, from: Vector2, to: Vector2, delay: float, duration: fl
 	if not _horses.has(id):
 		return
 	var horse: Dictionary = _horses[id]
+	# Montado, os trechos chegam um atrás do outro: no mesmo andar, o ritmo
+	# dos cascos continua em vez de recomeçar a cada trecho. O meu cavalo
+	# segue o meu andar (horse_gait), não os avisos.
+	var going_on := id == _riding or (gait != Herd.Gait.STAND and horse_gait(id) == gait)
 	horse["from"] = from
 	horse["to"] = to
 	horse["start"] = _clock + delay - elapsed
 	horse["duration"] = duration
-	horse["gait"] = gait
+	if id != _riding:
+		horse["gait"] = gait
+	if going_on:
+		return
 	horse["next_step"] = INF if gait == Herd.Gait.GALLOP else maxf(float(horse["start"]), _clock)
 	horse["beat"] = 0
 	horse["next_snort"] = maxf(float(horse["start"]), _clock) + _snort_gap(gait) * 0.5
@@ -258,6 +327,36 @@ func horse_named(id: int, owner: String, horse_name: String) -> void:
 		_horses[id]["owner"] = owner
 		_horses[id]["name"] = horse_name
 		_horses[id]["herd"] = -1
+
+
+@rpc("authority", "call_local", "reliable")
+func horse_rider(id: int, rider_key: String) -> void:
+	_set_rider(id, rider_key)
+
+
+## Respostas do servidor a montar e desmontar (Herd.mount).
+@rpc("authority", "call_local", "reliable")
+func mount_result(id: int, result: String) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] montaria: %s" % result)
+	var horse_name: String = str(_horses.get(id, {}).get("name", ""))
+	if horse_name.is_empty():
+		horse_name = "seu cavalo"
+	match result:
+		"montou":
+			_set_rider(id, get_parent().my_owner_key())
+			get_parent().ride_reset()
+			Speech.say("Você monta em %s." % horse_name)
+		"desmontou":
+			_set_rider(id, "")
+			get_parent().ride_reset()
+			Speech.say("Você desmonta de %s." % horse_name)
+		"longe":
+			Speech.say("Chegue mais perto do cavalo.")
+		"montado":
+			Speech.say("Alguém já está montado nele.")
+		"nao_e_seu":
+			Speech.say("Esse cavalo não é seu.")
 
 
 ## Respostas do servidor ao Espaço num cavalo (ver Herd.offer).
@@ -325,13 +424,84 @@ func _ask_name(id: int, choice: String) -> String:
 	return ""
 
 
-## O cavalo ao alcance do Espaço (Herd.OFFER_REACH), o mais perto, ou -1.
-func reach_target(me: Vector2) -> int:
+## M: o seu cavalo mais perto, a até Herd.MOUNT_REACH, para montar (o id); ou
+## o que falar (longe, sem cavalo, ou a escolha do nome se ainda não tem).
+func mount_nearest(me: Vector2) -> Variant:
+	var mine: String = get_parent().my_owner_key()
 	var best := -1
-	var best_d := Herd.OFFER_REACH
+	var best_d := Herd.MOUNT_REACH
+	var any := false
 	for id: int in _horses:
+		if str(_horses[id]["owner"]) != mine or mine.is_empty():
+			continue
+		any = true
 		var d := horse_point(id).distance_to(me)
 		if d <= best_d:
+			best_d = d
+			best = id
+	if best < 0:
+		return "Seu cavalo está longe." if any else "Nenhum cavalo seu por perto."
+	if str(_horses[best]["name"]).is_empty():
+		return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(best, 0))
+	return best
+
+
+## Subindo no cavalo: ele ajeita uma pata, no chão de "point".
+func shift_hoof(point: Vector2, extra_db: float) -> void:
+	var surface := _surface_at(point)
+	var recorded := HorseSounds.has_hooves(surface)
+	var peak: float = HOOF_PEAK_DB["casco"].get(surface, -9.0) if recorded else -9.0
+	_play_ridden(HorseSounds.hoof(surface, false), get_parent().FOOTSTEP_DB + STEP_PEAK_DB - peak + RIDDEN_DB["casco"] + extra_db)
+
+
+## Um bufo do cavalo, de onde ele está (ao desmontar).
+func snort(id: int) -> void:
+	if _horses.has(id):
+		_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
+
+
+## O cavalo em que estou montado, ou -1.
+func riding_mine() -> int:
+	return _riding
+
+
+func _set_rider(id: int, rider_key: String) -> void:
+	if not _horses.has(id):
+		return
+	_horses[id]["rider"] = rider_key
+	var mine: String = get_parent().my_owner_key()
+	if not rider_key.is_empty() and rider_key == mine:
+		_riding = id
+	elif _riding == id:
+		_riding = -1
+
+
+## Alguém com essa chave de dono está montado (os passos dele não soam).
+func is_riding_key(key: String) -> bool:
+	if key.is_empty():
+		return false
+	for horse: Dictionary in _horses.values():
+		if str(horse.get("rider", "")) == key:
+			return true
+	return false
+
+
+## O cavalo ao alcance do Espaço (Herd.OFFER_REACH, ou MOUNT_REACH no seu), o
+## mais perto, ou -1.
+## Montado, nenhum (o Espaço desmonta).
+func reach_target(me: Vector2) -> int:
+	var best := -1
+	var best_d := INF
+	var mine: String = get_parent().my_owner_key()
+	for id: int in _horses:
+		var owner: String = _horses[id]["owner"]
+		# Só os selvagens (fruta) e o seu ainda sem nome: os outros não tomam o
+		# Espaço da coleta (o seu segue você o tempo todo).
+		if not owner.is_empty() and (owner != mine or not str(_horses[id]["name"]).is_empty()):
+			continue
+		var d := horse_point(id).distance_to(me)
+		var reach := Herd.MOUNT_REACH if owner == mine else Herd.OFFER_REACH
+		if d <= reach and d < best_d:
 			best_d = d
 			best = id
 	return best
@@ -349,7 +519,7 @@ func interact(id: int) -> String:
 	if owner == get_parent().my_owner_key():
 		if horse_name.is_empty():
 			return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0))
-		return "%s, seu cavalo." % horse_name
+		return "%s, seu cavalo. M monta." % horse_name
 	return "%s, cavalo de %s." % [horse_name, owner] if not horse_name.is_empty() else "Cavalo de %s." % owner
 
 
@@ -373,6 +543,8 @@ func radar_entries(me: Vector2) -> Array:
 			wild.append(id)
 			continue
 		var horse_name: String = horse["name"] if not str(horse["name"]).is_empty() else "Cavalo sem nome"
+		if str(horse.get("rider", "")) == mine:
+			continue
 		var label := "%s, seu cavalo" % horse_name if owner == mine else "%s, cavalo de %s" % [horse_name, owner]
 		out.append([at.distance_to(me), label, at - me])
 	var by_herd := {}
@@ -404,6 +576,8 @@ func reach_distance(id: int, me: Vector2) -> float:
 
 ## Onde o cavalo está agora, em casas.
 func horse_point(id: int) -> Vector2:
+	if id == _riding:
+		return get_parent()._pos  # montado: o cavalo está sob mim, sem o atraso da rede
 	var horse: Dictionary = _horses[id]
 	var duration: float = horse["duration"]
 	if duration <= 0.0:
@@ -416,9 +590,22 @@ func horse_point(id: int) -> Vector2:
 func horse_gait(id: int) -> int:
 	if not _horses.has(id):
 		return Herd.Gait.STAND
+	if id == _riding:
+		# Montado, o andar vem do próprio movimento, sem esperar o servidor:
+		# um aviso atrasado (troca de região, rede) fazia os cascos travarem.
+		return get_parent().ride_gait()
 	var horse: Dictionary = _horses[id]
-	var x := (_clock - float(horse["start"])) / maxf(0.001, float(horse["duration"]))
-	return int(horse["gait"]) if x > 0.0 and x < 1.0 else Herd.Gait.STAND
+	var duration := float(horse["duration"])
+	var t := _clock - float(horse["start"])
+	# Trechos curtos (alguém montado): um pouco de folga no fim, para um aviso
+	# que atrasa não cortar o ritmo dos cascos.
+	var grace := RIDE_GRACE if duration < 0.5 else 0.0
+	return int(horse["gait"]) if t > 0.0 and t < duration + grace else Herd.Gait.STAND
+
+
+## Ritmo da animação das pernas (1 = normal): de ré montado, mais lento.
+func horse_tempo(id: int) -> float:
+	return 1.0 / RIDE_BACK_TEMPO if id == _riding and get_parent().riding_back() else 1.0
 
 
 ## Os cavalos conhecidos (id -> pelagem), para a vista 3D.
@@ -449,9 +636,16 @@ func _client_steps() -> void:
 	_gallop_clock()
 	for id: int in _horses:
 		var gait := horse_gait(id)
+		var horse: Dictionary = _horses[id]
+		if id == _riding and int(horse.get("ridden_gait", -1)) != gait:
+			# Mudou de andar montado: o ritmo recomeça já (o galope, na batida).
+			horse["ridden_gait"] = gait
+			horse["id_riding"] = true
+			horse["gait"] = gait
+			horse["beat"] = 0
+			horse["next_step"] = INF if gait == Herd.Gait.GALLOP else _clock
 		if gait == Herd.Gait.STAND:
 			continue
-		var horse: Dictionary = _horses[id]
 		if _clock < float(horse["next_step"]):
 			continue
 		var gallop := gait == Herd.Gait.GALLOP
@@ -468,9 +662,15 @@ func _client_steps() -> void:
 		# Cascos gravados: só um tiquinho do tom do cavalo, senão muda o ritmo.
 		var pitch := (1.0 + (float(horse["pitch"]) - 1.0) * 0.3) * randf_range(0.98, 1.02) if recorded else float(horse["pitch"]) * randf_range(0.95, 1.05)
 		var jitter := randf_range(-1.0, 1.0) if gallop else randf_range(-3.0, 1.5)
-		if gallop and not heard.has(id):
-			jitter += GALLOP_BACK_DB
-		_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
+		if id == _riding:
+			# Montado: embaixo de você, no volume dos seus passos.
+			var ridden := "galope" if gallop else ("trote" if gait == Herd.Gait.TROT else "casco")
+			var peak: float = HOOF_PEAK_DB["galope" if gallop else "casco"].get(surface, -9.0) if recorded else -9.0
+			_play_ridden(stream, get_parent().FOOTSTEP_DB + STEP_PEAK_DB - peak + RIDDEN_DB[ridden] + jitter * 0.5)
+		else:
+			if gallop and not heard.has(id):
+				jitter += GALLOP_BACK_DB
+			_play(id, stream, SOUND_DB[kind] + jitter, pitch, HOOF_HEIGHT)
 		if _clock >= float(horse["next_snort"]):
 			horse["next_snort"] = _clock + _snort_gap(gait)
 			_play(id, HorseSounds.voice("bufo"), SOUND_DB["bufo"] + (1.0 if gallop else 0.0), float(horse["pitch"]), HEAD_HEIGHT)
@@ -513,6 +713,9 @@ func _next_gap(horse: Dictionary, gallop: bool) -> float:
 	var beat: int = horse["beat"]
 	horse["beat"] = beat + 1
 	var walk_tempo := clampf(1.0 + drift, WALK_TEMPO[0], WALK_TEMPO[1])
+	if int(horse["gait"]) == Herd.Gait.TROT:
+		var back := RIDE_BACK_TEMPO if horse.get("id_riding", false) and get_parent().riding_back() else 1.0
+		return float(TROT_GAPS[beat % TROT_GAPS.size()]) * walk_tempo * back + randfn(0.0, 0.01)
 	return maxf(0.08, float(WALK_GAPS[beat % WALK_GAPS.size()]) * walk_tempo + randfn(0.0, 0.03))
 
 
@@ -551,6 +754,22 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float, height:
 	player.position = _to_3d(horse_point(id), height)
 	player.play()
 	voice["started"] = _clock
+
+
+func _play_ridden(stream: AudioStream, volume_db: float) -> void:
+	if stream == null:
+		return
+	if _ridden_voices.is_empty():
+		for i in RIDDEN_VOICES:
+			var player := AudioStreamPlayer.new()
+			player.name = "Montaria_%d" % i
+			add_child(player)
+			_ridden_voices.append(player)
+	var voice: AudioStreamPlayer = _ridden_voices.pop_front()
+	_ridden_voices.append(voice)
+	voice.stream = stream
+	voice.volume_db = volume_db
+	voice.play()
 
 
 func _free_voice() -> Dictionary:

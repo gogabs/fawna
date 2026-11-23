@@ -22,6 +22,7 @@ func _init() -> void:
 		_test_summon(world, spot)
 		_test_taming(world, spot)
 		_test_tame_save(world, spot)
+		_test_follow_and_ride(world, spot)
 	_test_sounds()
 	_test_recorded()
 	for arg in OS.get_cmdline_user_args():
@@ -302,6 +303,71 @@ func _test_tame_save(world: WorldGen, spot: Vector2) -> void:
 	back.load_tame(JSON.parse_string(JSON.stringify(saved)))
 	var found := back.nearest(Vector2(saved[0]["x"], saved[0]["y"]), 0)
 	_check(not found.is_empty() and found["name"] == "Velura" and found["owner"] == "Lua" and int(found["herd"]) < 0, "domesticado volta do save com nome e dono")
+
+
+## O domesticado segue o dono (menos comendo), monta e desmonta.
+func _test_follow_and_ride(world: WorldGen, spot: Vector2) -> void:
+	var herd := Herd.new(world)
+	herd.update(0, {1: spot})
+	herd.peer_keys[1] = "Lua"
+	herd.peer_keys[2] = "Sol"
+	var id := herd.debug_tame(1, spot, 0)
+	var horse: Dictionary = herd.horses[id]
+	var at: Vector2 = horse["to"]
+	_run(herd, {1: at}, 250, 2.0)
+	# O dono anda para longe; o cavalo vem (pode parar para comer antes).
+	var away := _approach_from(herd, at, 8.0)
+	_run(herd, {1: away}, 2500, 20.0)
+	var near := herd.position_of(horse, 22500).distance_to(away)
+	_check(near <= Herd.FOLLOW_FAR, "domesticado segue o dono (ficou a %.1f casas)" % near)
+	# Comendo, não segue.
+	horse["eat_until_ms"] = 40000
+	var later := _approach_from(herd, away, 6.0)
+	_run(herd, {1: later}, 22750, 3.0)
+	var here := herd.position_of(horse, 25750)
+	_check(here.distance_to(later) > Herd.FOLLOW_FAR, "comendo, não segue")
+	# Longe demais: surge ao lado.
+	horse["eat_until_ms"] = 0
+	var gone := later + Vector2(60, 0)
+	_run(herd, {1: gone}, 26000, 1.0)
+	_check(herd.position_of(horse, 27000).distance_to(gone) <= Herd.FOLLOW_NEAR + 0.5, "muito longe, surge ao lado do dono")
+	# Montar: longe recusa, de outro recusa, perto monta.
+	var pos := herd.position_of(horse, 27000)
+	_check(herd.mount(1, id, pos + Vector2(5, 0), 27000) == "longe", "montar de longe recusa")
+	_check(herd.mount(2, id, pos, 27000) == "nao_e_seu", "montar no cavalo de outro recusa")
+	_check(herd.mount(1, id, pos, 27000) == "montou", "monta no próprio cavalo")
+	_check(herd.riding_of(1) == id, "sabe quem está montado")
+	_check(herd.mount(1, id, pos, 27000) == "montado", "não monta duas vezes")
+	# Montado, vai junto: a galope se rápido, a passo se devagar.
+	var messages := []
+	var t := 27250
+	var rider := pos
+	for i in 8:
+		rider += Vector2(1.0, 0)  # 4 casas/s
+		messages.append_array(herd.update(t, {1: rider}))
+		t += 250
+	_check(_gallops(messages) >= 6, "montado e rápido, galopa")
+	_check(herd.position_of(horse, t).distance_to(rider) < 1.2, "montado, vai junto de quem monta")
+	var trots := 0
+	for i in 8:
+		rider += Vector2(0.75, 0)  # 3 casas/s
+		for m in herd.update(t, {1: rider}):
+			if m[1] == "move" and int(m[2][6]) == Herd.Gait.TROT:
+				trots += 1
+		t += 250
+	_check(trots >= 6, "montado a 3 casas/s, trota")
+	var walks := 0
+	for i in 8:
+		rider += Vector2(0.475, 0)  # 1,9 casa/s
+		for m in herd.update(t, {1: rider}):
+			if m[1] == "move" and int(m[2][6]) == Herd.Gait.WALK:
+				walks += 1
+		t += 250
+	_check(walks >= 6, "montado e devagar, anda a passo")
+	_check(herd.dismount(1, t) == id and herd.riding_of(1) == -1, "desmonta")
+	herd.mount(1, id, herd.position_of(horse, t), t)
+	herd.forget_peer(1)
+	_check(int(horse["rider"]) == -1, "quem sai do mundo desmonta")
 
 
 func _test_recorded() -> void:
