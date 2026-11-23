@@ -4110,6 +4110,8 @@ func _run_auto_commands() -> void:
 				_craft("pote_cru")
 			"SECADOR":
 				_start_build("secador")
+			"OFICINA":  # testes, só quem hospeda: uma oficina 5x5 pronta perto (para o manto na bancada)
+				_test_workshop()
 			"BROA":  # testes, só quem hospeda: 3 espigas e a broa no forno aceso ao lado
 				if state != null:
 					state.inventory_of(my_id)["milho"] = 3
@@ -4191,6 +4193,32 @@ func _test_shelters() -> void:
 			if placed:
 				break
 	build_snapshot.rpc(state.builds.snapshot())
+
+
+## Teste: uma oficina 5x5 pronta, com a porta ao sul, perto de quem hospeda.
+func _test_workshop() -> void:
+	if state == null:
+		return
+	if not state.builds.has_settlement(world.region_of(WorldGen.cell_of(_pos))):
+		_test_settlement()
+	var here := WorldGen.cell_of(_pos)
+	for r in range(5, 60, 2):
+		for dx in range(-r, r + 1, 2):
+			for dy in [-r, r]:
+				for spot: Vector2i in [here + Vector2i(dx, dy), here + Vector2i(dy, dx)]:
+					if not state.builds.site_refusal("oficina", spot, 5, "sul").is_empty():
+						continue
+					var made: Dictionary = state.builds.start_site("oficina", spot, 5, "sul")
+					var build: Dictionary = state.builds.get_build(int(made["id"]))
+					build["done"] = true
+					build["phase"] = "obra"
+					build["stage"] = Crafting.stage_count("oficina")
+					build["prep"] = {}
+					build["removed"] = Builds.footprint_cells(spot, 5)
+					state.builds._register_walls(build)
+					print("[teste] oficina 5x5 em %s" % spot)
+					build_snapshot.rpc(state.builds.snapshot())
+					return
 
 
 ## Teste: um forno pronto e aceso colado no abrigo pronto mais perto de quem
