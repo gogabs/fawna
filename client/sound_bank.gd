@@ -190,7 +190,7 @@ static func chime() -> AudioStreamWAV:
 	return _cache["chime"]
 
 
-## Limite do menu flutuante (Baixo já na raiz): notinha descendente rápida de
+## Limite do menu flutuante (Esquerda já na raiz): notinha descendente rápida de
 ## interface, sem nada de colisão.
 static func ui_limit() -> AudioStreamWAV:
 	if not _cache.has("ui_limit"):

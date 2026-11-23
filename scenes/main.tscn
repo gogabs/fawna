@@ -124,12 +124,6 @@ layout_mode = 2
 text = "Gráficos"
 alignment = 0
 
-[node name="NavButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Navegação dos menus: Horizontal"
-alignment = 0
-
 [node name="BackButton" type="Button" parent="Center/Card/Pages/OptionsPage"]
 unique_name_in_owner = true
 layout_mode = 2

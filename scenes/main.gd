@@ -4,8 +4,8 @@ extends Control
 ## Usa nós nativos do Godot, que o leitor de tela lê sozinho (Godot 4.5+).
 ## Sem leitor de tela, anunciamos o foco com a fala do jogo.
 ##
-## A navegação é só por setas (sem Tab), na orientação escolhida em Opções
-## (ver MenuNav): escolher, confirmar e voltar. As setas são tratadas aqui, não
+## A navegação é só por setas (sem Tab nem Enter), sempre vertical (ver
+## MenuNav): cima e baixo escolhem, direita confirma e esquerda volta. As setas são tratadas aqui, não
 ## pela navegação de foco do Godot, que perdia o foco na primeira opção.
 ## Campos de texto são MenuTextField: na navegação mostram "Nome: valor" e
 ## só abrem o campo de digitar ao confirmar.
@@ -42,7 +42,6 @@ extends Control
 @onready var shadows_check: CheckButton = %ShadowsCheck
 @onready var msaa_button: Button = %MsaaButton
 @onready var glow_check: CheckButton = %GlowCheck
-@onready var nav_button: Button = %NavButton
 @onready var back_button: Button = %BackButton
 @onready var ui_sound: AudioStreamPlayer = %UiSound
 
@@ -100,10 +99,9 @@ func _ready() -> void:
 	shadows_check.toggled.connect(_on_shadows_toggled)
 	msaa_button.pressed.connect(_on_msaa_pressed)
 	glow_check.toggled.connect(_on_glow_toggled)
-	nav_button.pressed.connect(_on_nav_pressed)
-	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), graphics_button, graphics_back_button, preset_button, vsync_check, shadows_check, msaa_button, glow_check, nav_button, back_button, rescan_button, join_back_button]:
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), graphics_button, graphics_back_button, preset_button, vsync_check, shadows_check, msaa_button, glow_check, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
-	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button, preset_button, msaa_button, graphics_button, graphics_back_button]:
+	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, rescan_button, join_back_button, preset_button, msaa_button, graphics_button, graphics_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
 
 	_show_main(false)
@@ -260,7 +258,6 @@ func _show_options() -> void:
 	password_field.value = Net.password
 	vsync_check.set_pressed_no_signal(Net.vsync)
 	_refresh_graphics()
-	_refresh_nav_button()
 	main_page.hide()
 	options_page.show()
 	Speech.say("Configurações.", true)
@@ -333,21 +330,6 @@ func _refresh_graphics() -> void:
 	msaa_button.text = "Antisserrilhamento: %s" % ("Desligado" if Net.msaa == 0 else "%dx" % Net.msaa)
 	shadows_check.set_pressed_no_signal(Net.shadows)
 	glow_check.set_pressed_no_signal(Net.glow)
-
-
-func _on_nav_pressed() -> void:
-	Net.vertical_nav = not Net.vertical_nav
-	_refresh_nav_button()
-	# Aplica na hora, no menu e no jogo; salva ao sair de Opções.
-	Speech.say("Navegação %s. %s" % [_nav_name(), MenuNav.help()])
-
-
-func _nav_name() -> String:
-	return "vertical" if Net.vertical_nav else "horizontal"
-
-
-func _refresh_nav_button() -> void:
-	nav_button.text = "Navegação dos menus: %s" % _nav_name().capitalize()
 
 
 func _say_editing() -> void:

@@ -90,11 +90,11 @@ func _test_menu_info_and_empty() -> void:
 		{"label": "Equipamento", "open": func(): return [], "empty": "mãos livres"},
 	]
 	var menu := FloatingMenu.new(root)
-	_check(menu.press("cima") == "Bolsa. Argila, 2", "cima entra na bolsa")
-	_check(menu.press("cima") == "Argila, 2" and menu.depth() == 2, "item sem ação repete o nome e fica na bolsa")
+	_check(menu.press("direita") == "Bolsa. Argila, 2", "direita entra na bolsa")
+	_check(menu.press("direita") == "Argila, 2" and menu.depth() == 2, "item sem ação repete o nome e fica na bolsa")
+	menu.press("esquerda")
 	menu.press("baixo")
-	menu.press("direita")
-	_check(menu.press("cima") == "Equipamento: mãos livres.", "equipamento vazio diz mãos livres")
+	_check(menu.press("direita") == "Equipamento: mãos livres.", "equipamento vazio diz mãos livres")
 
 
 ## Quando o item em foco some, o foco sobe ao menu pai mais próximo que existe.
@@ -102,9 +102,9 @@ func _test_menu_sync_focus_up() -> void:
 	var bag := {"madeira_media": 2, "argila": 1}
 	var root := func() -> Array: return [{"label": "Bolsa", "open": func() -> Array: return _bag_menu(bag)}]
 	var menu := FloatingMenu.new(root)
-	menu.press("cima")  # Bolsa
-	menu.press("cima")  # Lenha, ou o item em foco
-	menu.press("cima")  # ações do item
+	menu.press("direita")  # Bolsa
+	menu.press("direita")  # Lenha, ou o item em foco
+	menu.press("direita")  # ações do item
 	_check(menu.depth() == 4, "desceu até as ações (profundidade %d)" % menu.depth())
 	bag.erase("madeira_media")
 	_check(menu.sync() != "" and menu.depth() == 2, "sem o item, o foco volta à bolsa (profundidade %d)" % menu.depth())

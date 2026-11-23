@@ -179,16 +179,16 @@ func _test_menu() -> void:
 				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = false; return "apagou"})
 			return items}]
 	var menu := FloatingMenu.new(root)
-	_check(menu.press("direita") == "Caminheiro", "com uma opção só, a navegação repete o nome")
-	_check(menu.press("cima") == "Caminheiro. Centro", "cima entra no Caminheiro")
+	_check(menu.press("baixo") == "Caminheiro", "com uma opção só, a navegação repete o nome")
+	_check(menu.press("direita") == "Caminheiro. Centro", "direita entra no Caminheiro")
 	_check(menu.depth() == 2, "deveria estar no submenu")
-	_check(menu.press("cima") == "rumo ao Centro" and ran == ["Centro"], "cima no Centro acende o cristal")
+	_check(menu.press("direita") == "rumo ao Centro" and ran == ["Centro"], "direita no Centro acende o cristal")
 	_check(menu.depth() == 2, "depois de executar, o menu continua onde está")
-	_check(menu.press("direita") == "Apagar o cristal, 2 de 2", "aceso, aparece a opção de apagar")
-	_check(menu.press("baixo") == "Caminheiro", "baixo volta")
+	_check(menu.press("baixo") == "Apagar o cristal, 2 de 2", "aceso, aparece a opção de apagar")
+	_check(menu.press("esquerda") == "Caminheiro", "esquerda volta")
 	var limits := [0]
 	menu.sound.connect(func(kind: String): limits[0] += 1 if kind == "limite" else 0)
-	_check(menu.press("baixo") == "" and limits[0] == 1, "baixo no começo só toca o som de limite")
+	_check(menu.press("esquerda") == "" and limits[0] == 1, "esquerda no começo só toca o som de limite")
 
 
 ## Menu Recursos: o cristal leva até o coletável mais próximo de cada tipo,
@@ -251,14 +251,14 @@ func _test_menu_stay() -> void:
 				items.append({"label": "Apagar o cristal", "run": func(): lit[0] = ""; return "apagou"})
 			return items}]
 	var menu := FloatingMenu.new(root)
-	menu.press("cima")
-	menu.press("cima")
 	menu.press("direita")
-	_check(menu.press("cima") == "pedras Pedras" and menu.depth() == 3, "escolher um recurso deixa o foco no lugar")
+	menu.press("direita")
+	menu.press("baixo")
+	_check(menu.press("direita") == "pedras Pedras" and menu.depth() == 3, "escolher um recurso deixa o foco no lugar")
 	_check(menu.current_label() == "Pedras", "o foco continua em Pedras")
-	_check(menu.press("cima") == "pedras " and lit[0] == "", "escolher de novo o mesmo destino apaga")
-	menu.press("cima")
-	_check(menu.press("baixo") == "Recursos, 1 de 2", "voltando, o nível de cima é recarregado com Apagar o cristal")
+	_check(menu.press("direita") == "pedras " and lit[0] == "", "escolher de novo o mesmo destino apaga")
+	menu.press("direita")
+	_check(menu.press("esquerda") == "Recursos, 1 de 2", "voltando, o nível de cima é recarregado com Apagar o cristal")
 
 
 func _test_contract() -> void:
@@ -305,17 +305,17 @@ func _test_menu_open_at() -> void:
 	var nouns := func() -> Array:
 		return [{"label": "Vale", "open": adjectives.bind("Vale")}, {"label": "Refúgio", "open": adjectives.bind("Refúgio")}]
 	var menu := FloatingMenu.new(func() -> Array: return [{"label": "Caminheiro", "info": "x"}, {"label": "Bolsa", "info": "y"}])
-	menu.press("direita")
+	menu.press("baixo")
 	_check(menu.open_at("Nome do povoado, primeira palavra", nouns) == "Nome do povoado, primeira palavra. Vale, 1 de 2", "abre na lista de substantivos")
-	_check(menu.press("direita") == "Refúgio, 2 de 2", "esquerda e direita passam pelos substantivos")
-	_check(menu.press("cima") == "Refúgio. Refúgio Sombrio, 1 de 2", "confirmar mostra os adjetivos já com o substantivo")
-	_check(menu.press("baixo") == "Refúgio, 2 de 2", "baixo volta aos substantivos")
-	menu.press("cima")
+	_check(menu.press("baixo") == "Refúgio, 2 de 2", "cima e baixo passam pelos substantivos")
+	_check(menu.press("direita") == "Refúgio. Refúgio Sombrio, 1 de 2", "confirmar mostra os adjetivos já com o substantivo")
+	_check(menu.press("esquerda") == "Refúgio, 2 de 2", "esquerda volta aos substantivos")
 	menu.press("direita")
-	menu.press("cima")
+	menu.press("baixo")
+	menu.press("direita")
 	_check(chosen[0] == "Refúgio Antigo" and menu.depth() == 1, "confirmar o adjetivo escolhe o nome e fecha o menu")
 	menu.open_at("Nome do povoado, primeira palavra", nouns)
-	_check(menu.press("baixo") == "Caminheiro, 1 de 2", "baixo na primeira lista desiste e volta ao menu das setas")
+	_check(menu.press("esquerda") == "Caminheiro, 1 de 2", "esquerda na primeira lista desiste e volta ao menu das setas")
 
 
 ## Mudança de região: só conta uma casa para dentro da região nova, para o
