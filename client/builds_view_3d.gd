@@ -278,18 +278,27 @@ func _process(delta: float) -> void:
 		var goal := Vector3(pos.x, 0.0, pos.y) * METERS
 		var yaw := -Compass.angle(int(data.get("heading", 0)))
 		if not _folk.has(id):
-			var node := _make_creature(id)
+			var node := _make_creature(id, str(data.get("species", "")))
 			node.position = goal
 			node.rotation.y = yaw
 			_folk[id] = node
 			add_child(node)
 		var node: Node3D = _folk[id]
+		var before := node.position
 		node.position = node.position.lerp(goal, minf(1.0, delta * 12.0))
+		if node.has_node("Corpo"):
+			var speed := before.distance_to(node.position) / maxf(delta, 0.001) / METERS
+			SpeciesModel.animate(node, speed, _clock, id, delta)
 		node.rotation.y = lerp_angle(node.rotation.y, yaw, minf(1.0, delta * 10.0))
 
 
-## Uma criatura simples: corpo, cabeça e um focinho que mostra para onde olha.
-func _make_creature(id: int) -> Node3D:
+## Outro jogador: o modelo da sua espécie (SpeciesModel) ou, sem espécie, uma
+## criatura simples: corpo, cabeça e um focinho que mostra para onde olha.
+func _make_creature(id: int, species_id: String = "") -> Node3D:
+	if SpeciesModel.has_model(species_id):
+		var model := SpeciesModel.build(species_id, _shapes)
+		model.name = "Criatura_%d" % id
+		return model
 	var node := Node3D.new()
 	node.name = "Criatura_%d" % id
 	var tint := Color.from_hsv(fmod(id * 0.137, 1.0), 0.35, 0.6)
