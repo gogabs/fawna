@@ -28,6 +28,8 @@ const ITEM_NAMES := {
 	"cogumelo": ["cogumelo", "cogumelos"],
 	"milho": ["espiga de milho", "espigas de milho"],
 	"milho_assado": ["milho assado", "milhos assados"],
+	"broa": ["broa de milho", "broas de milho"],
+	"ensopado": ["ensopado", "ensopados"],
 }
 
 ## Tamanhos, do maior para o menor, com o nome falado [singular, plural]
