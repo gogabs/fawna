@@ -166,10 +166,11 @@ func rescue_spot(peer: int) -> Vector2:
 	return Horrors.landing_spot(state.world, Horrors.nearest_shelter(state.world, from, shelters), blocked)
 
 
-func _lit_fires(builds: Builds) -> Array:
+## Posições das fogueiras e fornos acesos (ou só dos tipos "kinds").
+func _lit_fires(builds: Builds, kinds := ["fogueira", "forno"]) -> Array:
 	var fires := []
 	for build: Dictionary in builds.all():
-		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])):
+		if kinds.has(build["kind"]) and builds.is_lit(int(build["id"])):
 			fires.append(WorldGen.cell_center(build["cell"]))
 	return fires
 
