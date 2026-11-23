@@ -141,6 +141,32 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 		forearm.rotation.x = 0.28  # o antebraço dobra um pouco no cotovelo
 		_piece(arm, shapes["blob"], Vector3(0.0, -0.75, -0.1), Vector3(0.2, 0.2, 0.2), skin)  # palma
 		_piece(arm, shapes["box"], Vector3(0.0, -0.84, -0.12), Vector3(0.2, 0.1, 0.14), dark)  # bloco dos dedos (ponta escura)
+		if side == 0:  # tocha na mão esquerda (escondida até haver uma)
+			var torch := Node3D.new()
+			torch.name = "Tocha"
+			torch.position = Vector3(0.0, -0.8, -0.12)
+			torch.rotation.x = -0.5
+			torch.visible = false
+			arm.add_child(torch)
+			_piece(torch, shapes["trunk"], Vector3(0.0, 0.0, 0.0), Vector3(0.09, 0.5, 0.09), _material(Color("5a4630")))
+			var flame_material := StandardMaterial3D.new()
+			flame_material.albedo_color = Color("ff9a2e")
+			flame_material.emission_enabled = true
+			flame_material.emission = Color("ff7a1a")
+			flame_material.emission_energy_multiplier = 2.0
+			var flame := _piece(torch, shapes["cone"], Vector3(0.0, 0.34, 0.0), Vector3(0.12, 0.26, 0.12), flame_material)
+			flame.name = "Chama"
+		if side == 1:  # ferramenta na mão direita (escondida até empunhar algo)
+			var held := Node3D.new()
+			held.name = "Ferramenta"
+			held.position = Vector3(0.0, -0.8, -0.12)
+			held.rotation.x = -0.4
+			held.visible = false
+			arm.add_child(held)
+			var handle := _piece(held, shapes["trunk"], Vector3(0.0, -0.05, 0.0), Vector3(0.1, 0.55, 0.1), _material(Color("5a4630")))
+			handle.name = "Cabo"
+			var blade := _piece(held, shapes["box"], Vector3(0.0, -0.28, -0.08), Vector3(0.05, 0.16, 0.22), _material(Color("7b7f84")))
+			blade.name = "Cabeca"
 		if "garras" in extras:
 			for k in 3:
 				var claw := _piece(arm, shapes["cone"], Vector3((k - 1) * 0.045, -0.93, -0.13), Vector3(0.03, 0.12, 0.03), bone)
@@ -211,35 +237,199 @@ static func _add_ears(head: Node3D, shapes: Dictionary, kind: String, fur: Mater
 			ear.add_child(inner_piece)
 
 
-## Anima: "speed" é a velocidade em casas por segundo (0 parado). Mantém o seu
-## relógio de passo no próprio nó.
-static func animate(root: Node3D, speed: float, time: float, id: int, delta: float) -> void:
-	var moving := speed > 0.15
+## Duração de cada ação pontual (segundos). Cada evento (um golpe, um trabalho na obra) toca uma vez.
+const ACTIONS := {
+	"golpe": 0.45, "comer": 1.3, "coleta": 0.9, "obra": 1.2, "salto": 0.6, "uivo": 1.8,
+	"disparada": 3.0, "fucar": 2.0, "arar": 2.0, "pesca": 2.0,
+}
+
+
+## Dispara uma ação pontual (golpe, coleta, habilidade...). Ver ACTIONS.
+static func play(root: Node3D, action: String) -> void:
+	if ACTIONS.has(action):
+		root.set_meta("acao", action)
+		root.set_meta("acao_t", 0.0)
+
+
+## O som de um passo tocou: puxa a fase da perna para o ponto em que o pé
+## encosta no chão (perna toda para a frente ou toda para trás, a cada meio
+## ciclo), suavemente, para o pé e o som caírem juntos.
+static func footfall(root: Node3D) -> void:
+	if not root.has_meta("fase"):
+		return
+	var phase: float = root.get_meta("fase")
+	var target := roundf((phase - 0.25) * 2.0) / 2.0 + 0.25
+	root.set_meta("fase", phase + (target - phase) * 0.6)
+
+
+## A tocha na mão esquerda: "held" se há uma, "lit" se está acesa (apagada, só o cabo).
+static func set_torch(root: Node3D, held: bool, lit: bool) -> void:
+	var torch := root.get_node_or_null("Corpo/Braco0/Tocha")
+	if torch == null:
+		return
+	torch.visible = held
+	torch.get_node("Chama").visible = lit
+
+
+## O que está na mão direita: "machado", "enxada", "faca", ou "" (nada).
+static func set_wield(root: Node3D, item: String) -> void:
+	var tool_node := root.get_node_or_null("Corpo/Braco1/Ferramenta")
+	if tool_node == null:
+		return
+	tool_node.visible = item in ["machado", "enxada", "faca"]
+	if not tool_node.visible:
+		return
+	var long_handle := item != "faca"
+	tool_node.get_node("Cabo").scale = Vector3(0.1, 0.55 if long_handle else 0.25, 0.1)
+	tool_node.get_node("Cabo").position = Vector3(0.0, -0.05, 0.0)
+	var head: Node3D = tool_node.get_node("Cabeca")
+	head.position = Vector3(0.0, -0.28 if long_handle else -0.12, -0.08 if item == "machado" else 0.0)
+	head.scale = {"machado": Vector3(0.05, 0.16, 0.22), "enxada": Vector3(0.05, 0.1, 0.22), "faca": Vector3(0.03, 0.14, 0.05)}[item]
+
+
+## Anima o modelo. "speed" é a velocidade em casas por segundo (0 parado);
+## "motion" (x lado, y frente, com sinal) dá a direção do passo: de costas as
+## pernas invertem, de lado elas abrem e fecham; "turn" (rad/s) faz o corpo
+## arrastar os pés ao girar parado; "load" é a carga (0 a 1,5 da carga plena,
+## curva o corpo); "mounted" senta o personagem. Mantém o relógio de passo e
+## o da ação no próprio nó.
+static func animate(root: Node3D, speed: float, time: float, id: int, delta: float,
+		motion := Vector2.ZERO, turn := 0.0, load := 0.0, mounted := false) -> void:
+	var step_speed := speed
+	var shuffle := false
+	if speed <= 0.15 and absf(turn) > 0.5 and not mounted:
+		step_speed = 0.9
+		shuffle = true
+	var moving := step_speed > 0.15 and not mounted
+	var backwards := motion.y < -absf(motion.x) * 0.8 and motion != Vector2.ZERO
+	var sideways := absf(motion.x) > absf(motion.y) * 0.8 and motion != Vector2.ZERO
 	var phase: float = root.get_meta("fase", float(id) * 0.37)
 	if moving:
-		phase += delta * clampf(speed, 0.5, 6.0) * 1.7
+		# Mesma cadência do som dos passos (game.gd: 3,3 passos por segundo a 1,8
+		# casas por segundo, de 0,3x a 2x): dois passos por ciclo de perna.
+		phase += delta * 1.65 * clampf(step_speed / 1.8, 0.3, 2.0) * (-1.0 if backwards else 1.0)
 		root.set_meta("fase", phase)
 	var body: Node3D = root.get_node("Corpo")
-	var swing := clampf(speed * 0.28, 0.0, 0.7) if moving else 0.0
+	var head: Node3D = body.get_node("Cabeca")
+	var swing := clampf(step_speed * 0.28, 0.0, 0.7) if moving else 0.0
+	if shuffle:
+		swing = 0.18
 	var k := minf(1.0, delta * 14.0)
+	var arms: Array[Node3D] = []
+	var legs: Array[Node3D] = []
 	for side in 2:
 		var sign_ := 1.0 if side == 0 else -1.0
 		var leg: Node3D = body.get_node("Perna%d" % side)
 		var arm: Node3D = body.get_node("Braco%d" % side)
-		leg.rotation.x = lerpf(leg.rotation.x, sin(phase * TAU) * swing * sign_, k)
-		arm.rotation.x = lerpf(arm.rotation.x, -sin(phase * TAU) * swing * 0.8 * sign_, k)
-	# Parado, respira; andando, o corpo balança a cada passo.
+		legs.append(leg)
+		arms.append(arm)
+		var leg_x := sin(phase * TAU) * swing * sign_
+		var leg_z := 0.0
+		var arm_x := -sin(phase * TAU) * swing * 0.8 * sign_
+		if sideways and moving:  # passo de lado: as pernas abrem e fecham
+			leg_z = absf(sin(phase * TAU + (0.0 if side == 0 else PI * 0.5))) * 0.35 * (1.0 if side == 0 else -1.0) * signf(motion.x) * -1.0
+			leg_x *= 0.3
+			arm_x *= 0.3
+		if mounted:  # sentado: coxas para a frente, mãos na rédea
+			leg_x = -1.3
+			leg_z = 0.12 * sign_
+			arm_x = -0.75
+		leg.rotation.x = lerpf(leg.rotation.x, leg_x, k)
+		leg.rotation.z = lerpf(leg.rotation.z, leg_z, k)
+		arm.rotation.x = lerpf(arm.rotation.x, arm_x, k)
 	var bob := absf(sin(phase * TAU)) * 0.05 * (swing / 0.3) if moving else 0.012 * sin(time * 1.6 + id)
-	body.position.y = lerpf(body.position.y, bob, minf(1.0, delta * 12.0))
-	var head: Node3D = body.get_node("Cabeca")
+	var lift := 0.34 if mounted else 0.0
+	# O corpo guarda o seu valor-base (sem a ação por cima), para a ação não se acumular.
+	var base_y := lerpf(float(root.get_meta("base_y", 0.0)), bob + lift, minf(1.0, delta * 12.0))
+	root.set_meta("base_y", base_y)
+	body.position.y = base_y
+	# Curva-se sob a carga (até um pouco além da carga plena).
+	var lean := -clampf(load, 0.0, 1.5) * 0.14
+	if moving and absf(motion.y) > 0.0 and not backwards:
+		lean -= clampf(step_speed * 0.02, 0.0, 0.08)
+	var base_x := lerpf(float(root.get_meta("base_x", 0.0)), lean, minf(1.0, delta * 6.0))
+	root.set_meta("base_x", base_x)
+	body.rotation.x = base_x
+	# Montado, o cavaleiro se inclina para o lado do giro.
+	var lean_z := clampf(-turn * 0.12, -0.25, 0.25) if mounted else 0.0
+	body.rotation.z = lerpf(body.rotation.z, lean_z, minf(1.0, delta * 8.0))
 	head.rotation.y = sin(time * 0.5 + id) * 0.25 if not moving else 0.0
-	head.rotation.x = lerpf(head.rotation.x, 0.0 if moving else 0.06 * sin(time * 0.9 + id), minf(1.0, delta * 4.0))
+	head.rotation.x = 0.0 if moving else 0.06 * sin(time * 0.9 + id)
 	var tail: Node3D = body.get_node("Cauda")
 	tail.rotation.z = sin(time * (4.0 if moving else 1.3) + id) * (0.35 if moving else 0.15)
 	var twitch := maxf(0.0, sin(time * 0.7 + id * 3.1) - 0.88) * 4.0
 	for e in 2:
 		var ear: Node3D = head.get_node("Orelha%d" % e)
 		ear.rotation.y = (e * 2 - 1) * twitch * 0.4
+	var flame := body.get_node_or_null("Braco0/Tocha/Chama")
+	if flame != null and flame.visible:  # a chama tremula
+		flame.scale = Vector3(0.12, 0.26 * (1.0 + 0.15 * sin(time * 17.0 + id) + 0.08 * sin(time * 31.0)), 0.12)
+	_apply_action(root, body, head, arms, legs, delta)
+
+
+## A ação pontual por cima do andar: braços, agachar, salto, uivo.
+static func _apply_action(root: Node3D, body: Node3D, head: Node3D, arms: Array[Node3D], legs: Array[Node3D], delta: float) -> void:
+	var action: String = root.get_meta("acao", "")
+	if action.is_empty():
+		return
+	var t: float = float(root.get_meta("acao_t", 0.0)) + delta
+	var duration: float = ACTIONS[action]
+	if t >= duration:
+		root.set_meta("acao", "")
+		return
+	root.set_meta("acao_t", t)
+	var u := t / duration
+	var w := sin(clampf(u, 0.0, 1.0) * PI)  # entra e sai suave
+	match action:
+		"golpe":  # braço direito sobe e desce, com um passo de tronco
+			var raise := smoothstep(0.0, 0.3, u)
+			var drop := smoothstep(0.3, 0.65, u)
+			arms[1].rotation.x = -2.3 * raise + 2.7 * drop
+			body.rotation.x += -0.2 * w
+		"comer":  # leva a mão à boca duas vezes, mastigando
+			arms[1].rotation.x = (-2.0 + 0.25 * sin(t * 14.0)) * w
+			head.rotation.x = (0.15 + 0.1 * sin(t * 14.0)) * w
+		"coleta":  # agacha e estica as mãos
+			body.position.y -= 0.32 * w
+			for arm in arms:
+				arm.rotation.x = -0.9 * w
+			head.rotation.x = 0.35 * w
+			for leg in legs:
+				leg.rotation.x = -0.7 * w
+		"pesca":
+			body.position.y -= 0.3 * w
+			arms[0].rotation.x = -0.8 * w + sin(t * 9.0) * 0.25 * w
+			arms[1].rotation.x = -0.8 * w - sin(t * 9.0) * 0.25 * w
+			head.rotation.x = 0.4 * w
+			for leg in legs:
+				leg.rotation.x = -0.6 * w
+		"fucar", "arar":  # agachado, braços cavando
+			body.position.y -= 0.3 * w
+			body.rotation.x -= 0.25 * w
+			arms[0].rotation.x = -0.9 * w + sin(t * 14.0) * 0.5 * w
+			arms[1].rotation.x = -0.9 * w - sin(t * 14.0) * 0.5 * w
+			head.rotation.x = 0.3 * w
+			for leg in legs:
+				leg.rotation.x = -0.7 * w
+		"obra":  # martelando, os braços alternam
+			body.rotation.x -= 0.1
+			arms[0].rotation.x = -1.2 + sin(u * TAU * 2.0) * 0.7
+			arms[1].rotation.x = -1.2 - sin(u * TAU * 2.0) * 0.7
+		"salto":
+			body.position.y += 0.55 * sin(clampf(u, 0.0, 1.0) * PI)
+			for leg in legs:
+				leg.rotation.x = -0.6 * w
+			for arm in arms:
+				arm.rotation.x = -0.9 * w
+		"uivo":  # cabeça para trás, peito aberto
+			head.rotation.x = -0.9 * w
+			body.rotation.x += 0.12 * w
+			for arm in arms:
+				arm.rotation.x = 0.35 * w
+		"disparada":  # corpo inclinado para a frente
+			body.rotation.x -= 0.3 * w
+			for arm in arms:
+				arm.rotation.x -= 0.4 * w
 
 
 static func _material(color: Color) -> StandardMaterial3D:
