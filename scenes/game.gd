@@ -2799,21 +2799,21 @@ func _horse_items(id: int) -> Array:
 	var items := []
 	if not gear.has("alforje"):
 		if int(inventory.get("alforje", 0)) > 0:
-			items.append({"label": "Pôr o alforje", "run": _ask_gear.bind(id, "alforje", true), "close": true})
+			items.append({"label": "Pôr o alforje", "run": _ask_gear.bind(id, "alforje", true)})
 		else:
 			items.append({"label": "Sem alforje", "info": "Faça um alforje na bancada da oficina, com %s, e ponha no cavalo por aqui." % Crafting.materials_text(Crafting.recipe("alforje")["materials"])})
 	else:
 		var pack: Dictionary = horses.pack_of(id)
 		items.append_array([
-			{"label": "Guardar no alforje", "open": _pack_put_items.bind(id)},
-			{"label": "Pegar do alforje", "open": _pack_take_items.bind(id)},
+			{"label": "Guardar no alforje", "open": _pack_put_items.bind(id), "empty": "a bolsa está vazia"},
+			{"label": "Pegar do alforje", "open": _pack_take_items.bind(id), "empty": "o alforje está vazio"},
 			{"label": "Alforje, carga %d de %d" % [Bag.weight_of_items(pack), Herd.PACK_CAPACITY], "info": "O alforje fica com o cavalo e leva até %d de carga, com os mesmos pesos da bolsa. %s" % [Herd.PACK_CAPACITY, Bag.load_label(inventory, wielded, offhand, _my_species())]},
-			{"label": "Tirar o alforje", "run": _ask_gear.bind(id, "alforje", false), "close": true},
+			{"label": "Tirar o alforje", "run": _ask_gear.bind(id, "alforje", false)},
 		])
 	if gear.has("manto"):
-		items.append({"label": "Tirar o manto", "run": _ask_gear.bind(id, "manto", false), "close": true})
+		items.append({"label": "Tirar o manto", "run": _ask_gear.bind(id, "manto", false)})
 	elif int(inventory.get("manto", 0)) > 0:
-		items.append({"label": "Pôr o manto", "run": _ask_gear.bind(id, "manto", true), "close": true})
+		items.append({"label": "Pôr o manto", "run": _ask_gear.bind(id, "manto", true)})
 	else:
 		var cold := "Agora ele treme de frio. " if horses.is_chilled(id) else ""
 		items.append({"label": "Sem manto", "info": "%sNo frio, sem manto, o cavalo anda mais devagar e não galopa. Faça um manto na bancada da oficina, com %s, e ponha nele por aqui." % [cold, Crafting.materials_text(Crafting.recipe("manto")["materials"])]})
@@ -2846,9 +2846,7 @@ func _pack_put_items(id: int) -> Array:
 	for key: String in keys:
 		if int(inventory[key]) > 0 and key != "alforje":
 			items.append({"label": "%s, %d" % [Bag.display_name(key), int(inventory[key])], "open": _pack_amounts.bind(id, key, true)})
-	if items.is_empty():
-		items.append({"label": "Bolsa vazia", "info": "Não há nada na bolsa para guardar."})
-	return items
+	return items  # vazia: o menu volta ao Cavalo
 
 
 func _pack_take_items(id: int) -> Array:
@@ -2858,9 +2856,7 @@ func _pack_take_items(id: int) -> Array:
 	keys.sort_custom(func(a, b): return Bag.display_name(a).naturalnocasecmp_to(Bag.display_name(b)) < 0)
 	for key: String in keys:
 		items.append({"label": "%s, %d" % [Bag.display_name(key), int(pack[key])], "open": _pack_amounts.bind(id, key, false)})
-	if items.is_empty():
-		items.append({"label": "Vazio", "info": "Não há nada no alforje."})
-	return items
+	return items  # vazio: o menu volta ao Cavalo
 
 
 func _pack_amounts(id: int, item: String, putting: bool) -> Array:
