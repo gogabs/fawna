@@ -43,6 +43,7 @@ extends Control
 @onready var msaa_button: Button = %MsaaButton
 @onready var glow_check: CheckButton = %GlowCheck
 @onready var minimap_check: CheckButton = %MinimapCheck
+@onready var menu_view_check: CheckButton = %MenuViewCheck
 @onready var nav_button: Button = %NavButton
 @onready var back_button: Button = %BackButton
 @onready var ui_sound: AudioStreamPlayer = %UiSound
@@ -102,8 +103,9 @@ func _ready() -> void:
 	msaa_button.pressed.connect(_on_msaa_pressed)
 	glow_check.toggled.connect(_on_glow_toggled)
 	minimap_check.toggled.connect(_on_minimap_toggled)
+	menu_view_check.toggled.connect(_on_menu_view_toggled)
 	nav_button.pressed.connect(_on_nav_pressed)
-	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), graphics_button, graphics_back_button, preset_button, vsync_check, shadows_check, msaa_button, glow_check, minimap_check, nav_button, back_button, rescan_button, join_back_button]:
+	for control: Control in [connect_button, host_button, join_button, options_button, quit_button, name_field.nav_control(), password_field.nav_control(), ip_field.nav_control(), graphics_button, graphics_back_button, preset_button, vsync_check, shadows_check, msaa_button, glow_check, minimap_check, menu_view_check, nav_button, back_button, rescan_button, join_back_button]:
 		control.focus_entered.connect(_on_focus.bind(control))
 	for button: Button in [connect_button, host_button, join_button, options_button, quit_button, back_button, nav_button, rescan_button, join_back_button, preset_button, msaa_button, graphics_button, graphics_back_button]:
 		button.pressed.connect(_play.bind(Sounds.ui_confirm()))
@@ -332,6 +334,13 @@ func _on_minimap_toggled(on: bool) -> void:
 		Speech.say(_on_off(on))
 
 
+func _on_menu_view_toggled(on: bool) -> void:
+	Net.menu_visual = on
+	_play(Sounds.ui_confirm())
+	if not Speech.screen_reader_active():
+		Speech.say(_on_off(on))
+
+
 func _say_choice(text: String) -> void:
 	if not Speech.screen_reader_active():
 		Speech.say(text)
@@ -343,6 +352,7 @@ func _refresh_graphics() -> void:
 	shadows_check.set_pressed_no_signal(Net.shadows)
 	glow_check.set_pressed_no_signal(Net.glow)
 	minimap_check.set_pressed_no_signal(Net.minimap)
+	menu_view_check.set_pressed_no_signal(Net.menu_visual)
 
 
 func _on_nav_pressed() -> void:
@@ -504,6 +514,8 @@ func _on_focus(control: Control) -> void:
 		Speech.say("Sombras, %s. Botão de alternar. Pesa na placa de vídeo." % _on_off(shadows_check.button_pressed), interrupt)
 	elif control == minimap_check:
 		Speech.say("Minimapa e bússola, %s. Botão de alternar. Um mapa redondo no canto da tela, com as direções em volta; só visual." % _on_off(minimap_check.button_pressed), interrupt)
+	elif control == menu_view_check:
+		Speech.say("Menus na tela, %s. Botão de alternar. Desenha o menu das setas, a bolsa e o Caminheiro na tela; só visual." % _on_off(menu_view_check.button_pressed), interrupt)
 	elif control == glow_check:
 		Speech.say("Brilho nas luzes, %s. Botão de alternar." % _on_off(glow_check.button_pressed), interrupt)
 	elif control == ip_field.nav_control():

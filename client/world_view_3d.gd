@@ -71,6 +71,7 @@ var _sun: DirectionalLight3D
 var _ring_glow := 0.0
 var _ring_check := 0.0
 var _minimap: MinimapView
+var _menu_view: MenuView
 var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
@@ -250,6 +251,16 @@ func pulse_horror() -> void:
 		_wildlife.pulse()
 
 
+## Liga o menu das setas à tela: ele aparece quando é mexido.
+func set_menu(menu: FloatingMenu) -> void:
+	if _menu_view == null:
+		_menu_view = MenuView.new()
+		_menu_view.name = "Menu3D"
+		add_child(_menu_view)
+	_menu_view.setup(menu)
+	_menu_view.visible = Net.menu_visual
+
+
 func chunk_count() -> int:
 	return _chunks.size()
 
@@ -259,6 +270,8 @@ func chunk_count() -> int:
 func apply_quality() -> void:
 	if _minimap != null:
 		_minimap.visible = Net.minimap
+	if _menu_view != null:
+		_menu_view.visible = Net.menu_visual
 	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
 	if _env != null:
 		_env.glow_enabled = Net.glow

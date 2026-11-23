@@ -2897,6 +2897,8 @@ func _setup_view3d() -> void:
 	view3d.name = "View3D"
 	add_child(view3d)
 	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime, horses)
+	if _menu != null:
+		view3d.set_menu(_menu)
 	view.visible = false
 
 
@@ -2919,6 +2921,8 @@ func _setup_caminheiro() -> void:
 	view.caminheiro = _caminheiro
 	_menu = FloatingMenu.new(_menu_root)
 	_menu.sound.connect(_on_menu_sound)
+	if view3d != null:
+		view3d.set_menu(_menu)
 
 
 func _menu_root() -> Array:
@@ -3039,6 +3043,7 @@ func _graphics_items() -> Array:
 		{"label": "Antisserrilhamento: %s" % ("desligado" if Net.msaa == 0 else "%dx" % Net.msaa), "run": _graphics_set.bind("msaa")},
 		{"label": "Brilho nas luzes: %s" % ("ligado" if Net.glow else "desligado"), "run": _graphics_set.bind("brilho")},
 		{"label": "Minimapa e bússola: %s" % ("ligado" if Net.minimap else "desligado"), "run": _graphics_set.bind("minimapa")},
+		{"label": "Menus na tela: %s" % ("ligado" if Net.menu_visual else "desligado"), "run": _graphics_set.bind("menus")},
 	]
 
 
@@ -3063,6 +3068,9 @@ func _graphics_set(what: String) -> String:
 		"minimapa":
 			Net.minimap = not Net.minimap
 			text = "Minimapa e bússola %s." % ("ligado" if Net.minimap else "desligado")
+		"menus":
+			Net.menu_visual = not Net.menu_visual
+			text = "Menus na tela %s." % ("ligado" if Net.menu_visual else "desligado")
 		"brilho":
 			Net.glow = not Net.glow
 			text = "Brilho nas luzes %s." % ("ligado" if Net.glow else "desligado")

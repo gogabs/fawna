@@ -179,6 +179,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Minimapa e bússola"
 
+[node name="MenuViewCheck" type="CheckButton" parent="Center/Card/Pages/GraphicsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Menus na tela"
+
 [node name="GraphicsBackButton" type="Button" parent="Center/Card/Pages/GraphicsPage"]
 unique_name_in_owner = true
 layout_mode = 2
