@@ -54,11 +54,11 @@ static func hoof(surface: String, gallop: bool, last: AudioStream = null) -> Aud
 
 
 ## Derrapada do cavalo freando de repente: derrapada_<chão>_<n> gravada,
-## senão derrapada_<n>, senão gerada (ruído de raspão que vai morrendo).
+## sorteada; sem gravação desse chão, a de terra; sem nenhuma, gerada.
 static func skid(surface: String) -> AudioStream:
 	var recorded := _recorded("derrapada_" + surface)
 	if recorded.is_empty():
-		recorded = _recorded("derrapada")
+		recorded = _recorded("derrapada_terra")  # madeira e água: a de terra
 	if not recorded.is_empty():
 		return recorded[randi() % recorded.size()]
 	return generated("derrapada", randi() % VARIANTS)
