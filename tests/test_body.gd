@@ -45,7 +45,11 @@ func _test_levels() -> void:
 	_check(Body.level_of(49.0) == 1, "abaixo de 50 é nível 1")
 	_check(Body.level_of(24.0) == 2, "abaixo de 25 é abatido")
 	_check(Body.level_of(0.0) == 3, "zero é nível 3")
-	_check(Body.speed_factor({"food": 20.0, "warmth": 100.0}) == Body.WEAK_SPEED, "abatido de fome anda devagar")
+	_check(Body.speed_factor({"food": 0.0, "warmth": 100.0}) == Body.WEAK_SPEED, "sem comida nenhuma, o mais devagar")
+	var slow20 := Body.speed_factor({"food": 20.0, "warmth": 100.0})
+	var slow40 := Body.speed_factor({"food": 40.0, "warmth": 100.0})
+	_check(slow20 < slow40 and slow40 < 1.0 and slow20 > Body.WEAK_SPEED, "a lentidão é gradual: %f, %f" % [slow40, slow20])
+	_check(Body.work_factor({"food": 100.0, "warmth": 10.0}) < Body.work_factor({"food": 100.0, "warmth": 30.0}), "o trabalho também cai aos poucos")
 	_check(Body.speed_factor({"food": 60.0, "warmth": 60.0}) == 1.0, "bem anda normal")
 
 
@@ -80,7 +84,22 @@ func _test_cold() -> void:
 func _test_warming() -> void:
 	var entry := {"food": 100.0, "warmth": 10.0}
 	Body.step(entry, DAY * 0.067, _ctx({"season": 2, "night": true, "fire": true}))
-	_check(entry["warmth"] >= 99.0, "a fogueira devolve o calor em uns 2 min: %f" % entry["warmth"])
+	_check(absf(entry["warmth"] - Body.FIRE_HIGH) < 0.5, "a fogueira cheia aquece em uns 2 min até o teto dela: %f" % entry["warmth"])
+	var weak_fire := {"food": 100.0, "warmth": 10.0}
+	Body.step(weak_fire, DAY * 0.1, _ctx({"season": 2, "night": true, "fire": true, "fire_fuel": 0.1}))
+	_check(weak_fire["warmth"] < entry["warmth"] - 30.0 and weak_fire["warmth"] > 30.0, "fogueira fraca aquece pouco: %f" % weak_fire["warmth"])
+	var hot := {"food": 100.0, "warmth": 100.0}
+	Body.step(hot, DAY * 0.2, _ctx({"season": 2, "night": true, "fire": true, "fire_fuel": 0.1}))
+	_check(absf(hot["warmth"] - lerpf(Body.FIRE_LOW, Body.FIRE_HIGH, 0.1)) < 0.5, "acima do teto, o frio puxa até ele: %f" % hot["warmth"])
+	var capped := {"food": 100.0, "warmth": 10.0}
+	Body.step(capped, DAY * 2.0, _ctx({"season": 2, "night": true, "shelter": true}))
+	_check(absf(capped["warmth"] - Body.SHELTER_CAP) < 0.5, "o abrigo sem forno não passa do teto dele: %f" % capped["warmth"])
+	var oven := {"food": 100.0, "warmth": 10.0}
+	Body.step(oven, DAY * 2.0, _ctx({"season": 2, "night": true, "shelter": true, "oven": true}))
+	_check(absf(oven["warmth"] - Body.OVEN_CAP) < 0.5, "com o forno aceso, o abrigo chega ao teto do forno: %f" % oven["warmth"])
+	var summer_rest := {"food": 100.0, "warmth": 40.0}
+	Body.step(summer_rest, DAY * 0.5, _ctx())
+	_check(summer_rest["warmth"] == Body.MAX, "sem frio, o calor volta a cheio: %f" % summer_rest["warmth"])
 	var shelter := {"food": 100.0, "warmth": 10.0}
 	Body.step(shelter, DAY * 0.05, _ctx({"season": 2, "night": true, "shelter": true}))
 	_check(shelter["warmth"] > 10.0 and shelter["warmth"] < 40.0, "o abrigo aquece devagar: %f" % shelter["warmth"])
@@ -123,8 +142,8 @@ func _test_species() -> void:
 	_check(bear["food"] < hare["food"], "o Troncudo (pesado) sente fome antes do Lunar (leve)")
 	var fox := {"food": 100.0, "warmth": 10.0}
 	var wolf := {"food": 100.0, "warmth": 10.0}
-	Body.step(fox, DAY * 0.02, _ctx({"fire": true, "species": "raposa"}))
-	Body.step(wolf, DAY * 0.02, _ctx({"fire": true, "species": "lobo"}))
+	Body.step(fox, DAY * 0.02, _ctx({"season": 2, "night": true, "fire": true, "species": "raposa"}))
+	Body.step(wolf, DAY * 0.02, _ctx({"season": 2, "night": true, "fire": true, "species": "lobo"}))
 	_check(fox["warmth"] > wolf["warmth"], "o mestre do fogo se aquece mais depressa")
 
 
