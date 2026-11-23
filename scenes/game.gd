@@ -227,7 +227,8 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	if view3d != null:
-		view3d.set_self(_my_species(), horses != null and horses.riding_mine() >= 0)
+		view3d.set_self(_my_species(), horses != null and horses.riding_mine() >= 0, \
+				float(Bag.load_of(inventory, wielded, offhand)) / maxf(1.0, float(Bag.capacity_for(_my_species()))), wielded)
 	# Quem não consegue entrar em 30 s volta ao menu, em vez de ficar parado.
 	if Net.mode == Net.Mode.CLIENT and world == null:
 		_connect_waited += delta
@@ -2543,6 +2544,7 @@ func _interact() -> void:
 		elif build["kind"] == "forno" and build["done"] and builds.is_lit(int(build["id"])):
 			Speech.say(_menu.open_at("Forno aceso", _oven_root.bind(int(build["id"]))))
 		else:
+			_self_action("obra")
 			request_build_work.rpc_id(1, int(build["id"]))
 	elif pile != WorldGen.NO_CELL and (pile_distance <= target_distance or harvest.is_ready(target)):
 		# O jogador escolhe o que pegar: um monte vira bagunça rápido. O
@@ -2550,6 +2552,7 @@ func _interact() -> void:
 		# vez de o jogo adivinhar qual dos dois o Espaço quis.
 		Speech.say(_menu.open_at("Pilha no chão", _pile_pick_items.bind(pile, target)))
 	elif target != WorldGen.NO_CELL:
+		_self_action("coleta")
 		request_collect.rpc_id(1, target)
 
 
@@ -2657,6 +2660,7 @@ func _swing() -> void:
 		if Species.has_tag(_my_species(), "garras"):
 			if _swing_cooldown <= 0.0:
 				_swing_cooldown = SWING_COOLDOWN
+				_self_action("golpe")
 				_play(Sounds.axe_swing(), true)
 				request_swing.rpc_id(1)
 				request_horror_strike.rpc_id(1)
@@ -2666,6 +2670,7 @@ func _swing() -> void:
 	if _swing_cooldown > 0.0:
 		return
 	_swing_cooldown = SWING_COOLDOWN
+	_self_action("golpe")
 	_play(Sounds.axe_swing(), true)
 	request_horror_strike.rpc_id(1)
 	# No terreno de uma obra grande, o machado limpa e a enxada capina.
@@ -2714,12 +2719,23 @@ func _swing() -> void:
 
 
 ## H: pede ao servidor para usar a habilidade ativa da espécie.
+## Qual animação cada habilidade ativa dispara (SpeciesModel.ACTIONS).
+const ACTIONS_BY_TAG := {"salto": "salto", "uivo": "uivo", "disparada": "disparada", "fucar": "fucar", "arar": "arar", "pesca": "pesca"}
+
+
+## Dispara a animação de uma ação do próprio personagem (só aparece na 3ª pessoa).
+func _self_action(action: String) -> void:
+	if view3d != null and not action.is_empty():
+		view3d.self_action(ACTIONS_BY_TAG.get(action, action))
+
+
 func _use_ability() -> void:
 	if world == null or horrors.is_caught():
 		return
 	if _my_species().is_empty():
 		Speech.say("Escolha a sua espécie primeiro, no menu das setas, em Personagem.")
 		return
+	_self_action(Species.active_of(_my_species()) if ACTIONS_BY_TAG.has(Species.active_of(_my_species())) else "")
 	request_ability.rpc_id(1)
 
 

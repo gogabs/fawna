@@ -109,7 +109,12 @@ func _make_bird(species: int) -> Node3D:
 	return node
 
 
-const HORSE_TROT_HZ := 1.7
+## Ciclos de perna por segundo, os mesmos dos cascos (scenes/horses.gd): no
+## passo, 4 pisadas somam 1 s; no trote, 2 batidas em 0,6 s; no galope, uma
+## passada a cada 0,55 s.
+const HORSE_WALK_HZ := 1.0
+const HORSE_TROT_HZ := 1.0 / 0.6
+const HORSE_GALLOP_HZ := 1.0 / 0.55
 
 
 func _sync_horses(delta: float) -> void:
@@ -133,7 +138,7 @@ func _sync_horses(delta: float) -> void:
 			node.rotation.y = lerp_angle(node.rotation.y, atan2(-heading.x, -heading.y), minf(1.0, delta * 6.0))
 		node.position = goal
 		# O relógio do passo avança no ritmo do andar e do ânimo do cavalo.
-		var hz: float = HORSE_TROT_HZ * (1.8 if gait == Herd.Gait.GALLOP else (1.4 if gait == Herd.Gait.TROT else 1.0)) * _horses_node.horse_tempo(id)
+		var hz: float = (HORSE_GALLOP_HZ if gait == Herd.Gait.GALLOP else (HORSE_TROT_HZ if gait == Herd.Gait.TROT else HORSE_WALK_HZ)) * _horses_node.horse_tempo(id)
 		var phase: float = float(node.get_meta("fase", 0.0)) + delta * hz
 		node.set_meta("fase", fmod(phase, 1000.0))
 		HorseModel.animate(node, gait, phase, _time, id, delta)

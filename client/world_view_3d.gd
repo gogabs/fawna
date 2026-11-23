@@ -85,6 +85,10 @@ var _self_species := ""
 var _self_mounted := false
 var _self_prev := Vector2.ZERO
 var _self_speed := 0.0
+var _self_vel := Vector2.ZERO
+var _self_yaw := 0.0
+var _self_load := 0.0
+var _self_wield := ""
 var _held_flame: MeshInstance3D
 var _bridges := {}  # pedaço -> casas de ponte (para refazer as coisas)
 var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
@@ -205,8 +209,13 @@ func _place_camera(feet: Vector3) -> void:
 
 ## Quem o personagem é (espécie) e se está montado; o modelo só aparece na
 ## terceira pessoa e a pé (montado, o cavalo e o cavaleiro vêm numa etapa à parte).
-func set_self(species_id: String, mounted: bool) -> void:
+func set_self(species_id: String, mounted: bool, load_fraction := 0.0, wielded := "") -> void:
 	_self_mounted = mounted
+	_self_load = load_fraction
+	if wielded != _self_wield:
+		_self_wield = wielded
+		if _self_model != null:
+			SpeciesModel.set_wield(_self_model, wielded)
 	if species_id == _self_species:
 		return
 	_self_species = species_id
@@ -215,8 +224,14 @@ func set_self(species_id: String, mounted: bool) -> void:
 		_self_model = null
 
 
+## Uma ação do próprio personagem (golpe, coleta, habilidade...): ver SpeciesModel.ACTIONS.
+func self_action(action: String) -> void:
+	if _self_model != null and _self_model.visible:
+		SpeciesModel.play(_self_model, action)
+
+
 func _update_self(delta: float) -> void:
-	var show := Net.third_person and not _self_mounted and not Net.graphics_off
+	var show := Net.third_person and not Net.graphics_off
 	if not show:
 		if _self_model != null:
 			_self_model.visible = false
@@ -225,15 +240,26 @@ func _update_self(delta: float) -> void:
 		_self_model = SpeciesModel.build(_self_species if SpeciesModel.has_model(_self_species) else "lobo", _shapes)
 		_self_model.name = "EuMesmo"
 		add_child(_self_model)
+		SpeciesModel.set_wield(_self_model, _self_wield)
 	_self_model.visible = true
 	var feet := Vector3(_pos.x, 0.0, _pos.y) * METERS
 	feet.y = ground_height(feet.x, feet.z)
 	_self_model.position = feet
 	_self_model.rotation.y = _camera.rotation.y
-	var moved := _pos.distance_to(_self_prev) / maxf(delta, 0.001)
+	var velocity := (_pos - _self_prev) / maxf(delta, 0.001)
 	_self_prev = _pos
-	_self_speed = lerpf(_self_speed, moved, minf(1.0, delta * 8.0))
-	SpeciesModel.animate(_self_model, _self_speed if _self_speed > 0.3 else 0.0, Time.get_ticks_msec() / 1000.0, 0, delta)
+	_self_vel = _self_vel.lerp(velocity, minf(1.0, delta * 8.0))
+	_self_speed = _self_vel.length()
+	var yaw := _camera.rotation.y
+	var turn := wrapf(yaw - _self_yaw, -PI, PI) / maxf(delta, 0.001)
+	_self_yaw = yaw
+	# Para a frente e para o lado do personagem (x = direita, y = frente).
+	var forward := Vector2(-sin(yaw), -cos(yaw))
+	var right := Vector2(cos(yaw), -sin(yaw))
+	var motion := Vector2(_self_vel.dot(right), _self_vel.dot(forward))
+	var moving := _self_speed > 0.3
+	SpeciesModel.animate(_self_model, _self_speed if moving else 0.0, Time.get_ticks_msec() / 1000.0, 0, delta,
+			motion if moving else Vector2.ZERO, turn, _self_load, _self_mounted)
 
 
 ## Um clarão suave que se desfaz em "seconds" (sinal visual, sem texto); o
