@@ -1619,6 +1619,8 @@ func player_handled(id: int, verb: String) -> void:
 		return
 	var stream: AudioStream = {"empunhou": Sounds.wield(), "guardou": Sounds.stow(), "golpeou": Sounds.axe_swing(),
 		"fabricou": Sounds.build_knock(), "faisca": Sounds.fire_spark()}.get(verb)
+	if view3d != null and verb in ["golpeou", "fabricou"]:
+		view3d.other_action(id, "golpe" if verb == "golpeou" else "obra")
 	_play_other(players[id]["pos"], stream)
 
 

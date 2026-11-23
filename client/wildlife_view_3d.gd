@@ -120,6 +120,11 @@ const HORSE_TROT_HZ := 1.0 / 0.6
 const HORSE_GALLOP_HZ := 1.0 / 0.55
 
 
+func horse_footfall(id: int, gait: int) -> void:
+	if _herd.has(id):
+		HorseModel.footfall(_herd[id], gait)
+
+
 ## O cavalo montado se prepara para virar (ver Game._ride_turn).
 func ride_turn_hint(direction: int, seconds: float) -> void:
 	_turn_hint_dir = direction

@@ -94,6 +94,25 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 	return root
 
 
+## Um casco tocou: puxa a fase para o ponto em que uma perna encosta no chão
+## (no passo, a cada quarto de ciclo; no trote, a cada meio; no galope, uma
+## vez por passada), suavemente.
+static func footfall(root: Node3D, gait: int) -> void:
+	if not root.has_meta("fase"):
+		return
+	var phase: float = root.get_meta("fase")
+	var grid := 0.25
+	var offset := 0.0
+	if gait == Herd.Gait.TROT:
+		grid = 0.5
+		offset = 0.25
+	elif gait == Herd.Gait.GALLOP:
+		grid = 1.0
+		offset = 0.22
+	var target := roundf((phase - offset) / grid) * grid + offset
+	root.set_meta("fase", phase + (target - phase) * 0.5)
+
+
 ## Move as peças de um cavalo montado por build(). "phase" é o relógio do passo
 ## (em ciclos), "gait" é Herd.Gait, "amount" a energia do movimento (0 parado).
 ## "turn_hint" (-1 a 1) é o giro que o cavaleiro pediu: o pescoço e o corpo entortam para o lado.

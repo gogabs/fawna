@@ -237,7 +237,7 @@ static func _add_ears(head: Node3D, shapes: Dictionary, kind: String, fur: Mater
 			ear.add_child(inner_piece)
 
 
-## Duração de cada ação pontual (segundos). "obra" se repete até ser trocada.
+## Duração de cada ação pontual (segundos). Cada evento (um golpe, um trabalho na obra) toca uma vez.
 const ACTIONS := {
 	"golpe": 0.45, "coleta": 0.9, "obra": 1.2, "salto": 0.6, "uivo": 1.8,
 	"disparada": 3.0, "fucar": 2.0, "arar": 2.0, "pesca": 2.0,
@@ -374,11 +374,9 @@ static func _apply_action(root: Node3D, body: Node3D, head: Node3D, arms: Array[
 		return
 	var t: float = float(root.get_meta("acao_t", 0.0)) + delta
 	var duration: float = ACTIONS[action]
-	if t >= duration and action != "obra":
+	if t >= duration:
 		root.set_meta("acao", "")
 		return
-	if action == "obra":
-		t = fmod(t, duration)
 	root.set_meta("acao_t", t)
 	var u := t / duration
 	var w := sin(clampf(u, 0.0, 1.0) * PI)  # entra e sai suave

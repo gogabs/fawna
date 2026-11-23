@@ -237,6 +237,12 @@ func set_self(species_id: String, mounted: bool, load_fraction := 0.0, wielded :
 		_self_model = null
 
 
+## Um casco tocou (som): trava a perna do cavalo na pisada.
+func horse_footfall(horse_id: int, gait: int) -> void:
+	if _wildlife != null:
+		_wildlife.horse_footfall(horse_id, gait)
+
+
 ## Giro montado: o cavalo inclina o pescoço e o corpo para o lado "direction"
 ## (-1 esquerda, 1 direita) por "seconds".
 func ride_turn_hint(direction: int, seconds: float) -> void:
