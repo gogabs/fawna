@@ -2899,6 +2899,8 @@ func _setup_view3d() -> void:
 	view3d.setup(world, audio, harvest, builds, players, my_id, birds, horrors, daytime, horses)
 	if _menu != null:
 		view3d.set_menu(_menu)
+	if _caminheiro != null:
+		view3d.set_caminheiro(_caminheiro)
 	view.visible = false
 
 
@@ -2923,6 +2925,7 @@ func _setup_caminheiro() -> void:
 	_menu.sound.connect(_on_menu_sound)
 	if view3d != null:
 		view3d.set_menu(_menu)
+		view3d.set_caminheiro(_caminheiro)
 
 
 func _menu_root() -> Array:
@@ -3044,6 +3047,7 @@ func _graphics_items() -> Array:
 		{"label": "Brilho nas luzes: %s" % ("ligado" if Net.glow else "desligado"), "run": _graphics_set.bind("brilho")},
 		{"label": "Minimapa e bússola: %s" % ("ligado" if Net.minimap else "desligado"), "run": _graphics_set.bind("minimapa")},
 		{"label": "Menus na tela: %s" % ("ligado" if Net.menu_visual else "desligado"), "run": _graphics_set.bind("menus")},
+		{"label": "Rastro do Caminheiro: %s" % ("ligado" if Net.trail_visual else "desligado"), "run": _graphics_set.bind("rastro")},
 	]
 
 
@@ -3068,6 +3072,9 @@ func _graphics_set(what: String) -> String:
 		"minimapa":
 			Net.minimap = not Net.minimap
 			text = "Minimapa e bússola %s." % ("ligado" if Net.minimap else "desligado")
+		"rastro":
+			Net.trail_visual = not Net.trail_visual
+			text = "Rastro do Caminheiro %s." % ("ligado" if Net.trail_visual else "desligado")
 		"menus":
 			Net.menu_visual = not Net.menu_visual
 			text = "Menus na tela %s." % ("ligado" if Net.menu_visual else "desligado")
@@ -4270,6 +4277,10 @@ func _run_auto_commands() -> void:
 			state.players[my_id]["pos"] = _pos
 			_cell = WorldGen.cell_of(_pos)
 			_region = world.region_of(_cell)
+			continue
+		if command.begins_with("CRISTAL_") and _caminheiro != null:  # testes: CRISTAL_x_y acende o Caminheiro rumo à casa (x, y)
+			var target := command.split("_")
+			print("[teste] cristal: ", _caminheiro.start(_pos, Vector2(float(target[1]), float(target[2])), "teste"))
 			continue
 		if command.begins_with("FOTO_") and view3d != null:  # testes: FOTO_nome salva a tela 3D em user://nome.png
 			view3d.build_all()

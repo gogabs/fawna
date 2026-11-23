@@ -48,6 +48,8 @@ var glow := false
 var minimap := true
 ## O menu das setas desenhado na tela (só visual).
 var menu_visual := true
+## O rastro de névoa que mostra a rota do Caminheiro no chão (só visual).
+var trail_visual := true
 const PRESET_NAMES := ["Desativados", "Mais desempenho", "Melhores gráficos"]
 ## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
 ## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
@@ -96,6 +98,7 @@ func load_settings() -> void:
 	glow = config.get_value("video", "brilho", glow)
 	minimap = config.get_value("video", "minimapa", minimap)
 	menu_visual = config.get_value("video", "menu_na_tela", menu_visual)
+	trail_visual = config.get_value("video", "rastro", trail_visual)
 	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
@@ -110,6 +113,7 @@ func save_settings() -> void:
 	config.set_value("video", "brilho", glow)
 	config.set_value("video", "minimapa", minimap)
 	config.set_value("video", "menu_na_tela", menu_visual)
+	config.set_value("video", "rastro", trail_visual)
 	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
 

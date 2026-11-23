@@ -72,6 +72,7 @@ var _ring_glow := 0.0
 var _ring_check := 0.0
 var _minimap: MinimapView
 var _menu_view: MenuView
+var _trail: TrailView3D
 var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
@@ -251,6 +252,16 @@ func pulse_horror() -> void:
 		_wildlife.pulse()
 
 
+## Liga o rastro de névoa à rota do Caminheiro.
+func set_caminheiro(caminheiro: Caminheiro) -> void:
+	if _trail == null:
+		_trail = TrailView3D.new()
+		_trail.name = "Rastro3D"
+		add_child(_trail)
+	_trail.setup(caminheiro)
+	_trail.visible = Net.trail_visual
+
+
 ## Liga o menu das setas à tela: ele aparece quando é mexido.
 func set_menu(menu: FloatingMenu) -> void:
 	if _menu_view == null:
@@ -272,6 +283,8 @@ func apply_quality() -> void:
 		_minimap.visible = Net.minimap
 	if _menu_view != null:
 		_menu_view.visible = Net.menu_visual
+	if _trail != null:
+		_trail.visible = Net.trail_visual
 	get_viewport().msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X}.get(Net.msaa, Viewport.MSAA_DISABLED)
 	if _env != null:
 		_env.glow_enabled = Net.glow
@@ -350,6 +363,8 @@ func _plan(center: Vector2i) -> void:
 
 func _process(delta: float) -> void:
 	_update_sky(delta)
+	if _trail != null and _trail.visible:
+		_trail.follow(_pos, delta)
 	if _minimap != null and _minimap.visible:
 		_minimap.update(_pos, _camera.rotation.y if _camera != null else 0.0)
 	_animate_water(delta)
