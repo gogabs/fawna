@@ -40,7 +40,7 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## No jogo, o Gabs achou tudo alto, o galope principalmente: o geral desceu
 ## 6 dB, os cascos mais 4 e o galope mais 8.
 const HORSES_DB := -16.0
-const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
+const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -12.0, "bufo": -4.0, "manso": -4.0, "relincho": 0.0, "alarme": 2.0, "derrapada": -2.0}  # vozes +6 dB (Gabs, estavam baixinhas)
 ## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
 ## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
 ## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
@@ -78,6 +78,8 @@ var _gallop_next := 0.0  # próxima batida comum do galope
 var _gallop_drift := 0.0
 var _riding := -1  # o cavalo em que estou montado (riding_mine)
 var _ridden_voices := []  # AudioStreamPlayer dos cascos do cavalo montado
+var _gear := {}  # id -> { gear, pack } dos meus cavalos (horse_gear)
+var _chilled := {}  # id -> o meu cavalo treme de frio (horse_chill)
 
 
 ## "tame": os domesticados salvos no mundo (Herd.tame_to_save).
@@ -154,6 +156,9 @@ func _server_step() -> void:
 		positions[id] = game.state.players[id]["pos"]
 		herd.peer_keys[id] = game.state.owner_key(id)
 	herd.darkness = game.daytime.darkness()
+	herd.season = DayCycle.season_of(game.daytime.world_day())
+	herd.night = game.daytime.is_night()
+	herd.fires = game.horrors._lit_fires(game.state.builds)
 	if game.horrors.horrors != null:
 		herd.hush = game.horrors.horrors.points()
 	for message in herd.update(Time.get_ticks_msec(), positions):
@@ -162,6 +167,7 @@ func _server_step() -> void:
 		match message[1]:
 			"appear":
 				horse_appeared.rpc_id(peer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12])
+				_send_gear(peer, int(args[0]))
 			"gone":
 				horse_gone.rpc_id(peer, args[0])
 			"move":
@@ -175,6 +181,8 @@ func _server_step() -> void:
 				horse_tamed.rpc_id(peer, args[0])
 			"rider":
 				horse_rider.rpc_id(peer, args[0], args[1])
+			"chill":
+				horse_chill.rpc_id(peer, args[0], args[1], false)
 	_sync_riding(game)
 
 
@@ -197,15 +205,28 @@ func request_offer(horse_id: int) -> void:
 	var id: int = game._sender_id()
 	if not game.state.players.has(id):
 		return
+	var inv: Dictionary = game.state.inventory_of(id)
+	var now := Time.get_ticks_msec()
+	herd.peer_keys[id] = game.state.owner_key(id)
+	# Já perdeu o medo: Espaço põe o cabresto (Herd.halter).
+	if herd.is_friend(id, horse_id, now):
+		var halter := herd.halter(id, horse_id, inv, game.state.players[id]["pos"], now)
+		if halter == "domou":
+			game._dirty = true
+			game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+		offer_result.rpc_id(id, "cabresto_" + halter)
+		return
 	# Cenoura primeiro (o cavalo gosta mais); senão, qualquer fruta (amora,
 	# pitanga...), a primeira que houver na bolsa.
-	var inv: Dictionary = game.state.inventory_of(id)
 	var fruits := (["raiz_cenoura"] if int(inv.get("raiz_cenoura", 0)) > 0 else []) + Bag.keys_of(inv, "frutas")
 	if fruits.is_empty():
 		offer_result.rpc_id(id, "sem_frutas")
 		return
-	herd.peer_keys[id] = game.state.owner_key(id)
-	var result := herd.offer(id, horse_id, Time.get_ticks_msec(), game.state.players[id]["pos"])
+	var result := herd.offer(id, horse_id, now, game.state.players[id]["pos"])
+	if str(result["reason"]) == "pronto" and herd.owns_horse(id):
+		result["reason"] = "pronto_ja_tem"
+	elif str(result["reason"]) == "pronto" and int(inv.get("cabresto", 0)) > 0:
+		result["reason"] = "pronto_cabresto"
 	if result["ok"]:
 		game.state.give_away(id, fruits[0])
 		game._dirty = true
@@ -254,6 +275,117 @@ func request_dismount() -> void:
 	_sync_riding(game)
 	if horse_id >= 0:
 		mount_result.rpc_id(id, horse_id, "desmontou")
+
+
+# --- Equipamento do cavalo (alforje) -------------------------------------------
+
+## Põe ou tira uma peça de equipamento (Herd.GEAR) do seu cavalo.
+@rpc("any_peer", "call_local", "reliable")
+func request_gear(horse_id: int, item: String, on: bool) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var inv: Dictionary = game.state.inventory_of(id)
+	var result := herd.set_gear(id, horse_id, item, on, inv, game.state.players[id]["pos"], Time.get_ticks_msec())
+	if result in ["pos", "tirou"]:
+		game._dirty = true
+		game.equipment_changed.rpc_id(id, inv, game.state.wielding(id), "", "")
+		_send_gear(id, horse_id)
+	gear_result.rpc_id(id, horse_id, item, result, 0)
+
+
+## Guarda no alforje (putting) ou pega dele para a bolsa.
+@rpc("any_peer", "call_local", "reliable")
+func request_pack(horse_id: int, item: String, amount: int, putting: bool) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var inv: Dictionary = game.state.inventory_of(id)
+	var room := Bag.max_load_for(game.state.species_of(id)) - Bag.load_of(inv, game.state.wielding(id), game.state.offhand_of(id))
+	var result := herd.move_pack(id, horse_id, item, amount, putting, inv, room, game.state.players[id]["pos"], Time.get_ticks_msec())
+	if result["ok"]:
+		game._dirty = true
+		game.equipment_changed.rpc_id(id, inv, game.state.wielding(id), "", "")
+		_send_gear(id, horse_id)
+	gear_result.rpc_id(id, horse_id, item, ("guardou" if putting else "pegou") if result["ok"] else "pack_" + str(result["reason"]), int(result.get("amount", 0)))
+
+
+## O dono solta o cavalo (Herd.release).
+@rpc("any_peer", "call_local", "reliable")
+func request_release(horse_id: int) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var horse_name := str(herd.horses.get(horse_id, {}).get("name", ""))
+	var inv: Dictionary = game.state.inventory_of(id)
+	var result := herd.release(id, horse_id, inv, game.state.players[id]["pos"], Time.get_ticks_msec())
+	if result == "soltou":
+		game._dirty = true
+		game.inventory_changed.rpc_id(id, inv, "", "")
+	release_result.rpc_id(id, horse_id, result, horse_name)
+
+
+const RELEASE_TEXT := {
+	"soltou": "Você tira o cabresto de %s e guarda o que estava nele. Ele fica um pouco perto de você e depois vai embora, livre.",
+	"longe": "Chegue mais perto do seu cavalo.",
+	"montado": "Desmonte antes de soltar o cavalo.",
+}
+
+
+@rpc("authority", "call_local", "reliable")
+func release_result(id: int, result: String, horse_name: String) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] soltar o cavalo: %s" % result)
+	if result == "soltou":
+		_gear.erase(id)
+		_chilled.erase(id)
+		if _horses.has(id):
+			_play(id, HorseSounds.voice("manso"), SOUND_DB["manso"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
+	var text: String = RELEASE_TEXT.get(result, "")
+	if text.contains("%s"):
+		text = text % (horse_name if not horse_name.is_empty() else "seu cavalo")
+	if not text.is_empty():
+		Speech.say(text)
+
+
+## Quem monta pede uma voz do cavalo (relincho ao derrapar, bufo ao parar):
+## todos que o veem ouvem.
+@rpc("any_peer", "call_local", "reliable")
+func request_voice(horse_id: int, kind: String) -> void:
+	if not multiplayer.is_server() or herd == null or not kind in ["relincho", "bufo", "derrapada"]:
+		return
+	var id: int = get_parent()._sender_id()
+	if herd.riding_of(id) != horse_id:
+		return
+	herd._pending_sound(herd.horses[horse_id], kind)
+
+
+## Quem monta já ouviu a própria derrapada embaixo dele (game._ride_halt).
+func _skid_for_others(id: int) -> bool:
+	return id != _riding
+
+
+## Manda ao dono o equipamento e o conteúdo do alforje do cavalo.
+func _send_gear(peer: int, horse_id: int) -> void:
+	if not herd.horses.has(horse_id):
+		return
+	var horse: Dictionary = herd.horses[horse_id]
+	if int(horse["herd"]) >= 0 or str(horse["owner"]) != str(herd.peer_keys.get(peer, "")):
+		return
+	horse_gear.rpc_id(peer, horse_id, horse["gear"], horse["pack"])
+	horse_chill.rpc_id(peer, horse_id, bool(horse.get("chilled", false)), true)
 
 
 ## Depuração: domestica o cavalo selvagem mais perto de quem pediu.
@@ -318,6 +450,11 @@ func horse_sounded(id: int, kind: int) -> void:
 	var sound_name: String = Herd.SOUNDS[kind]
 	if not Net.auto_commands.is_empty():
 		print("[teste] cavalo: %s a %.0f casas" % [sound_name, horse_point(id).distance_to(get_parent()._pos)])
+	if sound_name == "derrapada":
+		# Os outros ouvem a derrapada no lugar do cavalo, no chão dele.
+		if _skid_for_others(id):
+			_play(id, HorseSounds.skid(_surface_at(horse_point(id))), SOUND_DB["derrapada"], 1.0, HOOF_HEIGHT)
+		return
 	_play(id, HorseSounds.voice(sound_name), SOUND_DB[sound_name], float(_horses[id]["pitch"]), HEAD_HEIGHT)
 
 
@@ -327,6 +464,71 @@ func horse_named(id: int, owner: String, horse_name: String) -> void:
 		_horses[id]["owner"] = owner
 		_horses[id]["name"] = horse_name
 		_horses[id]["herd"] = -1
+
+
+@rpc("authority", "call_local", "reliable")
+func horse_gear(id: int, gear: Dictionary, pack: Dictionary) -> void:
+	_gear[id] = {"gear": gear, "pack": pack}
+	# O alforje mudou: refaz o menu (o item que acabou devolve o foco ao pai).
+	get_parent()._sync_menu.call_deferred()
+
+
+## Respostas a pôr e tirar equipamento: {cavalo} e {item} ("o alforje").
+const GEAR_TEXT := {
+	"pos": "Você põe {item} em {cavalo}.",
+	"tirou": "Você tira {item} de {cavalo}.",
+	"longe": "Chegue mais perto do seu cavalo.",
+	"sem_item": "Você não tem {item_sem} na bolsa.",
+	"ja_tem": "{Cavalo} já está com {item}.",
+	"nao_tem": "{Cavalo} está sem {item_sem}.",
+	"cheio": "Esvazie o alforje antes de tirá-lo.",
+	"pack_longe": "Chegue mais perto do seu cavalo.",
+	"pack_sem_alforje": "{Cavalo} está sem alforje.",
+	"pack_nao_tem": "Não há isso para mover.",
+	"pack_cheio": "O alforje está cheio.",
+	"pack_carga": "Não cabe mais na sua bolsa.",
+}
+
+
+@rpc("authority", "call_local", "reliable")
+func gear_result(id: int, item: String, result: String, amount: int) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] equipamento do cavalo: %s %s %d" % [result, item, amount])
+	var horse_name: String = str(_horses.get(id, {}).get("name", ""))
+	if horse_name.is_empty():
+		horse_name = "seu cavalo"
+	if result == "guardou" or result == "pegou":
+		get_parent()._play(Sounds.bag_rummage(), true, -6.0)
+		Speech.say("Você %s %s %s alforje." % ["guarda" if result == "guardou" else "pega", Crafting.material_text(item, amount), "no" if result == "guardou" else "do"])
+		return
+	var bare: String = Bag.NAMES.get(item, [item])[0]
+	var text: String = str(GEAR_TEXT.get(result, "")).format({
+		"cavalo": horse_name, "Cavalo": horse_name.left(1).to_upper() + horse_name.substr(1),
+		"item": Bag.with_article(item), "item_sem": bare})
+	if not text.is_empty():
+		Speech.say(text)
+
+
+## O seu cavalo começou ou parou de tremer de frio (Herd.COLD_SLOW). "quiet":
+## só guarda (ao aparecer), sem avisar.
+@rpc("authority", "call_local", "reliable")
+func horse_chill(id: int, chilled: bool, quiet: bool) -> void:
+	var before := bool(_chilled.get(id, false))
+	_chilled[id] = chilled
+	if quiet or before == chilled:
+		return
+	if not Net.auto_commands.is_empty():
+		print("[teste] cavalo com frio: %s" % chilled)
+	var horse_name := horse_name_of(id)
+	if chilled:
+		Speech.say("%s treme de frio. Sem manto, vai mais devagar e não galopa." % horse_name)
+	else:
+		Speech.say("%s já não treme de frio." % horse_name)
+
+
+## O seu cavalo está tremendo de frio agora?
+func is_chilled(id: int) -> bool:
+	return bool(_chilled.get(id, false))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -362,7 +564,17 @@ func mount_result(id: int, result: String) -> void:
 ## Respostas do servidor ao Espaço num cavalo (ver Herd.offer).
 const OFFER_TEXT := {
 	"comeu": "Ele come %s da sua mão.",
-	"pronto": "Ele come e fica junto de você. Fique quieto.",
+	"pronto": "Ele come e perde o medo de você. Vai te seguir por um tempo; com um cabresto, feito na bancada da oficina, ele pode ser seu.",
+	"pronto_cabresto": "Ele come e perde o medo de você. Espaço nele põe o cabresto.",
+	"pronto_ja_tem": "Ele come e perde o medo de você. Vai te seguir por um tempo, mas você já tem um cavalo.",
+	"amigo": "Ele já perdeu o medo de você.",
+	"cabresto_sem_cabresto": "Ele já perdeu o medo de você. Com um cabresto, feito na bancada da oficina, ele pode ser seu.",
+	"cabresto_ja_tem": "Você já tem um cavalo. Este só vai te seguir por um tempo.",
+	"cabresto_longe": "Chegue mais perto do cavalo.",
+	"cabresto_desconfia": "Ele ainda desconfia.",
+	"cabresto_domado": "Esse cavalo já tem dono.",
+	"cabresto_domou": "",
+	"cabresto_sumiu": "",
 	"desconfia": "Ele ainda desconfia. Espere parado perto da manada.",
 	"longe": "Chegue mais perto do cavalo.",
 	"mastigando": "Ele ainda está mastigando.",
@@ -391,7 +603,7 @@ func horse_tamed(id: int) -> void:
 	if _horses.has(id):
 		_horses[id]["owner"] = get_parent().my_owner_key()
 		_play(id, HorseSounds.voice("manso"), SOUND_DB["manso"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
-	Speech.say("O cavalo encosta o focinho em você. Agora ele é seu. " + get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0)))
+	Speech.say("Você passa o cabresto pela cabeça do cavalo, e ele encosta o focinho em você. Agora ele é seu. " + get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0)))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -422,6 +634,37 @@ func _suffix_items(id: int, prefix: int, page: int) -> Array:
 func _ask_name(id: int, choice: String) -> String:
 	request_name.rpc_id(1, id, choice)
 	return ""
+
+
+## O meu cavalo a até Herd.GEAR_REACH (ou o que monto), para o menu Cavalo; -1.
+func gear_target(me: Vector2) -> int:
+	if _riding >= 0:
+		return _riding
+	var mine: String = get_parent().my_owner_key()
+	var best := -1
+	var best_d := Herd.GEAR_REACH
+	for id: int in _horses:
+		if str(_horses[id]["owner"]) != mine or mine.is_empty():
+			continue
+		var d := horse_point(id).distance_to(me)
+		if d <= best_d:
+			best_d = d
+			best = id
+	return best
+
+
+func horse_name_of(id: int) -> String:
+	var horse_name: String = str(_horses.get(id, {}).get("name", ""))
+	return horse_name if not horse_name.is_empty() else "Cavalo sem nome"
+
+
+## Equipamento e alforje do meu cavalo (o que o servidor mandou).
+func gear_of(id: int) -> Dictionary:
+	return _gear.get(id, {}).get("gear", {})
+
+
+func pack_of(id: int) -> Dictionary:
+	return _gear.get(id, {}).get("pack", {})
 
 
 ## M: o seu cavalo mais perto, a até Herd.MOUNT_REACH, para montar (o id); ou
@@ -722,6 +965,11 @@ func _next_gap(horse: Dictionary, gallop: bool) -> float:
 func _snort_gap(gait: int) -> float:
 	var span: Array = GALLOP_SNORTS if gait == Herd.Gait.GALLOP else WALK_SNORTS
 	return randf_range(span[0], span[1])
+
+
+## O chão em "point", para os cascos e a derrapada.
+func surface_at(point: Vector2) -> String:
+	return _surface_at(point)
 
 
 func _surface_at(point: Vector2) -> String:

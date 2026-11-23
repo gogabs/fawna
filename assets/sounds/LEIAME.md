@@ -130,6 +130,9 @@ Publicados com autorização do Gabs (2026-11-22).
 - `relincho_<n>`, `bufo_<n>`, `manso_<n>` (relincho manso), `pasto_<n>`.
 - `corpo_<n>` (o corpo assentando no lombo, ao montar) e `toque_<n>` (os
   calcanhares no lombo, ao apertar W montado): gerados por código, sem gravação.
+- `derrapada_<chão>_<n>.ogg`: a freada com derrapada antes de bater, sorteada
+  por chão. Terra com e sem uma camada de terra arrastando; grama e neve são
+  as mesmas freadas abafadas.
 
 Gravações de origem, todas no Freesound:
 
@@ -148,6 +151,9 @@ Gravações de origem, todas no Freesound:
 - Cascos: ["Horse Clip Clopping Downhill", de swiftoid](https://freesound.org/s/182504/) (CC0),
   ["horse steps 01", de gastonsaenz](https://freesound.org/s/362959/) (CC BY).
 - Galope: ["Foley Horse Galloping", de StephenSaldanha](https://freesound.org/s/165532/) (CC0).
+- Derrapada: recortada de ["Horse_Running_And_Stop_In_Dirt 02", de n_audioman](https://freesound.org/s/321956/) (CC BY 4.0)
+  e ["Horse_Gallop_And_Slide 01", de n_audioman](https://freesound.org/s/321952/) (CC BY 4.0), com a camada
+  de terra de ["RunningtoStopInDirt", de gbnelso](https://freesound.org/s/684452/) (CC0). As de grama e neve são abafadas.
 
 Obrigado a todos. Os gravados CC BY pedem crédito: InspectorJ, ERH,
-GoodListener, crattray1997 e gastonsaenz.
+GoodListener, crattray1997, gastonsaenz e n_audioman.
