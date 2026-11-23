@@ -196,8 +196,23 @@ const WORKSHOP := {
 			{"say": "Você tece as duas bolsas.", "knocks": 4, "sound": "encaixe"},
 			{"say": "Você une as bolsas por uma faixa que vai sobre o lombo.", "knocks": 2, "sound": "encaixe"},
 		]},
+	# Para domar: Espaço com ele num cavalo que perdeu o medo (Herd.halter).
+	"cabresto": {"name": ["cabresto", "cabrestos"], "article": "o",
+		"materials": {"fibra": 4, "cipo": 1},
+		"steps": [
+			{"say": "Você torce a fibra numa corda macia.", "knocks": 3, "sound": "encaixe"},
+			{"say": "Você dá as voltas da cabeçada e amarra com o cipó.", "knocks": 2, "sound": "encaixe"},
+		]},
+	# Protege o cavalo do frio (Herd.cold_slow).
+	"manto": {"name": ["manto de cavalo", "mantos de cavalo"], "article": "o",
+		"materials": {"fibra": 16, "resina": 2},
+		"steps": [
+			{"say": "Você trança a fibra em tiras grossas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as tiras em duas camadas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você passa resina por cima, para a água escorrer.", "knocks": 3, "sound": "encaixe"},
+		]},
 }
-const WORKSHOP_ORDER := ["tocha", "alforje"]
+const WORKSHOP_ORDER := ["tocha", "cabresto", "alforje", "manto"]
 
 
 static func material_text(item: String, amount: int) -> String:
