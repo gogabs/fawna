@@ -458,7 +458,7 @@ static func ui_open() -> AudioStream:
 	return _pick_first("ui_abrir")
 
 
-## Baixo na raiz do menu: nada mais para voltar. Neutro, de interface.
+## Esquerda na raiz do menu: nada mais para voltar. Neutro, de interface.
 static func ui_limit() -> AudioStream:
 	return _pick_first("ui_limite", SoundBank.ui_limit)
 

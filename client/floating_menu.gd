@@ -3,10 +3,8 @@ extends RefCounted
 ## Menu flutuante das setas, sempre ativo durante o jogo (as setas não
 ## movem a criatura; quem anda é W/A/S/D e quem gira é Q/E).
 ##
-## A orientação das setas é a das opções (Net.vertical_nav, ver MenuNav):
-##   Horizontal (padrão): Esquerda/Direita passam pelas opções do nível
-##     atual, Cima confirma (entra na opção ou executa), Baixo volta um nível
-##   Vertical: Cima/Baixo passam pelas opções, Direita confirma, Esquerda volta
+## Setas (ver MenuNav): Cima/Baixo passam pelas opções do nível atual,
+## Direita confirma (entra na opção ou executa) e Esquerda volta um nível.
 ##
 ## Cada opção é um dicionário com "label" e uma destas chaves:
 ##   "open": Callable que devolve as opções do submenu (Array de opções)
@@ -16,7 +14,7 @@ extends RefCounted
 ## Opcionais: "close" (com "run": fecha o menu depois, para o fim de um fluxo), "empty" (o que dizer se o submenu vier vazio) e os sons do
 ## submenu, no lugar dos genéricos: "open_sound" (ao entrar, em vez de
 ## "abrir"), "move_sound" (ao passar pelas opções, em vez de "mover") e
-## "close_sound" (ao sair com Baixo, em vez de "fechar").
+## "close_sound" (ao sair com Esquerda, em vez de "fechar").
 ## press() devolve o texto a falar; quem usa o menu (o jogo) fala e toca os
 ## sons de interface.
 

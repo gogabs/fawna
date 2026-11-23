@@ -19,8 +19,8 @@ O jogo funciona sem as extensões, com a voz e o áudio 3D do próprio Godot, ma
 - **Entrar no mundo como [nome]:** entra no servidor padrão (versão de testes: `26.127.36.156`, pela VPN). Sem nome definido nas Opções, não entra.
 - **Hospedar um jogo privado:** sobe o servidor aqui, em qualquer endereço na porta UDP 7350, e põe você no mundo. Outros computadores da rede local o encontram por broadcast UDP na porta 7355 (libere no firewall).
 - **Entrar em um jogo privado:** procura jogos na rede local e lista o que achar, com a opção de digitar o IP.
-- **Opções:** muda seu nome (campo que mostra "Nome: valor" e só abre para digitar ao confirmar), o VSync, desliga os gráficos dentro do jogo (gasta bem menos processador; a janela fica parada) e escolhe a orientação das setas nos menus. Fica salvo em `user://config.cfg`. O servidor é sempre o padrão (7350).
-- **Navegação:** só pelas setas, sem Tab. Horizontal (padrão): ← / → escolhem, ↑ confirma, ↓ volta. Vertical: ↑ / ↓ escolhem, → confirma, ← volta. Vale para o menu principal, as Opções, o menu flutuante e o Caminheiro.
+- **Opções:** muda seu nome (campo que mostra "Nome: valor" e só abre para digitar ao confirmar), o VSync, desliga os gráficos dentro do jogo (gasta bem menos processador; a janela fica parada). Fica salvo em `user://config.cfg`. O servidor é sempre o padrão (7350).
+- **Navegação:** só pelas setas, sem Tab nem Enter, sempre vertical: ↑ / ↓ escolhem, → confirma (ou entra) e ← volta, como numa árvore de pastas. Os menus flutuam sobre o jogo, então as outras teclas ficam todas para o jogo (e, com gamepad, o menu cabe no direcional). Vale para o menu principal, as Opções, o menu flutuante e o Caminheiro.
 - **Sair.**
 
 Os gráficos 3D (`client/world_view_3d.gd`) mostram o mundo em primeira pessoa: chão por bioma, trilhas, pontes, água e neblina. "Desligar os gráficos" nas Opções corta tudo isso. Para tirar uma foto da tela nos testes: `--auto=TP_x_y,FOTO_nome,SAIR` salva `user://nome.png`.
@@ -53,7 +53,7 @@ O menu das setas ganha **Depuração** quando o servidor a liga: num servidor de
 | Andar para frente / para trás | W / S |
 | Passo para o lado | A / D |
 | Girar 45° para a esquerda / direita | Q / E |
-| Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas (orientação em Opções): ← / → escolhem, ↑ confirma, ↓ volta; no modo Vertical, ↑ / ↓ escolhem, → confirma, ← volta |
+| Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ↑ / ↓ escolhem, → confirma, ← volta |
 | Para onde estou olhando | F |
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
@@ -83,7 +83,7 @@ estão em relação a você: "árvore, à frente e à direita, 3 metros".
 ## Menu das setas e o Caminheiro
 
 As setas não movem a criatura: elas operam um menu flutuante, sempre ativo.
-← e → passam pelas opções, ↑ confirma e ↓ volta (em Opções dá para trocar para Vertical: ↑ e ↓ passam, → confirma e ← volta). As opções são o
+↑ e ↓ passam pelas opções, → confirma e ← volta. As opções são o
 **Caminheiro**, a **Bolsa** e o **Equipamento**.
 
 O Caminheiro tem três submenus: **Locais** (os povoados com nome),
@@ -101,7 +101,7 @@ os dois prontos, Espaço no marco abre duas listas no menu das setas: primeiro
 6 substantivos, depois 6 adjetivos (já concordando com o substantivo), sorteados
 para aquele marco de listas maiores (`shared/settlement_names.gd`). A
 combinação vira o nome do povoado ("Clareira Esquecida"), e só então ele
-aparece em Locais. Seta para baixo na primeira lista desiste sem nomear.
+aparece em Locais. Seta para a esquerda na primeira lista desiste sem nomear.
 
 Ao passar de uma região para outra soa um sopro grave e baixinho, sem fala
 (gerado por código; um arquivo `assets/sounds/world/regiao.ogg` o substitui).
