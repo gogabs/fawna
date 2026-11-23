@@ -22,6 +22,9 @@ signal sound(kind: String)  # "mover", "abrir", "confirmar", "fechar", "limite" 
 
 var _root: Callable  # devolve as opções do primeiro nível
 var _levels: Array = []  # [{ "title", "items", "index" }], o último é o atual
+## Sobe a cada mexida (setas, abrir, sincronizar): a tela em 3D (MenuView) só
+## redesenha quando ela muda.
+var revision := 0
 
 
 func _init(root: Callable) -> void:
@@ -29,7 +32,21 @@ func _init(root: Callable) -> void:
 	reset()
 
 
+## O que a tela em 3D mostra: o caminho de títulos, as opções do nível atual
+## e qual está em foco.
+func snapshot() -> Dictionary:
+	var path: Array[String] = []
+	for i in range(1, _levels.size()):
+		path.append(str(_levels[i]["title"]))
+	var level: Dictionary = _levels[-1]
+	var labels: Array[String] = []
+	for item: Dictionary in level["items"]:
+		labels.append(str(item["label"]))
+	return {"path": path, "items": labels, "index": level["index"]}
+
+
 func reset() -> void:
+	revision += 1
 	_levels = [{"title": "", "items": _root.call(), "index": 0}]
 
 
@@ -37,6 +54,7 @@ func reset() -> void:
 ## marco abre a escolha do nome). source devolve as opções. Devolve o texto
 ## a falar.
 func open_at(title: String, source: Callable) -> String:
+	revision += 1
 	reset()
 	_levels.append({"title": title, "items": source.call(), "index": 0, "source": source,
 		"move_sound": "mover", "close_sound": "fechar"})
@@ -69,6 +87,7 @@ func current_label() -> String:
 
 ## "esquerda", "direita", "cima" ou "baixo". Devolve o texto a falar.
 func press(direction: String) -> String:
+	revision += 1
 	var text := ""
 	match MenuNav.action(direction):
 		"anterior":
@@ -130,6 +149,7 @@ func _confirm() -> String:
 ## mais próximo que ainda existe. Devolve o texto a falar quando o foco subiu;
 ## vazio se nada se moveu.
 func sync() -> String:
+	revision += 1
 	var kept := 1
 	_levels[0]["items"] = _root.call()
 	_levels[0]["index"] = clampi(_levels[0]["index"], 0, maxi(_levels[0]["items"].size() - 1, 0))

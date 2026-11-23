@@ -40,6 +40,12 @@ var graphics_off := false
 var shadows := false
 var msaa := 0
 var glow := false
+## Minimapa com a bússola no canto da tela (só visual).
+var minimap := true
+## O menu das setas desenhado na tela (só visual).
+var menu_visual := true
+## O rastro de névoa que mostra a rota do Caminheiro no chão (só visual).
+var trail_visual := true
 const PRESET_NAMES := ["Desativados", "Mais desempenho", "Melhores gráficos"]
 ## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
 ## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
@@ -86,6 +92,9 @@ func load_settings() -> void:
 	shadows = config.get_value("video", "sombras", shadows)
 	msaa = config.get_value("video", "antisserrilhamento", msaa)
 	glow = config.get_value("video", "brilho", glow)
+	minimap = config.get_value("video", "minimapa", minimap)
+	menu_visual = config.get_value("video", "menu_na_tela", menu_visual)
+	trail_visual = config.get_value("video", "rastro", trail_visual)
 
 
 func save_settings() -> void:
@@ -97,6 +106,9 @@ func save_settings() -> void:
 	config.set_value("video", "sombras", shadows)
 	config.set_value("video", "antisserrilhamento", msaa)
 	config.set_value("video", "brilho", glow)
+	config.set_value("video", "minimapa", minimap)
+	config.set_value("video", "menu_na_tela", menu_visual)
+	config.set_value("video", "rastro", trail_visual)
 	config.save(SETTINGS_PATH)
 
 
