@@ -116,7 +116,7 @@ static func footfall(root: Node3D, gait: int) -> void:
 ## Move as peças de um cavalo montado por build(). "phase" é o relógio do passo
 ## (em ciclos), "gait" é Herd.Gait, "amount" a energia do movimento (0 parado).
 ## "turn_hint" (-1 a 1) é o giro que o cavaleiro pediu: o pescoço e o corpo entortam para o lado.
-static func animate(root: Node3D, gait: int, phase: float, time: float, id: int, delta: float, turn_hint := 0.0) -> void:
+static func animate(root: Node3D, gait: int, phase: float, time: float, id: int, delta: float, turn_hint := 0.0, chilled := false, skid := 0.0) -> void:
 	var moving := gait != Herd.Gait.STAND
 	var phases: Array = PHASES_GALLOP if gait == Herd.Gait.GALLOP else (PHASES_TROT if gait == Herd.Gait.TROT else PHASES_WALK)
 	var swing := 0.62 if gait == Herd.Gait.GALLOP else (0.45 if gait == Herd.Gait.TROT else 0.32)
@@ -138,6 +138,16 @@ static func animate(root: Node3D, gait: int, phase: float, time: float, id: int,
 	# De cabeça baixa pastando, quando parado; erguida e balançando ao andar.
 	var neck_goal := -0.95 if not moving else (0.05 + 0.05 * sin(phase * TAU * 2.0))
 	neck.rotation.x = lerpf(neck.rotation.x, neck_goal, minf(1.0, delta * 2.5))
+	# Derrapando: cabeça erguida, corpo jogado para trás. Com frio: treme e abaixa a cabeça.
+	if skid > 0.0:
+		neck.rotation.x = lerpf(neck.rotation.x, -0.35 * skid, minf(1.0, delta * 12.0))
+		trunk.rotation.x = lerpf(trunk.rotation.x, 0.2 * skid, minf(1.0, delta * 10.0))
+	else:
+		trunk.rotation.x = lerpf(trunk.rotation.x, 0.0, minf(1.0, delta * 6.0))
+	if chilled and gait == Herd.Gait.STAND:
+		neck.rotation.x = lerpf(neck.rotation.x, -0.5, minf(1.0, delta * 3.0))
+	var shiver := 0.025 if chilled else 0.0
+	trunk.rotation.z += sin(time * 38.0 + id) * shiver
 	# Pedido de giro: o pescoço e a cabeça apontam para o lado e o corpo se inclina.
 	neck.rotation.y = lerpf(neck.rotation.y, -turn_hint * 0.55, minf(1.0, delta * 10.0))
 	trunk.rotation.z = lerpf(trunk.rotation.z, -turn_hint * 0.08, minf(1.0, delta * 8.0))

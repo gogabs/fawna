@@ -293,6 +293,15 @@ func _process(delta: float) -> void:
 		node.rotation.y = lerp_angle(node.rotation.y, yaw, minf(1.0, delta * 10.0))
 
 
+## Há uma parede de obra em "cell" (em casas) que tapa a câmera? Quem está dentro
+## da obra não a vê como parede.
+func wall_blocks(cell: Vector2i, from: Vector2) -> bool:
+	if _builds == null:
+		return false
+	var build := _builds.at(cell)
+	return not build.is_empty() and Crafting.is_large(build["kind"]) and Builds.walls_up(build) and not Builds.inside(build, from)
+
+
 ## O som do passo de outro jogador tocou: trava a perna nele.
 func footfall(player_id: int) -> void:
 	if _folk.has(player_id) and (_folk[player_id] as Node3D).has_node("Corpo"):

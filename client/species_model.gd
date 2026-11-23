@@ -239,7 +239,7 @@ static func _add_ears(head: Node3D, shapes: Dictionary, kind: String, fur: Mater
 
 ## Duração de cada ação pontual (segundos). Cada evento (um golpe, um trabalho na obra) toca uma vez.
 const ACTIONS := {
-	"golpe": 0.45, "coleta": 0.9, "obra": 1.2, "salto": 0.6, "uivo": 1.8,
+	"golpe": 0.45, "comer": 1.3, "coleta": 0.9, "obra": 1.2, "salto": 0.6, "uivo": 1.8,
 	"disparada": 3.0, "fucar": 2.0, "arar": 2.0, "pesca": 2.0,
 }
 
@@ -386,6 +386,9 @@ static func _apply_action(root: Node3D, body: Node3D, head: Node3D, arms: Array[
 			var drop := smoothstep(0.3, 0.65, u)
 			arms[1].rotation.x = -2.3 * raise + 2.7 * drop
 			body.rotation.x += -0.2 * w
+		"comer":  # leva a mão à boca duas vezes, mastigando
+			arms[1].rotation.x = (-2.0 + 0.25 * sin(t * 14.0)) * w
+			head.rotation.x = (0.15 + 0.1 * sin(t * 14.0)) * w
 		"coleta":  # agacha e estica as mãos
 			body.position.y -= 0.32 * w
 			for arm in arms:

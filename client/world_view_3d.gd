@@ -208,7 +208,7 @@ func _place_camera(feet: Vector3) -> void:
 		var d := 0.4
 		while d <= THIRD_DISTANCE:
 			var at := (head + back * d) / METERS
-			if not _world.is_free(Vector2(at.x, at.z), 0.1):
+			if not _world.is_free(Vector2(at.x, at.z), 0.1) or (_obras != null and _obras.wall_blocks(WorldGen.cell_of(Vector2(at.x, at.z)), _pos)):
 				wanted = maxf(0.6, d - 0.5)
 				break
 			d += 0.3
@@ -235,6 +235,12 @@ func set_self(species_id: String, mounted: bool, load_fraction := 0.0, wielded :
 	if _self_model != null:
 		_self_model.queue_free()
 		_self_model = null
+
+
+## O cavalo montado derrapou (ver Game._ride_halt).
+func horse_skid() -> void:
+	if _wildlife != null:
+		_wildlife.horse_skid()
 
 
 ## Um casco tocou (som): trava a perna do cavalo na pisada.

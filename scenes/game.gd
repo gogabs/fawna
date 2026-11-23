@@ -2181,6 +2181,8 @@ func _ride_halt(angle: float, speed: float) -> Vector2:
 	_play(HorseSounds.skid(horses.surface_at(_pos)), true, FOOTSTEP_DB + SKID_DB)
 	horses.request_voice.rpc_id(1, horse, "derrapada")
 	horses.request_voice.rpc_id(1, horse, "relincho")
+	if view3d != null:
+		view3d.horse_skid()
 	if not Net.auto_commands.is_empty():
 		print("[teste] derrapada em %s" % [cell])
 	return _ride_skid()
@@ -3495,6 +3497,7 @@ func _sync_menu() -> void:
 
 ## Comer passa pelo servidor; a resposta (Survival.ate) é que fala e toca.
 func _eat(item: String) -> String:
+	_self_action("comer")
 	survival.request_eat.rpc_id(1, item)
 	return ""
 
