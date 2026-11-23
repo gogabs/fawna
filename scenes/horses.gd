@@ -420,6 +420,29 @@ func _ask_name(id: int, choice: String) -> String:
 	return ""
 
 
+## M: monta no seu cavalo mais perto, a até Herd.MOUNT_REACH. Devolve o que
+## falar (a resposta do servidor chega depois).
+func mount_nearest(me: Vector2) -> String:
+	var mine: String = get_parent().my_owner_key()
+	var best := -1
+	var best_d := Herd.MOUNT_REACH
+	var any := false
+	for id: int in _horses:
+		if str(_horses[id]["owner"]) != mine or mine.is_empty():
+			continue
+		any = true
+		var d := horse_point(id).distance_to(me)
+		if d <= best_d:
+			best_d = d
+			best = id
+	if best < 0:
+		return "Seu cavalo está longe." if any else "Nenhum cavalo seu por perto."
+	if str(_horses[best]["name"]).is_empty():
+		return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(best, 0))
+	request_mount.rpc_id(1, best)
+	return ""
+
+
 ## O cavalo em que estou montado, ou -1.
 func riding_mine() -> int:
 	return _riding
@@ -454,9 +477,13 @@ func reach_target(me: Vector2) -> int:
 	var best_d := INF
 	var mine: String = get_parent().my_owner_key()
 	for id: int in _horses:
+		var owner: String = _horses[id]["owner"]
+		# Só os selvagens (fruta) e o seu ainda sem nome: os outros não tomam o
+		# Espaço da coleta (o seu segue você o tempo todo).
+		if not owner.is_empty() and (owner != mine or not str(_horses[id]["name"]).is_empty()):
+			continue
 		var d := horse_point(id).distance_to(me)
-		# No seu cavalo dá para montar de um pouco mais longe.
-		var reach := Herd.MOUNT_REACH if str(_horses[id]["owner"]) == mine else Herd.OFFER_REACH
+		var reach := Herd.MOUNT_REACH if owner == mine else Herd.OFFER_REACH
 		if d <= reach and d < best_d:
 			best_d = d
 			best = id
@@ -475,8 +502,7 @@ func interact(id: int) -> String:
 	if owner == get_parent().my_owner_key():
 		if horse_name.is_empty():
 			return get_parent().open_menu("Nome do cavalo, começo", name_items.bind(id, 0))
-		request_mount.rpc_id(1, id)
-		return ""
+		return "%s, seu cavalo. M monta." % horse_name
 	return "%s, cavalo de %s." % [horse_name, owner] if not horse_name.is_empty() else "Cavalo de %s." % owner
 
 
