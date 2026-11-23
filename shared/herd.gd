@@ -124,7 +124,7 @@ const SUFFIXES := [
 const NAME_CHOICES := 6
 
 ## Pelagens: só para a vista 3D (e, mais tarde, para a fala).
-const COATS := ["cinza-cinza", "baio-escuro", "preto-fumaça", "ruão-pálido"]
+const COATS := ["castanho-ferrugem", "baio-escuro", "preto-fumaça", "ruão-pálido"]
 
 const CHUNK := WorldGen.CHUNK
 const ACTIVE_CHUNKS := 2

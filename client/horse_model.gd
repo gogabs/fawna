@@ -9,7 +9,7 @@ extends RefCounted
 ##
 ## O cavalo olha para -Z, como as outras criaturas do 3D.
 
-const COAT_COLORS := [Color("6b6a66"), Color("4a3a2c"), Color("1f1e22"), Color("a39a8c")]
+const COAT_COLORS := [Color("7a4528"), Color("4a3a2c"), Color("1f1e22"), Color("a39a8c")]
 const MANE_COLOR := Color("141316")
 const HOOF_COLOR := Color("1b1a1c")
 const MUZZLE_DARKEN := 0.55
@@ -36,17 +36,20 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 	root.add_child(trunk)
 	# Tronco: peito, barriga e garupa se juntam num barril.
 	_piece(trunk, shapes["blob"], Vector3(0.0, 0.86, 0.0), Vector3(0.56, 0.54, 1.1), fur)
-	_piece(trunk, shapes["blob"], Vector3(0.0, 0.9, -0.36), Vector3(0.54, 0.6, 0.5), fur)
-	_piece(trunk, shapes["blob"], Vector3(0.0, 0.9, 0.4), Vector3(0.54, 0.58, 0.52), fur)
+	_piece(trunk, shapes["blob"], Vector3(0.0, 0.88, -0.36), Vector3(0.62, 0.7, 0.56), fur)  # peito mais cheio
+	_piece(trunk, shapes["blob"], Vector3(0.0, 0.9, 0.4), Vector3(0.52, 0.56, 0.5), fur)
 	# Pescoço, com a crina em tufos, e a cabeça, que pivota no alto dele.
 	var neck := Node3D.new()
 	neck.name = "Pescoco"
 	neck.position = Vector3(0.0, 1.05, -0.5)
 	trunk.add_child(neck)
-	var neck_piece := _piece(neck, shapes["blob"], Vector3(0.0, 0.2, -0.1), Vector3(0.3, 0.56, 0.34), fur)
+	# O pescoço afunila: grosso na base, fino perto da cabeça.
+	var neck_base := _piece(neck, shapes["blob"], Vector3(0.0, 0.1, -0.04), Vector3(0.36, 0.42, 0.4), fur)
+	neck_base.rotation.x = -0.35
+	var neck_piece := _piece(neck, shapes["blob"], Vector3(0.0, 0.34, -0.15), Vector3(0.24, 0.42, 0.27), fur)
 	neck_piece.rotation.x = -0.35
-	for k in 5:
-		var tuft := _piece(neck, shapes["box"], Vector3(0.0, 0.06 + 0.1 * k, 0.02 - 0.045 * k), Vector3(0.07, 0.16, 0.1), mane)
+	for k in 6:
+		var tuft := _piece(neck, shapes["box"], Vector3(0.0, 0.04 + 0.085 * k, 0.04 - 0.04 * k), Vector3(0.09, 0.18, 0.12), mane)
 		tuft.rotation.x = -0.35
 		tuft.rotation.z = 0.15 * sin(k * 2.3)
 	var head := Node3D.new()
@@ -57,7 +60,7 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 	_piece(head, shapes["blob"], Vector3(0.0, -0.07, -0.44), Vector3(0.16, 0.16, 0.2), dark)  # focinho
 	_piece(head, shapes["box"], Vector3(0.0, 0.1, -0.08), Vector3(0.09, 0.07, 0.16), mane)  # topete
 	for side in [-1, 1]:
-		var ear := _piece(head, shapes["cone"], Vector3(side * 0.08, 0.16, -0.02), Vector3(0.07, 0.15, 0.07), fur)
+		var ear := _piece(head, shapes["cone"], Vector3(side * 0.08, 0.17, -0.02), Vector3(0.09, 0.2, 0.09), fur)
 		ear.name = "Orelha%d" % (0 if side < 0 else 1)
 		ear.rotation.z = -side * 0.2
 		_piece(head, shapes["blob"], Vector3(side * 0.115, 0.03, -0.2), Vector3(0.04, 0.04, 0.04), hoof)  # olho
@@ -66,8 +69,10 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 	tail.name = "Cauda"
 	tail.position = Vector3(0.0, 1.05, 0.62)
 	trunk.add_child(tail)
-	var tail_piece := _piece(tail, shapes["cone"], Vector3(0.0, -0.28, 0.08), Vector3(0.14, 0.6, 0.14), mane)
+	var tail_piece := _piece(tail, shapes["cone"], Vector3(0.0, -0.3, 0.09), Vector3(0.15, 0.6, 0.15), mane)
 	tail_piece.rotation.x = PI + 0.15  # o cone é largo embaixo: vira para ficar largo no alto e afinar para baixo
+	var tail_tuft := _piece(tail, shapes["blob"], Vector3(0.0, -0.58, 0.13), Vector3(0.12, 0.22, 0.12), mane)
+	tail_tuft.rotation.x = 0.15
 	# Pernas: coxa (que pivota no quadril) e canela (que pivota no joelho), com casco.
 	for i in 4:
 		var hip := Node3D.new()
@@ -79,8 +84,13 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 		knee.name = "Joelho%d" % i
 		knee.position = Vector3(0.0, -0.34, 0.0)
 		hip.add_child(knee)
-		_piece(knee, shapes["box"], Vector3(0.0, -0.15, 0.0), Vector3(0.08, 0.3, 0.08), legs)
-		_piece(knee, shapes["box"], Vector3(0.0, -0.3, 0.0), Vector3(0.11, 0.07, 0.12), hoof)
+		# Joelho (na frente) ou jarrete (atrás, com ponta para trás) marcado.
+		var joint := _piece(knee, shapes["blob"], Vector3(0.0, 0.0, 0.03 if i >= 2 else -0.01), Vector3(0.13, 0.13, 0.15), fur)
+		if i >= 2:
+			joint.scale = Vector3(0.12, 0.17, 0.17)
+		_piece(knee, shapes["box"], Vector3(0.0, -0.11, 0.0), Vector3(0.075, 0.2, 0.075), legs)
+		_piece(knee, shapes["blob"], Vector3(0.0, -0.24, 0.015), Vector3(0.09, 0.09, 0.1), legs)  # boleto
+		_piece(knee, shapes["box"], Vector3(0.0, -0.3, 0.0), Vector3(0.12, 0.07, 0.13), hoof)
 	return root
 
 
