@@ -188,8 +188,16 @@ const WORKSHOP := {
 			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
 			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Equipamento do cavalo (ver Herd.GEAR): bolsa extra que fica com ele.
+	"alforje": {"name": ["alforje", "alforjes"], "article": "o",
+		"materials": {"fibra": 10},
+		"steps": [
+			{"say": "Você trança a fibra em tiras largas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as duas bolsas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você une as bolsas por uma faixa que vai sobre o lombo.", "knocks": 2, "sound": "encaixe"},
+		]},
 }
-const WORKSHOP_ORDER := ["tocha"]
+const WORKSHOP_ORDER := ["tocha", "alforje"]
 
 
 static func material_text(item: String, amount: int) -> String:

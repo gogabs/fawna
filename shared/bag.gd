@@ -62,6 +62,7 @@ const WEIGHTS := {
 	"resina": 1,
 	"faca": 2,
 	"tocha": 2,
+	"alforje": 2,
 	"raiz": 1,
 	"raiz_assada": 1,
 	"castanha": 1,
@@ -115,6 +116,7 @@ const NAMES := {
 	"enxada": ["enxada", "enxadas"],
 	"faca": ["faca bruta de sílex", "facas brutas de sílex"],
 	"tocha": ["tocha", "tochas"],
+	"alforje": ["alforje", "alforjes"],
 }
 
 

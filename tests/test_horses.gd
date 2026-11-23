@@ -23,6 +23,7 @@ func _init() -> void:
 		_test_taming(world, spot)
 		_test_tame_save(world, spot)
 		_test_follow_and_ride(world, spot)
+		_test_saddlebag(world, spot)
 	_test_sounds()
 	_test_recorded()
 	for arg in OS.get_cmdline_user_args():
@@ -368,6 +369,34 @@ func _test_follow_and_ride(world: WorldGen, spot: Vector2) -> void:
 	herd.mount(1, id, herd.position_of(horse, t), t)
 	herd.forget_peer(1)
 	_check(int(horse["rider"]) == -1, "quem sai do mundo desmonta")
+
+
+## Alforje: pôr, guardar, pegar, não tirar cheio, salvar.
+func _test_saddlebag(world: WorldGen, spot: Vector2) -> void:
+	var herd := Herd.new(world)
+	herd.update(0, {1: spot})
+	herd.peer_keys[1] = "Lua"
+	herd.peer_keys[2] = "Sol"
+	var id := herd.debug_tame(1, spot, 0)
+	var at: Vector2 = herd.horses[id]["to"]
+	var inv := {"alforje": 1, "pedra_grande": 10, "frutas": 3}
+	_check(herd.set_gear(1, id, "alforje", true, inv, at + Vector2(10, 0), 0) == "longe", "alforje: longe recusa")
+	_check(herd.set_gear(2, id, "alforje", true, {"alforje": 1}, at, 0) == "longe", "alforje: no cavalo de outro recusa")
+	_check(herd.move_pack(1, id, "frutas", 1, true, inv, 99, at, 0)["reason"] == "sem_alforje", "sem alforje não guarda")
+	_check(herd.set_gear(1, id, "alforje", true, inv, at, 0) == "pos" and not inv.has("alforje"), "põe o alforje (sai da bolsa)")
+	var put := herd.move_pack(1, id, "pedra_grande", 10, true, inv, 99, at, 0)
+	var cap := Herd.PACK_CAPACITY / Bag.weight_of("pedra_grande")
+	_check(put["ok"] and int(put["amount"]) == mini(10, cap), "guarda até a capacidade (%d)" % int(put.get("amount", 0)))
+	_check(herd.set_gear(1, id, "alforje", false, inv, at, 0) == "cheio", "alforje com coisas não sai")
+	var back := herd.move_pack(1, id, "pedra_grande", 99, false, inv, Bag.weight_of("pedra_grande") * 2, at, 0)
+	_check(back["ok"] and int(back["amount"]) == 2, "pega só o que cabe na bolsa")
+	var saved := herd.tame_to_save()
+	var again := Herd.new(world)
+	again.load_tame(JSON.parse_string(JSON.stringify(saved)))
+	var horse: Dictionary = again.horses.values()[0]
+	_check((horse["gear"] as Dictionary).has("alforje") and int((horse["pack"] as Dictionary).get("pedra_grande", 0)) == int(put["amount"]) - 2, "alforje e conteúdo voltam do save")
+	herd.move_pack(1, id, "pedra_grande", 99, false, inv, 999, at, 0)
+	_check(herd.set_gear(1, id, "alforje", false, inv, at, 0) == "tirou" and int(inv.get("alforje", 0)) == 1, "vazio, o alforje sai para a bolsa")
 
 
 func _test_recorded() -> void:

@@ -285,6 +285,8 @@ func _tame(herd: Dictionary, horse: Dictionary, peer: int, now_ms: int, out: Arr
 	horse["gait"] = Gait.STAND
 	horse["trust"] = 0
 	horse["rider"] = -1
+	horse["gear"] = {}
+	horse["pack"] = {}
 	horse["eat_until_ms"] = now_ms + _ms(EAT_TIME)
 	horse["aim"] = here
 	horse["next_neigh_ms"] = now_ms + _ms(NICKER_EVERY)
@@ -488,6 +490,80 @@ func riding_of(peer: int) -> int:
 	return -1
 
 
+## Equipamento do cavalo (no dono, a até GEAR_REACH casas, ou montado). O
+## alforje leva até PACK_CAPACITY de carga (os mesmos pesos da bolsa) e fica
+## com o cavalo, salvo no mundo.
+const GEAR := ["alforje"]
+const GEAR_REACH := 3.0
+const PACK_CAPACITY := 24
+
+
+## O cavalo do dono "peer" ao alcance para mexer no equipamento, ou {}.
+func gear_horse(peer: int, horse_id: int, pos: Vector2, now_ms: int) -> Dictionary:
+	if not horses.has(horse_id):
+		return {}
+	var horse: Dictionary = horses[horse_id]
+	if int(horse["herd"]) >= 0 or str(horse["owner"]).is_empty() or str(horse["owner"]) != str(peer_keys.get(peer, "")):
+		return {}
+	if int(horse["rider"]) != peer and position_of(horse, now_ms).distance_to(pos) > GEAR_REACH:
+		return {}
+	return horse
+
+
+## Põe (on) ou tira uma peça de equipamento, da bolsa "inv" ou para ela.
+## Devolve "pos", "tirou", "longe", "sem_item", "ja_tem", "nao_tem" ou "cheio"
+## (alforje com coisas dentro não sai).
+func set_gear(peer: int, horse_id: int, item: String, on: bool, inv: Dictionary, pos: Vector2, now_ms: int) -> String:
+	var horse := gear_horse(peer, horse_id, pos, now_ms)
+	if horse.is_empty() or not GEAR.has(item):
+		return "longe"
+	var gear: Dictionary = horse["gear"]
+	if on:
+		if gear.has(item):
+			return "ja_tem"
+		if int(inv.get(item, 0)) <= 0:
+			return "sem_item"
+		inv[item] = int(inv[item]) - 1
+		if int(inv[item]) <= 0:
+			inv.erase(item)
+		gear[item] = 1
+		return "pos"
+	if not gear.has(item):
+		return "nao_tem"
+	if item == "alforje" and not (horse["pack"] as Dictionary).is_empty():
+		return "cheio"
+	gear.erase(item)
+	inv[item] = int(inv.get(item, 0)) + 1
+	return "tirou"
+
+
+## Guarda no alforje (putting) ou pega dele para a bolsa. "room" é quanto de
+## carga ainda cabe na bolsa (só ao pegar). Devolve { ok, reason, item, amount };
+## reason: "longe", "sem_alforje", "nao_tem", "cheio", "carga".
+func move_pack(peer: int, horse_id: int, item: String, amount: int, putting: bool, inv: Dictionary, room: int, pos: Vector2, now_ms: int) -> Dictionary:
+	var horse := gear_horse(peer, horse_id, pos, now_ms)
+	if horse.is_empty():
+		return {"ok": false, "reason": "longe", "item": item}
+	if not (horse["gear"] as Dictionary).has("alforje"):
+		return {"ok": false, "reason": "sem_alforje", "item": item}
+	var pack: Dictionary = horse["pack"]
+	var source: Dictionary = inv if putting else pack
+	var target: Dictionary = pack if putting else inv
+	var have := int(source.get(item, 0))
+	if have <= 0 or item == "alforje":
+		return {"ok": false, "reason": "nao_tem", "item": item}
+	var weight := maxi(1, Bag.weight_of(item))
+	var space := (PACK_CAPACITY - Bag.weight_of_items(pack)) if putting else room
+	var n := mini(mini(amount, have), space / weight)
+	if n <= 0:
+		return {"ok": false, "reason": "cheio" if putting else "carga", "item": item}
+	source[item] = have - n
+	if int(source[item]) <= 0:
+		source.erase(item)
+	target[item] = int(target.get(item, 0)) + n
+	return {"ok": true, "reason": "", "item": item, "amount": n}
+
+
 ## Avisa quem vê o cavalo de quem está montado nele ("" = ninguém).
 func _send_rider(horse: Dictionary, out: Array) -> void:
 	var key := str(peer_keys.get(int(horse["rider"]), "")) if int(horse["rider"]) >= 0 else ""
@@ -568,7 +644,8 @@ func tame_to_save() -> Array:
 		if int(horse["herd"]) < 0:
 			var at: Vector2 = horse["to"]
 			out.append({"owner": horse["owner"], "name": horse["name"], "x": at.x, "y": at.y,
-				"coat": horse["coat"], "pitch": horse["pitch"]})
+				"coat": horse["coat"], "pitch": horse["pitch"],
+				"gear": (horse["gear"] as Dictionary).duplicate(), "pack": (horse["pack"] as Dictionary).duplicate()})
 	return out
 
 
@@ -589,9 +666,22 @@ func load_tame(saved: Array) -> void:
 			"watchers": {}, "need": 0, "trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
 			"owner": str(entry["owner"]), "rider": -1, "eat_until_ms": 0, "aim": at,
 			"name": str(entry.get("name", "")) if is_name(str(entry.get("name", ""))) else "",
+			"gear": _clean_items(entry.get("gear", {}), GEAR), "pack": _clean_items(entry.get("pack", {}), []),
 		}
 		_next_id += 1
 		horses[horse["id"]] = horse
+
+
+## Itens salvos (item -> quantidade), só os válidos; "only" limita as chaves.
+static func _clean_items(raw: Variant, only: Array) -> Dictionary:
+	var out := {}
+	if typeof(raw) != TYPE_DICTIONARY:
+		return out
+	for item in raw:
+		var amount := int(raw[item])
+		if amount > 0 and (only.is_empty() or only.has(str(item))):
+			out[str(item)] = amount
+	return out
 
 
 ## Avisa quem vê o cavalo do dono e do nome dele.
@@ -670,7 +760,7 @@ func _make_herd(chunk: Vector2i, home: Vector2, biome: int, rng: RandomNumberGen
 			"watchers": {},
 			"need": rng.randi_range(FRUITS_TO_TAME[0], FRUITS_TO_TAME[1]),
 			"trust": 0, "trust_peer": -1, "chew_until_ms": 0, "quiet_ms": 0.0,
-			"owner": "", "name": "", "rider": -1, "eat_until_ms": 0, "aim": Vector2.INF,
+			"owner": "", "name": "", "rider": -1, "eat_until_ms": 0, "aim": Vector2.INF, "gear": {}, "pack": {},
 		}
 		_next_id += 1
 		horses[horse["id"]] = horse
