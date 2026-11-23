@@ -23,8 +23,37 @@ func _check(condition: bool, message: String) -> void:
 		printerr("FALHOU: " + message)
 
 
+var _origin := WorldGen.NO_CELL
+
+
+## Uma casa livre perto do centro (a partir de 8 casas para o sudeste) onde
+## cabem as obras pequenas dos testes: ela e a casa 6 a leste, com o chão
+## em volta sem nada. Antes era uma casa fixa, e plantas novas no mundo
+## caíam bem nela.
 func _origin_cell() -> Vector2i:
-	return WorldGen.cell_of(WorldGen.center_point()) + Vector2i(8, 8)
+	if _origin != WorldGen.NO_CELL:
+		return _origin
+	var world: WorldGen = WorldState.new(173).world
+	var start := WorldGen.cell_of(WorldGen.center_point()) + Vector2i(8, 8)
+	for r in range(0, 60):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var cell := start + Vector2i(dx, dy)
+				if _clear(world, cell) and _clear(world, cell + Vector2i(6, 0)):
+					_origin = cell
+					return cell
+	return start
+
+
+func _clear(world: WorldGen, cell: Vector2i) -> bool:
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var c := cell + Vector2i(ox, oy)
+			if world.thing_at(c) != WorldGen.Thing.NADA or not world.is_passable(c):
+				return false
+	return world.region_of(cell) == world.region_of(cell + Vector2i(6, 0))
 
 
 func _large(state: WorldState, kind: String, id: int, done: bool, stage := 0) -> Dictionary:
