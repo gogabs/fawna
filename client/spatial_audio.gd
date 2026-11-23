@@ -142,7 +142,7 @@ func facing_yaw() -> float:
 
 
 ## Vira o ouvinte para uma das 8 direções (0 = norte, sentido horário).
-func set_heading(heading: int, smooth := true) -> void:
+func set_heading(heading: int, smooth := true, seconds := TURN_SECONDS) -> void:
 	if _camera == null:
 		return
 	var target := -Compass.angle(heading)
@@ -154,7 +154,9 @@ func set_heading(heading: int, smooth := true) -> void:
 		_camera.rotation.y = goal
 		return
 	_turn_tween = create_tween()
-	_turn_tween.tween_property(_camera, "rotation:y", goal, TURN_SECONDS)
+	_turn_tween.tween_property(_camera, "rotation:y", goal, seconds)
+	_turn_tween.set_trans(Tween.TRANS_SINE)
+	_turn_tween.set_ease(Tween.EASE_IN_OUT)
 
 
 ## Bússola como um relógio em volta da cabeça: cada direção tem sua hora

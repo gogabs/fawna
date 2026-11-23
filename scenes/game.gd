@@ -50,6 +50,12 @@ const ANKLET_DB := 0.0
 const SKID_DB := 0.0  # derrapada do cavalo montado, em relação aos passos
 const SEND_INTERVAL := 0.1  # segundos entre envios da posição
 const TURN_REPEAT := 0.2  # segurando Q/E, gira a cada tanto
+## Montado, o giro não é instantâneo: o cavalo primeiro entorta o pescoço e
+## inclina o corpo para o lado (RIDE_TURN_PREP), e então a bússola gira aos
+## poucos (RIDE_TURN_SECONDS).
+const RIDE_TURN_PREP := 0.22
+const RIDE_TURN_SECONDS := 0.5
+const RIDE_TURN_REPEAT := 0.5  # segurando Q/E montado, gira a cada tanto
 const BUMP_SOUND_COOLDOWN := 0.45
 const BUMP_SPEECH_COOLDOWN := 1.5
 const COLLECT_REACH := 1.4  # casas, do centro da criatura ao centro da coisa
@@ -133,6 +139,8 @@ var _step_count := 0  # passos desde que começou a andar (para o foley)
 var _send_timer := 0.0
 var _last_sent := Vector2.INF
 var _turn_cooldown := 0.0
+var _ride_turn_steps := 0  # giros montado que esperam a preparação acabar
+var _ride_turn_waiting := false
 var _bump_sound_cooldown := 0.0
 var _bump_speech_cooldown := 0.0
 var _last_bump_thing := -1
@@ -226,6 +234,10 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	if view3d != null:
+		view3d.set_riders(state.riding)
+		view3d.set_self(_my_species(), horses != null and horses.riding_mine() >= 0, \
+				float(Bag.load_of(inventory, wielded, offhand)) / maxf(1.0, float(Bag.capacity_for(_my_species()))), wielded)
 	# Quem não consegue entrar em 30 s volta ao menu, em vez de ficar parado.
 	if Net.mode == Net.Mode.CLIENT and world == null:
 		_connect_waited += delta
@@ -519,6 +531,8 @@ func ability_event(id: int, tag: String, event: String, data: Dictionary) -> voi
 	var pos: Vector2 = data.get("to", data.get("pos", players[id]["pos"]))
 	match event:
 		"usou":
+			if not mine and view3d != null:
+				view3d.other_action(id, str(ACTIONS_BY_TAG.get(tag, "")))
 			match tag:
 				"salto":
 					players[id]["pos"] = pos
@@ -1605,6 +1619,8 @@ func player_handled(id: int, verb: String) -> void:
 		return
 	var stream: AudioStream = {"empunhou": Sounds.wield(), "guardou": Sounds.stow(), "golpeou": Sounds.axe_swing(),
 		"fabricou": Sounds.build_knock(), "faisca": Sounds.fire_spark()}.get(verb)
+	if view3d != null and verb in ["golpeou", "fabricou"]:
+		view3d.other_action(id, "golpe" if verb == "golpeou" else "obra")
 	_play_other(players[id]["pos"], stream)
 
 
@@ -1801,7 +1817,7 @@ func player_moved(id: int, pos: Vector2) -> void:
 		steps["clock"] = 0.0  # começou a andar: primeiro passo na hora
 		steps["count"] = 0
 		_play_other(pos, Sounds.move_start(), START_STOP_DB)
-		_play_other_step(pos, 0)
+		_play_other_step(pos, 0, id)
 	steps["idle"] = 0.0
 	_others_step[id] = steps
 
@@ -1812,6 +1828,8 @@ func player_collected(id: int, item: String) -> void:
 	if world == null or not players.has(id) or id == my_id:
 		return
 	var pos: Vector2 = players[id]["pos"]
+	if view3d != null:
+		view3d.other_action(id, "coleta")
 	if pos.distance_to(_pos) <= HEARING_RADIUS:
 		audio.play_at_point(pos, Sounds.pickup(item))
 
@@ -2163,6 +2181,8 @@ func _ride_halt(angle: float, speed: float) -> Vector2:
 	_play(HorseSounds.skid(horses.surface_at(_pos)), true, FOOTSTEP_DB + SKID_DB)
 	horses.request_voice.rpc_id(1, horse, "derrapada")
 	horses.request_voice.rpc_id(1, horse, "relincho")
+	if view3d != null:
+		view3d.horse_skid()
 	if not Net.auto_commands.is_empty():
 		print("[teste] derrapada em %s" % [cell])
 	return _ride_skid()
@@ -2334,6 +2354,8 @@ func _indoors(cell: Vector2i) -> bool:
 
 
 func _play_my_step() -> void:
+	if view3d != null:
+		view3d.self_footfall()
 	var cell := WorldGen.cell_of(_pos)
 	_play(Sounds.footstep(world.biome_at(cell), world.thing_at(cell), _indoors(cell)), true, FOOTSTEP_DB)
 	for sound: Array in _step_foley(_step_count):
@@ -2376,7 +2398,7 @@ func _tick_other_steps(delta: float) -> void:
 		elif was_walking and steps["clock"] >= STEP_INTERVAL:
 			steps["clock"] = _next_step_clock(steps["clock"])
 			steps["count"] += 1
-			_play_other_step(players[id]["pos"], steps["count"])
+			_play_other_step(players[id]["pos"], steps["count"], id)
 
 
 func _set_pos(new_pos: Vector2) -> void:
@@ -2456,11 +2478,44 @@ func _bump(target: Vector2) -> void:
 ## Gira 45° (step -1 para a esquerda, 1 para a direita), com o clique da
 ## bússola soando na nova direção.
 func _turn(step: int) -> void:
+	if horses != null and horses.riding_mine() >= 0:
+		_ride_turn(step)
+		return
 	_turn_cooldown = TURN_REPEAT
 	_heading = posmod(_heading + step, Compass.STEPS)
 	audio.play_compass(_heading)
 	_play(Sounds.turn_rustle(), true, TURN_RUSTLE_DB)
 	audio.set_heading(_heading)
+	_finish_turn()
+
+
+## Giro montado: o cavalo se prepara (pescoço e corpo para o lado) e só então a
+## bússola gira, devagar. Giros apertados durante a preparação se somam.
+func _ride_turn(step: int) -> void:
+	_turn_cooldown = RIDE_TURN_REPEAT
+	_ride_turn_steps += step
+	_play(Sounds.turn_rustle(), true, TURN_RUSTLE_DB)
+	if view3d != null:
+		view3d.ride_turn_hint(signi(_ride_turn_steps), RIDE_TURN_PREP + RIDE_TURN_SECONDS)
+	if _ride_turn_waiting:
+		return
+	_ride_turn_waiting = true
+	get_tree().create_timer(RIDE_TURN_PREP).timeout.connect(_ride_turn_apply)
+
+
+func _ride_turn_apply() -> void:
+	_ride_turn_waiting = false
+	var steps := _ride_turn_steps
+	_ride_turn_steps = 0
+	if steps == 0 or world == null:
+		return
+	_heading = posmod(_heading + steps, Compass.STEPS)
+	audio.play_compass(_heading)
+	audio.set_heading(_heading, true, RIDE_TURN_SECONDS)
+	_finish_turn()
+
+
+func _finish_turn() -> void:
 	view.heading = _heading
 	view.queue_redraw()
 	request_heading.rpc_id(1, _heading)
@@ -2541,6 +2596,7 @@ func _interact() -> void:
 		elif build["kind"] == "forno" and build["done"] and builds.is_lit(int(build["id"])):
 			Speech.say(_menu.open_at("Forno aceso", _oven_root.bind(int(build["id"]))))
 		else:
+			_self_action("obra")
 			request_build_work.rpc_id(1, int(build["id"]))
 	elif pile != WorldGen.NO_CELL and (pile_distance <= target_distance or harvest.is_ready(target)):
 		# O jogador escolhe o que pegar: um monte vira bagunça rápido. O
@@ -2548,6 +2604,7 @@ func _interact() -> void:
 		# vez de o jogo adivinhar qual dos dois o Espaço quis.
 		Speech.say(_menu.open_at("Pilha no chão", _pile_pick_items.bind(pile, target)))
 	elif target != WorldGen.NO_CELL:
+		_self_action("coleta")
 		request_collect.rpc_id(1, target)
 
 
@@ -2655,6 +2712,7 @@ func _swing() -> void:
 		if Species.has_tag(_my_species(), "garras"):
 			if _swing_cooldown <= 0.0:
 				_swing_cooldown = SWING_COOLDOWN
+				_self_action("golpe")
 				_play(Sounds.axe_swing(), true)
 				request_swing.rpc_id(1)
 				request_horror_strike.rpc_id(1)
@@ -2664,6 +2722,7 @@ func _swing() -> void:
 	if _swing_cooldown > 0.0:
 		return
 	_swing_cooldown = SWING_COOLDOWN
+	_self_action("golpe")
 	_play(Sounds.axe_swing(), true)
 	request_horror_strike.rpc_id(1)
 	# No terreno de uma obra grande, o machado limpa e a enxada capina.
@@ -2712,12 +2771,23 @@ func _swing() -> void:
 
 
 ## H: pede ao servidor para usar a habilidade ativa da espécie.
+## Qual animação cada habilidade ativa dispara (SpeciesModel.ACTIONS).
+const ACTIONS_BY_TAG := {"salto": "salto", "uivo": "uivo", "disparada": "disparada", "fucar": "fucar", "arar": "arar", "pesca": "pesca"}
+
+
+## Dispara a animação de uma ação do próprio personagem (só aparece na 3ª pessoa).
+func _self_action(action: String) -> void:
+	if view3d != null and not action.is_empty():
+		view3d.self_action(ACTIONS_BY_TAG.get(action, action))
+
+
 func _use_ability() -> void:
 	if world == null or horrors.is_caught():
 		return
 	if _my_species().is_empty():
 		Speech.say("Escolha a sua espécie primeiro, no menu das setas, em Personagem.")
 		return
+	_self_action(Species.active_of(_my_species()) if ACTIONS_BY_TAG.has(Species.active_of(_my_species())) else "")
 	request_ability.rpc_id(1)
 
 
@@ -2806,7 +2876,9 @@ func _play(stream: AudioStream, vary := false, volume_db := 0.0) -> void:
 
 ## Passos de outras criaturas soam na posição delas (com HRTF, se instalado),
 ## com o mesmo foley de roupa e conchas da própria criatura.
-func _play_other_step(pos: Vector2, n: int) -> void:
+func _play_other_step(pos: Vector2, n: int, id := -1) -> void:
+	if view3d != null and id >= 0:
+		view3d.other_footfall(id)
 	if pos.distance_to(_pos) > HEARING_RADIUS:
 		return
 	var cell := WorldGen.cell_of(pos)
@@ -3048,6 +3120,7 @@ func _graphics_items() -> Array:
 		{"label": "Minimapa e bússola: %s" % ("ligado" if Net.minimap else "desligado"), "run": _graphics_set.bind("minimapa")},
 		{"label": "Menus na tela: %s" % ("ligado" if Net.menu_visual else "desligado"), "run": _graphics_set.bind("menus")},
 		{"label": "Rastro do Caminheiro: %s" % ("ligado" if Net.trail_visual else "desligado"), "run": _graphics_set.bind("rastro")},
+		{"label": "Câmera: %s" % ("terceira pessoa" if Net.third_person else "primeira pessoa"), "run": _graphics_set.bind("camera")},
 	]
 
 
@@ -3078,6 +3151,9 @@ func _graphics_set(what: String) -> String:
 		"menus":
 			Net.menu_visual = not Net.menu_visual
 			text = "Menus na tela %s." % ("ligado" if Net.menu_visual else "desligado")
+		"camera":
+			Net.third_person = not Net.third_person
+			text = "Câmera em %s. O som continua saindo da cabeça do personagem." % ("terceira pessoa" if Net.third_person else "primeira pessoa")
 		"brilho":
 			Net.glow = not Net.glow
 			text = "Brilho nas luzes %s." % ("ligado" if Net.glow else "desligado")
@@ -3421,6 +3497,7 @@ func _sync_menu() -> void:
 
 ## Comer passa pelo servidor; a resposta (Survival.ate) é que fala e toca.
 func _eat(item: String) -> String:
+	_self_action("comer")
 	survival.request_eat.rpc_id(1, item)
 	return ""
 
@@ -4329,6 +4406,13 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"ESCURECER":  # testes: escurece a tela (fade do desfalecer)
+				if view3d != null:
+					view3d.fade_out(0.05)
+			"TERCEIRA":  # testes: liga a câmera em terceira pessoa
+				Net.third_person = true
+				if view3d != null:
+					view3d.apply_quality()
 			"CAVALOS":
 				print("[teste] cavalos por perto: %d" % horses.horse_count())
 			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás

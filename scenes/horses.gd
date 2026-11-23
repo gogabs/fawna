@@ -895,6 +895,9 @@ func _client_steps() -> void:
 		# Galopando, quem marca a próxima passada é o compasso comum.
 		horse["next_step"] = INF if gallop else _clock + _next_gap(horse, false)
 		var point := horse_point(id)
+		var view3d = get_parent().get("view3d")
+		if view3d != null:
+			view3d.horse_footfall(id, gait)  # a perna encosta no chão junto com o casco
 		if point.distance_to(me) > STEP_REACH:
 			continue
 		var surface := _surface_at(point)

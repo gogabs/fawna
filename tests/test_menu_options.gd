@@ -96,6 +96,8 @@ func _ready() -> void:
 	await _key(KEY_DOWN)
 	_check(vp.gui_get_focus_owner() == main.trail_check, "baixo: rastro do Caminheiro")
 	await _key(KEY_DOWN)
+	_check(vp.gui_get_focus_owner() == main.third_person_check, "baixo: câmera em terceira pessoa")
+	await _key(KEY_DOWN)
 	_check(vp.gui_get_focus_owner() == main.graphics_back_button, "baixo: voltar de Gráficos")
 	await _key(KEY_RIGHT)
 	_check(main.options_page.visible and vp.gui_get_focus_owner() == main.graphics_button, "voltar de Gráficos devolve ao botão Gráficos")
