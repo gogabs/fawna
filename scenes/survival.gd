@@ -252,6 +252,8 @@ func request_dig(cell: Vector2i) -> void:
 		return
 	var game := get_parent()
 	var id: int = game._sender_id()
+	if game.state.riding.has(id):
+		return  # montado, não cava
 	var result: Dictionary = game.state.dig_roots(id, cell)
 	if not game.state.players.has(id):
 		return

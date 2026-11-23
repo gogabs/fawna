@@ -23,6 +23,8 @@ func _init() -> void:
 		_test_taming(world, spot)
 		_test_tame_save(world, spot)
 		_test_follow_and_ride(world, spot)
+		_test_saddlebag(world, spot)
+		_test_cold(world, spot)
 	_test_sounds()
 	_test_recorded()
 	for arg in OS.get_cmdline_user_args():
@@ -260,19 +262,41 @@ func _test_taming(world: WorldGen, spot: Vector2) -> void:
 		herd.update(t, {1: pos})
 		last = herd.offer(1, id, t, pos)["reason"]
 		fed += 1
-	_check(last == "pronto", "depois de %d frutas fica junto (%s)" % [fed, last])
-	var tamed := 0
-	for i in int(Herd.QUIET_TO_TAME / 0.25) + 4:
+	_check(last == "pronto", "depois de %d frutas perde o medo (%s)" % [fed, last])
+	_check(herd.is_friend(1, id, t), "perdeu o medo de quem deu as frutas")
+	# Segue quem deu as frutas, longe da manada.
+	var walk := pos
+	for i in 40:
 		t += 250
-		for m in herd.update(t, {1: pos}):
-			if m[1] == "tamed" and int(m[2][0]) == id:
-				tamed += 1
-	_check(tamed == 1, "quieto ao lado, o cavalo vira seu")
+		walk += Vector2(0.4, 0.0)
+		herd.update(t, {1: walk})
+	_check(herd.position_of(horse, t).distance_to(walk) < Herd.FOLLOW_FAR + 1.0, "amigo segue quem deu as frutas")
+	pos = herd.position_of(horse, t)
+	var inv := {}
+	_check(herd.halter(1, id, inv, pos, t) == "sem_cabresto", "sem cabresto não vira seu")
+	_check(herd.halter(2, id, {"cabresto": 1}, pos, t) == "desconfia", "outra pessoa não põe cabresto")
+	inv["cabresto"] = 1
+	_check(herd.halter(1, id, inv, pos, t) == "domou" and not inv.has("cabresto"), "com cabresto vira seu e o cabresto fica nele")
+	var tamed := 0
+	for m in herd.update(t + 250, {1: pos}):
+		if m[1] == "tamed" and int(m[2][0]) == id:
+			tamed += 1
+	_check(tamed == 1, "avisa que o cavalo virou seu")
+	_check((horse["gear"] as Dictionary).has("cabresto"), "o cavalo fica de cabresto")
+	t += 250
 	_check(int(horse["herd"]) < 0 and horse["owner"] == "Lua", "domesticado tem dono e sai da manada")
 	_check(herd.rename(1, id, "Bramion") and horse["name"] == "Bramion", "o dono dá nome")
 	_check(not herd.rename(1, id, "Fulano"), "nome fora das listas é recusado")
 	herd.peer_keys[2] = "Sol"
 	_check(not herd.rename(2, id, "Cinza"), "só o dono dá nome")
+	# Um cavalo só: quem já tem faz amizade com outro, mas não põe cabresto.
+	for other_id in herd.horses:
+		var second: Dictionary = herd.horses[other_id]
+		if int(second["herd"]) >= 0:
+			second["trust_peer"] = 1
+			second["friend_until_ms"] = t + 10000
+			_check(herd.halter(1, int(other_id), {"cabresto": 1}, herd.position_of(second, t), t) == "ja_tem", "quem já tem cavalo não põe cabresto em outro")
+			break
 	# Todo mundo vai embora: o domesticado fica.
 	herd.update(t + 250, {1: spot + Vector2(500, 500)})
 	_check(herd.horses.has(id), "domesticado não some quando todos vão embora")
@@ -368,6 +392,79 @@ func _test_follow_and_ride(world: WorldGen, spot: Vector2) -> void:
 	herd.mount(1, id, herd.position_of(horse, t), t)
 	herd.forget_peer(1)
 	_check(int(horse["rider"]) == -1, "quem sai do mundo desmonta")
+
+
+## Frio: sem manto, o domesticado treme, segue mais devagar e não galopa.
+func _test_cold(world: WorldGen, spot: Vector2) -> void:
+	var herd := Herd.new(world)
+	herd.update(0, {1: spot})
+	herd.peer_keys[1] = "Lua"
+	var id := herd.debug_tame(1, spot, 0)
+	var horse: Dictionary = herd.horses[id]
+	var at: Vector2 = horse["to"]
+	herd.season = 2  # Longa Escuridão: frio o dia todo
+	var chill := []
+	for m in herd.update(250, {1: at}):
+		if m[1] == "chill":
+			chill.append(m[2][1])
+	_check(chill == [true], "no frio, sem manto, o cavalo treme (%s)" % [chill])
+	# Longe: não vem a galope, vem a passo e mais devagar.
+	var far := at + Vector2(20, 0)
+	horse["eat_until_ms"] = 0
+	herd.update(500, {1: far})
+	_check(int(horse["gait"]) == Herd.Gait.WALK, "com frio não galopa (andar %d)" % int(horse["gait"]))
+	herd.fires = [herd.position_of(horse, 500)]
+	chill.clear()
+	for m in herd.update(750, {1: far}):
+		if m[1] == "chill":
+			chill.append(m[2][1])
+	_check(chill == [false], "perto da fogueira, para de tremer")
+	herd.fires = []
+	var inv := {"manto_cavalo": 1}
+	_check(herd.set_gear(1, id, "manto_cavalo", true, inv, herd.position_of(horse, 750), 750) == "pos", "põe o manto")
+	herd.update(1000, {1: far})
+	_check(not bool(horse["chilled"]), "de manto, não treme no frio")
+	# Soltar: o equipamento volta para a bolsa e ele volta a ser selvagem.
+	horse["gear"]["alforje"] = 1
+	horse["pack"]["frutas"] = 2
+	var bag := {}
+	herd.mount(1, id, herd.position_of(horse, 1000), 1000)
+	_check(herd.release(1, id, bag, herd.position_of(horse, 1000), 1000) == "montado", "montado não solta")
+	herd.dismount(1, 1000)
+	_check(herd.release(1, id, bag, herd.position_of(horse, 1000), 1000) == "soltou", "solta o cavalo")
+	_check(int(bag.get("cabresto", 0)) == 1 and int(bag.get("manto_cavalo", 0)) == 1 and int(bag.get("alforje", 0)) == 1 and int(bag.get("frutas", 0)) == 2, "cabresto, manto, alforje e o que tinha nele voltam para a bolsa (%s)" % [bag])
+	_check(int(horse["herd"]) >= 0 and str(horse["owner"]).is_empty() and str(horse["name"]).is_empty(), "solto, volta a ser selvagem, sem dono nem nome")
+	_check(not herd.owns_horse(1), "solto, a criatura pode domar outro")
+	_check(herd.is_friend(1, id, 1000), "logo depois de solto, ainda fica manso por perto")
+	_check(herd.halter(1, id, bag, herd.position_of(horse, 1000), 1000) == "domou", "dá para pôr o cabresto de novo")
+
+
+## Alforje: pôr, guardar, pegar, não tirar cheio, salvar.
+func _test_saddlebag(world: WorldGen, spot: Vector2) -> void:
+	var herd := Herd.new(world)
+	herd.update(0, {1: spot})
+	herd.peer_keys[1] = "Lua"
+	herd.peer_keys[2] = "Sol"
+	var id := herd.debug_tame(1, spot, 0)
+	var at: Vector2 = herd.horses[id]["to"]
+	var inv := {"alforje": 1, "pedra_grande": 10, "frutas": 3}
+	_check(herd.set_gear(1, id, "alforje", true, inv, at + Vector2(10, 0), 0) == "longe", "alforje: longe recusa")
+	_check(herd.set_gear(2, id, "alforje", true, {"alforje": 1}, at, 0) == "longe", "alforje: no cavalo de outro recusa")
+	_check(herd.move_pack(1, id, "frutas", 1, true, inv, 99, at, 0)["reason"] == "sem_alforje", "sem alforje não guarda")
+	_check(herd.set_gear(1, id, "alforje", true, inv, at, 0) == "pos" and not inv.has("alforje"), "põe o alforje (sai da bolsa)")
+	var put := herd.move_pack(1, id, "pedra_grande", 10, true, inv, 99, at, 0)
+	var cap := Herd.PACK_CAPACITY / Bag.weight_of("pedra_grande")
+	_check(put["ok"] and int(put["amount"]) == mini(10, cap), "guarda até a capacidade (%d)" % int(put.get("amount", 0)))
+	_check(herd.set_gear(1, id, "alforje", false, inv, at, 0) == "cheio", "alforje com coisas não sai")
+	var back := herd.move_pack(1, id, "pedra_grande", 99, false, inv, Bag.weight_of("pedra_grande") * 2, at, 0)
+	_check(back["ok"] and int(back["amount"]) == 2, "pega só o que cabe na bolsa")
+	var saved := herd.tame_to_save()
+	var again := Herd.new(world)
+	again.load_tame(JSON.parse_string(JSON.stringify(saved)))
+	var horse: Dictionary = again.horses.values()[0]
+	_check((horse["gear"] as Dictionary).has("alforje") and int((horse["pack"] as Dictionary).get("pedra_grande", 0)) == int(put["amount"]) - 2, "alforje e conteúdo voltam do save")
+	herd.move_pack(1, id, "pedra_grande", 99, false, inv, 999, at, 0)
+	_check(herd.set_gear(1, id, "alforje", false, inv, at, 0) == "tirou" and int(inv.get("alforje", 0)) == 1, "vazio, o alforje sai para a bolsa")
 
 
 func _test_recorded() -> void:

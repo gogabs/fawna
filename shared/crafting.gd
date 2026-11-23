@@ -204,8 +204,31 @@ const WORKSHOP := {
 			{"say": "Você amarra tudo com o cipó.", "knocks": 2, "sound": "encaixe"},
 			{"say": "Você embebe a ponta na resina.", "knocks": 3, "sound": "encaixe"},
 		]},
+	# Equipamento do cavalo (ver Herd.GEAR): bolsa extra que fica com ele.
+	"alforje": {"name": ["alforje", "alforjes"], "article": "o",
+		"materials": {"fibra": 10},
+		"steps": [
+			{"say": "Você trança a fibra em tiras largas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as duas bolsas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você une as bolsas por uma faixa que vai sobre o lombo.", "knocks": 2, "sound": "encaixe"},
+		]},
+	# Para domar: Espaço com ele num cavalo que perdeu o medo (Herd.halter).
+	"cabresto": {"name": ["cabresto", "cabrestos"], "article": "o",
+		"materials": {"fibra": 4, "cipo": 1},
+		"steps": [
+			{"say": "Você torce a fibra numa corda macia.", "knocks": 3, "sound": "encaixe"},
+			{"say": "Você dá as voltas da cabeçada e amarra com o cipó.", "knocks": 2, "sound": "encaixe"},
+		]},
+	# Protege o cavalo do frio (Herd.cold_slow).
+	"manto_cavalo": {"name": ["manto de cavalo", "mantos de cavalo"], "article": "o",
+		"materials": {"fibra": 16, "resina": 2},
+		"steps": [
+			{"say": "Você trança a fibra em tiras grossas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você tece as tiras em duas camadas.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você passa resina por cima, para a água escorrer.", "knocks": 3, "sound": "encaixe"},
+		]},
 }
-const WORKSHOP_ORDER := ["tocha"]
+const WORKSHOP_ORDER := ["tocha", "cabresto", "alforje", "manto_cavalo"]
 
 ## Utensílios: também da bolsa, com passos, mas não se empunham. O pote sai
 ## cru; só serve depois de queimado num forno aceso (Cooking, "pote").
