@@ -112,12 +112,22 @@ func _make_bird(species: int) -> Node3D:
 ## Ciclos de perna por segundo, os mesmos dos cascos (scenes/horses.gd): no
 ## passo, 4 pisadas somam 1 s; no trote, 2 batidas em 0,6 s; no galope, uma
 ## passada a cada 0,55 s.
+var _turn_hint_dir := 0
+var _turn_hint_left := 0.0
+
 const HORSE_WALK_HZ := 1.0
 const HORSE_TROT_HZ := 1.0 / 0.6
 const HORSE_GALLOP_HZ := 1.0 / 0.55
 
 
+## O cavalo montado se prepara para virar (ver Game._ride_turn).
+func ride_turn_hint(direction: int, seconds: float) -> void:
+	_turn_hint_dir = direction
+	_turn_hint_left = seconds
+
+
 func _sync_horses(delta: float) -> void:
+	_turn_hint_left = maxf(_turn_hint_left - delta, 0.0)
 	var coats: Dictionary = _horses_node.horse_coats() if _horses_node != null else {}
 	for id: int in _herd.keys():
 		if not coats.has(id):
@@ -141,7 +151,10 @@ func _sync_horses(delta: float) -> void:
 		var hz: float = (HORSE_GALLOP_HZ if gait == Herd.Gait.GALLOP else (HORSE_TROT_HZ if gait == Herd.Gait.TROT else HORSE_WALK_HZ)) * _horses_node.horse_tempo(id)
 		var phase: float = float(node.get_meta("fase", 0.0)) + delta * hz
 		node.set_meta("fase", fmod(phase, 1000.0))
-		HorseModel.animate(node, gait, phase, _time, id, delta)
+		var hint := 0.0
+		if _horses_node != null and id == _horses_node.riding_mine() and _turn_hint_left > 0.0:
+			hint = float(_turn_hint_dir) * clampf(minf(_turn_hint_left, 0.22) / 0.22, 0.0, 1.0)
+		HorseModel.animate(node, gait, phase, _time, id, delta, hint)
 
 
 ## O cavalinho em 3D (ver HorseModel).

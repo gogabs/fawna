@@ -96,7 +96,8 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 
 ## Move as peças de um cavalo montado por build(). "phase" é o relógio do passo
 ## (em ciclos), "gait" é Herd.Gait, "amount" a energia do movimento (0 parado).
-static func animate(root: Node3D, gait: int, phase: float, time: float, id: int, delta: float) -> void:
+## "turn_hint" (-1 a 1) é o giro que o cavaleiro pediu: o pescoço e o corpo entortam para o lado.
+static func animate(root: Node3D, gait: int, phase: float, time: float, id: int, delta: float, turn_hint := 0.0) -> void:
 	var moving := gait != Herd.Gait.STAND
 	var phases: Array = PHASES_GALLOP if gait == Herd.Gait.GALLOP else (PHASES_TROT if gait == Herd.Gait.TROT else PHASES_WALK)
 	var swing := 0.62 if gait == Herd.Gait.GALLOP else (0.45 if gait == Herd.Gait.TROT else 0.32)
@@ -118,6 +119,9 @@ static func animate(root: Node3D, gait: int, phase: float, time: float, id: int,
 	# De cabeça baixa pastando, quando parado; erguida e balançando ao andar.
 	var neck_goal := -0.95 if not moving else (0.05 + 0.05 * sin(phase * TAU * 2.0))
 	neck.rotation.x = lerpf(neck.rotation.x, neck_goal, minf(1.0, delta * 2.5))
+	# Pedido de giro: o pescoço e a cabeça apontam para o lado e o corpo se inclina.
+	neck.rotation.y = lerpf(neck.rotation.y, -turn_hint * 0.55, minf(1.0, delta * 10.0))
+	trunk.rotation.z = lerpf(trunk.rotation.z, -turn_hint * 0.08, minf(1.0, delta * 8.0))
 	head.rotation.x = lerpf(head.rotation.x, 0.0 if moving else 0.4 + 0.05 * sin(time * 0.9 + id), minf(1.0, delta * 2.5))
 	var tail: Node3D = trunk.get_node("Cauda")
 	tail.rotation.z = sin(time * (3.0 if moving else 1.2) + id) * (0.25 if moving else 0.12)

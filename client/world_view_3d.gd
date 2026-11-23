@@ -80,11 +80,13 @@ var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
 var _held_torch: Node3D
 var _torch_held := false
+var _torch_lit := false
 var _self_model: Node3D  # o próprio personagem, só na terceira pessoa
 var _self_species := ""
 var _self_mounted := false
 var _self_prev := Vector2.ZERO
 var _self_speed := 0.0
+var _cam_distance := THIRD_DISTANCE
 var _self_vel := Vector2.ZERO
 var _self_yaw := 0.0
 var _self_load := 0.0
@@ -200,11 +202,22 @@ func _place_camera(feet: Vector3) -> void:
 		return
 	var head := feet + Vector3.UP * (EYE_HEIGHT + 0.2)
 	var back := Vector3(sin(yaw), 0.0, cos(yaw))
-	var cam := head + back * THIRD_DISTANCE + Vector3.UP * THIRD_HEIGHT
+	# Encurta a distância se houver uma árvore ou pedra no caminho da câmera.
+	var wanted := THIRD_DISTANCE
+	if _world != null:
+		var d := 0.4
+		while d <= THIRD_DISTANCE:
+			var at := (head + back * d) / METERS
+			if not _world.is_free(Vector2(at.x, at.z), 0.1):
+				wanted = maxf(0.6, d - 0.5)
+				break
+			d += 0.3
+	_cam_distance = lerpf(_cam_distance, wanted, 0.25 if wanted < _cam_distance else 0.08)
+	var cam := head + back * _cam_distance + Vector3.UP * THIRD_HEIGHT
 	cam.y = maxf(cam.y, ground_height(cam.x, cam.z) + 0.5)
 	_camera.position = cam
 	var drop := cam.y - head.y
-	_camera.rotation.x = -atan2(drop, THIRD_DISTANCE) * 0.9
+	_camera.rotation.x = -atan2(drop, maxf(_cam_distance, 0.5)) * 0.9
 
 
 ## Quem o personagem é (espécie) e se está montado; o modelo só aparece na
@@ -224,6 +237,36 @@ func set_self(species_id: String, mounted: bool, load_fraction := 0.0, wielded :
 		_self_model = null
 
 
+## Giro montado: o cavalo inclina o pescoço e o corpo para o lado "direction"
+## (-1 esquerda, 1 direita) por "seconds".
+func ride_turn_hint(direction: int, seconds: float) -> void:
+	if _wildlife != null:
+		_wildlife.ride_turn_hint(direction, seconds)
+
+
+## Quem está montado (id de jogador -> true), para sentar os outros no cavalo.
+func set_riders(riders: Dictionary) -> void:
+	if _obras != null:
+		_obras.riders = riders
+
+
+## Uma ação de outro jogador (habilidade): ver SpeciesModel.ACTIONS.
+func other_action(player_id: int, action: String) -> void:
+	if _obras != null and not action.is_empty():
+		_obras.play_action(player_id, action)
+
+
+## O som de um passo do próprio personagem tocou: trava a perna nele.
+func self_footfall() -> void:
+	if _self_model != null and _self_model.visible:
+		SpeciesModel.footfall(_self_model)
+
+
+func other_footfall(player_id: int) -> void:
+	if _obras != null:
+		_obras.footfall(player_id)
+
+
 ## Uma ação do próprio personagem (golpe, coleta, habilidade...): ver SpeciesModel.ACTIONS.
 func self_action(action: String) -> void:
 	if _self_model != null and _self_model.visible:
@@ -241,6 +284,7 @@ func _update_self(delta: float) -> void:
 		_self_model.name = "EuMesmo"
 		add_child(_self_model)
 		SpeciesModel.set_wield(_self_model, _self_wield)
+		SpeciesModel.set_torch(_self_model, _torch_held, _torch_lit)
 	_self_model.visible = true
 	var feet := Vector3(_pos.x, 0.0, _pos.y) * METERS
 	feet.y = ground_height(feet.x, feet.z)
@@ -284,6 +328,9 @@ func set_held_torch(held: bool, lit: bool) -> void:
 	if _camera == null:
 		return
 	_torch_held = held
+	_torch_lit = lit
+	if _self_model != null:
+		SpeciesModel.set_torch(_self_model, held, lit)
 	if _held_torch == null:
 		_make_held_torch()
 	_held_torch.visible = held and not Net.third_person

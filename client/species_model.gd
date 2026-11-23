@@ -141,6 +141,21 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 		forearm.rotation.x = 0.28  # o antebraço dobra um pouco no cotovelo
 		_piece(arm, shapes["blob"], Vector3(0.0, -0.75, -0.1), Vector3(0.2, 0.2, 0.2), skin)  # palma
 		_piece(arm, shapes["box"], Vector3(0.0, -0.84, -0.12), Vector3(0.2, 0.1, 0.14), dark)  # bloco dos dedos (ponta escura)
+		if side == 0:  # tocha na mão esquerda (escondida até haver uma)
+			var torch := Node3D.new()
+			torch.name = "Tocha"
+			torch.position = Vector3(0.0, -0.8, -0.12)
+			torch.rotation.x = -0.5
+			torch.visible = false
+			arm.add_child(torch)
+			_piece(torch, shapes["trunk"], Vector3(0.0, 0.0, 0.0), Vector3(0.09, 0.5, 0.09), _material(Color("5a4630")))
+			var flame_material := StandardMaterial3D.new()
+			flame_material.albedo_color = Color("ff9a2e")
+			flame_material.emission_enabled = true
+			flame_material.emission = Color("ff7a1a")
+			flame_material.emission_energy_multiplier = 2.0
+			var flame := _piece(torch, shapes["cone"], Vector3(0.0, 0.34, 0.0), Vector3(0.12, 0.26, 0.12), flame_material)
+			flame.name = "Chama"
 		if side == 1:  # ferramenta na mão direita (escondida até empunhar algo)
 			var held := Node3D.new()
 			held.name = "Ferramenta"
@@ -236,6 +251,26 @@ static func play(root: Node3D, action: String) -> void:
 		root.set_meta("acao_t", 0.0)
 
 
+## O som de um passo tocou: puxa a fase da perna para o ponto em que o pé
+## encosta no chão (perna toda para a frente ou toda para trás, a cada meio
+## ciclo), suavemente, para o pé e o som caírem juntos.
+static func footfall(root: Node3D) -> void:
+	if not root.has_meta("fase"):
+		return
+	var phase: float = root.get_meta("fase")
+	var target := roundf((phase - 0.25) * 2.0) / 2.0 + 0.25
+	root.set_meta("fase", phase + (target - phase) * 0.6)
+
+
+## A tocha na mão esquerda: "held" se há uma, "lit" se está acesa (apagada, só o cabo).
+static func set_torch(root: Node3D, held: bool, lit: bool) -> void:
+	var torch := root.get_node_or_null("Corpo/Braco0/Tocha")
+	if torch == null:
+		return
+	torch.visible = held
+	torch.get_node("Chama").visible = lit
+
+
 ## O que está na mão direita: "machado", "enxada", "faca", ou "" (nada).
 static func set_wield(root: Node3D, item: String) -> void:
 	var tool_node := root.get_node_or_null("Corpo/Braco1/Ferramenta")
@@ -315,6 +350,9 @@ static func animate(root: Node3D, speed: float, time: float, id: int, delta: flo
 	var base_x := lerpf(float(root.get_meta("base_x", 0.0)), lean, minf(1.0, delta * 6.0))
 	root.set_meta("base_x", base_x)
 	body.rotation.x = base_x
+	# Montado, o cavaleiro se inclina para o lado do giro.
+	var lean_z := clampf(-turn * 0.12, -0.25, 0.25) if mounted else 0.0
+	body.rotation.z = lerpf(body.rotation.z, lean_z, minf(1.0, delta * 8.0))
 	head.rotation.y = sin(time * 0.5 + id) * 0.25 if not moving else 0.0
 	head.rotation.x = 0.0 if moving else 0.06 * sin(time * 0.9 + id)
 	var tail: Node3D = body.get_node("Cauda")
@@ -323,6 +361,9 @@ static func animate(root: Node3D, speed: float, time: float, id: int, delta: flo
 	for e in 2:
 		var ear: Node3D = head.get_node("Orelha%d" % e)
 		ear.rotation.y = (e * 2 - 1) * twitch * 0.4
+	var flame := body.get_node_or_null("Braco0/Tocha/Chama")
+	if flame != null and flame.visible:  # a chama tremula
+		flame.scale = Vector3(0.12, 0.26 * (1.0 + 0.15 * sin(time * 17.0 + id) + 0.08 * sin(time * 31.0)), 0.12)
 	_apply_action(root, body, head, arms, legs, delta)
 
 

@@ -30,6 +30,7 @@ var _flame_material: StandardMaterial3D
 var _shapes := {}
 var _built_root: Node3D
 var _folk := {}  # id -> Node3D
+var riders := {}  # id de jogador -> true quando está montado
 var _center := Vector2.ZERO
 var _flickers := []  # [{ light, base, phase }] das luzes de fogueira
 var _torch_lights: Array[OmniLight3D] = []
@@ -288,8 +289,20 @@ func _process(delta: float) -> void:
 		node.position = node.position.lerp(goal, minf(1.0, delta * 12.0))
 		if node.has_node("Corpo"):
 			var speed := before.distance_to(node.position) / maxf(delta, 0.001) / METERS
-			SpeciesModel.animate(node, speed, _clock, id, delta)
+			SpeciesModel.animate(node, speed, _clock, id, delta, Vector2.ZERO, 0.0, 0.0, riders.has(id))
 		node.rotation.y = lerp_angle(node.rotation.y, yaw, minf(1.0, delta * 10.0))
+
+
+## O som do passo de outro jogador tocou: trava a perna nele.
+func footfall(player_id: int) -> void:
+	if _folk.has(player_id) and (_folk[player_id] as Node3D).has_node("Corpo"):
+		SpeciesModel.footfall(_folk[player_id])
+
+
+## Dispara uma ação (habilidade) no modelo de outro jogador.
+func play_action(player_id: int, action: String) -> void:
+	if _folk.has(player_id) and (_folk[player_id] as Node3D).has_node("Corpo"):
+		SpeciesModel.play(_folk[player_id], action)
 
 
 ## Outro jogador: o modelo da sua espécie (SpeciesModel) ou, sem espécie, uma
