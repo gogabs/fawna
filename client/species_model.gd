@@ -16,21 +16,21 @@ const BONE := Color("d8cdb4")
 ## (m); head: tamanho da cabeça; snout: comprimento do focinho; ears: "none",
 ## "short", "long", "tall"; extras: lista de traços.
 const SPECS := {
-	"urso": {"fur": Color("4a3b2f"), "belly": Color("3a2e25"), "w": 1.3, "h": 1.75, "head": 0.9, "snout": 0.9, "ears": "round",
+	"urso": {"shoulder": 1.2, "waist": 1.25, "legs": 1.3, "arms": 1.2, "fur": Color("4a3b2f"), "belly": Color("3a2e25"), "w": 1.3, "h": 1.75, "head": 0.9, "snout": 0.9, "ears": "round",
 		"extras": ["casca", "cauda_curta"]},
-	"boi": {"fur": Color("3b3532"), "belly": Color("2a2625"), "w": 1.25, "h": 1.8, "head": 1.0, "snout": 1.1, "ears": "side",
+	"boi": {"shoulder": 1.1, "waist": 1.15, "legs": 1.15, "arms": 1.15, "fur": Color("3b3532"), "belly": Color("2a2625"), "w": 1.25, "h": 1.8, "head": 1.0, "snout": 1.1, "ears": "side",
 		"extras": ["chifres", "cauda_longa", "argola"]},
-	"cervo": {"fur": Color("8a6a46"), "belly": Color("c9b48f"), "w": 0.8, "h": 1.95, "head": 0.8, "snout": 1.1, "ears": "side",
+	"cervo": {"shoulder": 0.9, "waist": 0.85, "legs": 0.75, "arms": 0.8, "neck": 0.18, "feet": 0.6, "fur": Color("8a6a46"), "belly": Color("c9b48f"), "w": 0.8, "h": 1.95, "head": 0.8, "snout": 1.1, "ears": "side",
 		"extras": ["galhada", "cauda_curta"]},
-	"coelho": {"fur": Color("d6d0c4"), "belly": Color("efe9dc"), "w": 0.8, "h": 1.5, "head": 0.9, "snout": 0.6, "ears": "tall",
+	"coelho": {"shoulder": 0.85, "waist": 0.95, "legs": 1.15, "arms": 0.75, "feet": 1.25, "fur": Color("d6d0c4"), "belly": Color("efe9dc"), "w": 0.8, "h": 1.5, "head": 0.9, "snout": 0.6, "ears": "tall",
 		"extras": ["manchas", "cauda_pompom"]},
-	"lobo": {"fur": Color("767a80"), "belly": Color("c7c9cc"), "w": 1.0, "h": 1.8, "head": 0.9, "snout": 1.3, "ears": "tall_short",
+	"lobo": {"shoulder": 1.25, "waist": 0.78, "legs": 0.85, "arms": 1.0, "fur": Color("767a80"), "belly": Color("c7c9cc"), "w": 1.0, "h": 1.8, "head": 0.9, "snout": 1.3, "ears": "tall_short",
 		"extras": ["cauda_longa", "pontas"]},
-	"raposa": {"fur": Color("9a4426"), "belly": Color("e6d3b5"), "w": 0.85, "h": 1.6, "head": 0.85, "snout": 1.3, "ears": "tall",
+	"raposa": {"shoulder": 0.95, "waist": 0.8, "legs": 0.8, "arms": 0.85, "fur": Color("9a4426"), "belly": Color("e6d3b5"), "w": 0.85, "h": 1.6, "head": 0.85, "snout": 1.3, "ears": "tall",
 		"extras": ["cauda_cheia", "manchas"]},
-	"onca": {"fur": Color("17161a"), "belly": Color("232126"), "w": 0.95, "h": 1.75, "head": 0.85, "snout": 0.8, "ears": "round",
+	"onca": {"shoulder": 1.15, "waist": 0.8, "legs": 1.0, "arms": 1.05, "fur": Color("17161a"), "belly": Color("232126"), "w": 0.95, "h": 1.75, "head": 0.85, "snout": 0.8, "ears": "round",
 		"extras": ["cauda_longa", "garras"]},
-	"javali": {"fur": Color("2b2724"), "belly": Color("1f1c1b"), "w": 1.15, "h": 1.65, "head": 0.95, "snout": 1.2, "ears": "short",
+	"javali": {"shoulder": 1.1, "waist": 1.3, "legs": 1.15, "arms": 1.1, "fur": Color("2b2724"), "belly": Color("1f1c1b"), "w": 1.15, "h": 1.65, "head": 0.95, "snout": 1.2, "ears": "short",
 		"extras": ["presas", "cauda_curta", "crina"]},
 }
 
@@ -51,18 +51,27 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 	var bone := _material(BONE)
 	var w: float = spec["w"]
 	var scale_h: float = float(spec["h"]) / 1.75
+	var shoulder: float = spec.get("shoulder", 1.0)
+	var waist: float = spec.get("waist", 1.0)
+	var leg_t: float = spec.get("legs", 1.0)
+	var arm_t: float = spec.get("arms", 1.0)
+	var neck_up: float = spec.get("neck", 0.0)
+	var feet: float = spec.get("feet", 1.0)
 	var root := Node3D.new()
 	var body := Node3D.new()  # tudo que balança junto: sobe e desce ao andar
 	body.name = "Corpo"
 	body.scale = Vector3(1.0, scale_h, 1.0)
 	root.add_child(body)
 	# Tronco: peito, barriga mais clara e quadris.
-	_piece(body, shapes["blob"], Vector3(0.0, 1.12, 0.0), Vector3(0.64 * w, 0.7, 0.42 * w), fur)
-	_piece(body, shapes["blob"], Vector3(0.0, 1.08, -0.1 * w), Vector3(0.46 * w, 0.5, 0.22 * w), belly)
-	_piece(body, shapes["blob"], Vector3(0.0, 0.8, 0.02), Vector3(0.52 * w, 0.38, 0.36 * w), fur)
+	# Peito e ombros (largos nos fortes, estreitos nos esguios), cintura e quadris.
+	_piece(body, shapes["blob"], Vector3(0.0, 1.2, 0.0), Vector3(0.62 * w * shoulder, 0.48, 0.42 * w), fur)
+	_piece(body, shapes["blob"], Vector3(0.0, 1.17, -0.1 * w), Vector3(0.44 * w * shoulder, 0.4, 0.22 * w), belly)
+	_piece(body, shapes["blob"], Vector3(0.0, 0.97, 0.0), Vector3(0.42 * w * waist, 0.3, 0.34 * w * waist), fur)
+	_piece(body, shapes["blob"], Vector3(0.0, 0.8, 0.02), Vector3(0.5 * w * (1.0 + (waist - 1.0) * 0.5), 0.3, 0.36 * w), fur)
+	_piece(body, shapes["blob"], Vector3(0.0, 1.44 + neck_up * 0.5, 0.0), Vector3(0.2, 0.2 + neck_up, 0.2), fur)  # pescoço
 	if "casca" in extras:  # ombros de tronco do Troncudo
 		for side in [-1, 1]:
-			_piece(body, shapes["blob"], Vector3(side * 0.3 * w, 1.34, 0.0), Vector3(0.26, 0.2, 0.3), _material(Color("5a4a39")))
+			_piece(body, shapes["blob"], Vector3(side * 0.3 * w * shoulder, 1.34, 0.0), Vector3(0.26, 0.2, 0.3), _material(Color("5a4a39")))
 	if "crina" in extras:  # cerdas ao longo das costas do Raizeiro
 		for k in 4:
 			var bristle := _piece(body, shapes["cone"], Vector3(0.0, 1.38 - 0.14 * k, 0.17 * w + 0.01 * k), Vector3(0.07, 0.14, 0.07), dark)
@@ -70,7 +79,7 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 	# Cabeça: pivota na base do pescoço.
 	var head := Node3D.new()
 	head.name = "Cabeca"
-	head.position = Vector3(0.0, 1.46, -0.02)
+	head.position = Vector3(0.0, 1.46 + neck_up, -0.02)
 	head.scale = Vector3.ONE * 1.4
 	body.add_child(head)
 	var hs: float = spec["head"]
@@ -109,26 +118,33 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 		_piece(head, shapes["blob"], Vector3(0.1 * hs, 0.26, 0.04), Vector3(0.1, 0.08, 0.1), spot)
 	if "pontas" in extras:  # pontas brancas, como neve: ao redor do pescoço
 		_piece(body, shapes["blob"], Vector3(0.0, 1.4, 0.0), Vector3(0.44 * w, 0.14, 0.34 * w), _material(Color("e6e8ea")))
-	# Braços: pendem dos ombros e giram ao andar.
+	# Braços: pendem dos ombros, um pouco mais longos que os de gente, com
+	# ombro e cotovelo marcados e mãos grandes.
 	for side in [-1, 1]:
 		var arm := Node3D.new()
 		arm.name = "Braco%d" % (0 if side < 0 else 1)
-		arm.position = Vector3(side * (0.34 * w + 0.1), 1.32, 0.0)
+		arm.position = Vector3(side * (0.3 * w * shoulder + 0.1), 1.32, 0.0)
 		body.add_child(arm)
-		_piece(arm, shapes["trunk"], Vector3(0.0, -0.26, 0.0), Vector3(0.25, 0.56, 0.25) * Vector3(1.0 + 0.2 * (w - 1.0), 1.0, 1.0 + 0.2 * (w - 1.0)), fur)
-		_piece(arm, shapes["blob"], Vector3(0.0, -0.55, 0.0), Vector3(0.15, 0.15, 0.15), skin)
+		_piece(arm, shapes["blob"], Vector3(0.0, -0.02, 0.0), Vector3(0.2, 0.2, 0.2) * arm_t, fur)  # ombro
+		_piece(arm, shapes["trunk"], Vector3(0.0, -0.2, 0.0), Vector3(0.7 * arm_t, 0.36, 0.7 * arm_t), fur)
+		_piece(arm, shapes["blob"], Vector3(0.0, -0.38, 0.0), Vector3(0.2, 0.2, 0.2) * arm_t, fur)  # cotovelo
+		_piece(arm, shapes["trunk"], Vector3(0.0, -0.56, -0.02), Vector3(0.58 * arm_t, 0.36, 0.58 * arm_t), fur)
+		_piece(arm, shapes["blob"], Vector3(0.0, -0.76, -0.02), Vector3(0.2, 0.2, 0.2), skin)
 		if "garras" in extras:
 			for k in 3:
-				var claw := _piece(arm, shapes["cone"], Vector3((k - 1) * 0.035, -0.64, -0.02), Vector3(0.025, 0.1, 0.025), bone)
+				var claw := _piece(arm, shapes["cone"], Vector3((k - 1) * 0.045, -0.88, -0.04), Vector3(0.03, 0.12, 0.03), bone)
 				claw.rotation.x = PI - 0.3
-	# Pernas.
+	# Pernas: coxa grossa, joelho marcado, panturrilha mais fina e pé grande.
 	for side in [-1, 1]:
 		var leg := Node3D.new()
 		leg.name = "Perna%d" % (0 if side < 0 else 1)
-		leg.position = Vector3(side * 0.17 * w, 0.78, 0.0)
+		leg.position = Vector3(side * 0.17 * w, 0.76, 0.0)
 		body.add_child(leg)
-		_piece(leg, shapes["trunk"], Vector3(0.0, -0.3, 0.0), Vector3(0.3, 0.62, 0.3) * Vector3(1.0 + 0.2 * (w - 1.0), 1.0, 1.0 + 0.2 * (w - 1.0)), fur)
-		_piece(leg, shapes["box"], Vector3(0.0, -0.64, -0.05), Vector3(0.16, 0.08, 0.28), dark)  # pé
+		_piece(leg, shapes["trunk"], Vector3(0.0, -0.17, 0.0), Vector3(0.95 * leg_t, 0.38, 0.95 * leg_t), fur)
+		_piece(leg, shapes["blob"], Vector3(0.0, -0.36, -0.02), Vector3(0.24, 0.22, 0.26) * leg_t, fur)  # joelho
+		var calf := _piece(leg, shapes["trunk"], Vector3(0.0, -0.52, 0.02), Vector3(0.75 * leg_t, 0.36, 0.75 * leg_t), fur)
+		calf.rotation.x = 0.08
+		_piece(leg, shapes["box"], Vector3(0.0, -0.69, -0.07), Vector3(0.2 * feet, 0.09, 0.36 * feet), dark)  # pé
 	# Cauda.
 	var tail := Node3D.new()
 	tail.name = "Cauda"
