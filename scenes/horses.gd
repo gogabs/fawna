@@ -40,7 +40,7 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## No jogo, o Gabs achou tudo alto, o galope principalmente: o geral desceu
 ## 6 dB, os cascos mais 4 e o galope mais 8.
 const HORSES_DB := -16.0
-const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -18.0, "bufo": -10.0, "manso": -10.0, "relincho": -6.0, "alarme": -4.0}
+const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -12.0, "bufo": -4.0, "manso": -4.0, "relincho": 0.0, "alarme": 2.0}  # vozes +6 dB (Gabs, estavam baixinhas)
 ## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
 ## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
 ## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
