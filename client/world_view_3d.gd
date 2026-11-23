@@ -21,6 +21,8 @@ const RADIUS_CHUNKS := 3
 const MAX_BUILDS_PER_FRAME := 1
 const EYE_HEIGHT := 1.2  # metros: uma criatura baixinha
 const FOV := 80.0
+const THIRD_DISTANCE := 3.0  # metros atrás do personagem
+const THIRD_HEIGHT := 0.9  # metros acima da cabeça
 const FOG_END := RADIUS_CHUNKS * CHUNK * METERS * 0.85
 
 const SKY_COLOR := Color("0d1217")
@@ -77,6 +79,12 @@ var _obras: BuildsView3D
 var _wildlife: WildlifeView3D
 var _flash_rect: ColorRect
 var _held_torch: Node3D
+var _torch_held := false
+var _self_model: Node3D  # o próprio personagem, só na terceira pessoa
+var _self_species := ""
+var _self_mounted := false
+var _self_prev := Vector2.ZERO
+var _self_speed := 0.0
 var _held_flame: MeshInstance3D
 var _bridges := {}  # pedaço -> casas de ponte (para refazer as coisas)
 var _sources := {}  # pedaço -> [[casa, visível]] das fontes de recurso, para notar mudanças
@@ -163,7 +171,7 @@ func follow(pos: Vector2) -> void:
 		return
 	var feet := Vector3(pos.x, 0.0, pos.y) * METERS
 	feet.y = ground_height(feet.x, feet.z)
-	_camera.position = feet + Vector3.UP * EYE_HEIGHT
+	_place_camera(feet)
 	if _obras != null:
 		_obras.follow(pos)
 	var chunk := _chunk_of(WorldGen.cell_of(pos))
@@ -176,6 +184,56 @@ func follow(pos: Vector2) -> void:
 func refresh_builds() -> void:
 	if _obras != null:
 		_obras.refresh()
+
+
+## Põe a câmera: nos olhos (primeira pessoa) ou atrás e acima do personagem
+## (terceira), sem entrar no chão. O som não depende dela.
+func _place_camera(feet: Vector3) -> void:
+	var yaw := _camera.rotation.y
+	if not Net.third_person:
+		_camera.position = feet + Vector3.UP * EYE_HEIGHT
+		_camera.rotation.x = 0.0
+		return
+	var head := feet + Vector3.UP * (EYE_HEIGHT + 0.2)
+	var back := Vector3(sin(yaw), 0.0, cos(yaw))
+	var cam := head + back * THIRD_DISTANCE + Vector3.UP * THIRD_HEIGHT
+	cam.y = maxf(cam.y, ground_height(cam.x, cam.z) + 0.5)
+	_camera.position = cam
+	var drop := cam.y - head.y
+	_camera.rotation.x = -atan2(drop, THIRD_DISTANCE) * 0.9
+
+
+## Quem o personagem é (espécie) e se está montado; o modelo só aparece na
+## terceira pessoa e a pé (montado, o cavalo e o cavaleiro vêm numa etapa à parte).
+func set_self(species_id: String, mounted: bool) -> void:
+	_self_mounted = mounted
+	if species_id == _self_species:
+		return
+	_self_species = species_id
+	if _self_model != null:
+		_self_model.queue_free()
+		_self_model = null
+
+
+func _update_self(delta: float) -> void:
+	var show := Net.third_person and not _self_mounted and not Net.graphics_off
+	if not show:
+		if _self_model != null:
+			_self_model.visible = false
+		return
+	if _self_model == null:
+		_self_model = SpeciesModel.build(_self_species if SpeciesModel.has_model(_self_species) else "lobo", _shapes)
+		_self_model.name = "EuMesmo"
+		add_child(_self_model)
+	_self_model.visible = true
+	var feet := Vector3(_pos.x, 0.0, _pos.y) * METERS
+	feet.y = ground_height(feet.x, feet.z)
+	_self_model.position = feet
+	_self_model.rotation.y = _camera.rotation.y
+	var moved := _pos.distance_to(_self_prev) / maxf(delta, 0.001)
+	_self_prev = _pos
+	_self_speed = lerpf(_self_speed, moved, minf(1.0, delta * 8.0))
+	SpeciesModel.animate(_self_model, _self_speed if _self_speed > 0.3 else 0.0, Time.get_ticks_msec() / 1000.0, 0, delta)
 
 
 ## Um clarão suave que se desfaz em "seconds" (sinal visual, sem texto); o
@@ -199,10 +257,11 @@ func flash(seconds: float) -> void:
 func set_held_torch(held: bool, lit: bool) -> void:
 	if _camera == null:
 		return
+	_torch_held = held
 	if _held_torch == null:
 		_make_held_torch()
-	_held_torch.visible = held
-	_held_flame.visible = held and lit
+	_held_torch.visible = held and not Net.third_person
+	_held_flame.visible = held and lit and not Net.third_person
 
 
 func _make_held_torch() -> void:
@@ -279,6 +338,8 @@ func chunk_count() -> int:
 ## Aplica já as opções de vídeo (sombras, suavização de bordas e brilho),
 ## para o menu do jogo mudá-las sem sair do mundo.
 func apply_quality() -> void:
+	if _held_torch != null:
+		_held_torch.visible = _torch_held and not Net.third_person
 	if _minimap != null:
 		_minimap.visible = Net.minimap
 	if _menu_view != null:
@@ -373,6 +434,10 @@ func _process(delta: float) -> void:
 		_held_flame.scale = Vector3(0.07, 0.17 * flicker, 0.07)
 	if _camera != null and _audio != null:
 		_camera.rotation.y = _audio.facing_yaw()
+		var feet := Vector3(_pos.x, 0.0, _pos.y) * METERS
+		feet.y = ground_height(feet.x, feet.z)
+		_place_camera(feet)
+	_update_self(delta)
 	for i in MAX_BUILDS_PER_FRAME:
 		if _wanted.is_empty():
 			return

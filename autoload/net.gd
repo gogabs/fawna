@@ -50,6 +50,9 @@ var minimap := true
 var menu_visual := true
 ## O rastro de névoa que mostra a rota do Caminheiro no chão (só visual).
 var trail_visual := true
+## Câmera atrás do personagem, que aparece de corpo inteiro (só visual: o som
+## continua saindo da cabeça dele).
+var third_person := false
 const PRESET_NAMES := ["Desativados", "Mais desempenho", "Melhores gráficos"]
 ## Depuração (menu "Depuração", ver DebugTools): ligada com --debug num
 ## servidor de testes. Num jogo hospedado pelo menu ela vale só para quem hospeda.
@@ -99,6 +102,7 @@ func load_settings() -> void:
 	minimap = config.get_value("video", "minimapa", minimap)
 	menu_visual = config.get_value("video", "menu_na_tela", menu_visual)
 	trail_visual = config.get_value("video", "rastro", trail_visual)
+	third_person = config.get_value("video", "terceira_pessoa", third_person)
 	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
@@ -114,6 +118,7 @@ func save_settings() -> void:
 	config.set_value("video", "minimapa", minimap)
 	config.set_value("video", "menu_na_tela", menu_visual)
 	config.set_value("video", "rastro", trail_visual)
+	config.set_value("video", "terceira_pessoa", third_person)
 	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
 

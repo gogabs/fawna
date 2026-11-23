@@ -226,6 +226,8 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	if view3d != null:
+		view3d.set_self(_my_species(), horses != null and horses.riding_mine() >= 0)
 	# Quem não consegue entrar em 30 s volta ao menu, em vez de ficar parado.
 	if Net.mode == Net.Mode.CLIENT and world == null:
 		_connect_waited += delta
@@ -3048,6 +3050,7 @@ func _graphics_items() -> Array:
 		{"label": "Minimapa e bússola: %s" % ("ligado" if Net.minimap else "desligado"), "run": _graphics_set.bind("minimapa")},
 		{"label": "Menus na tela: %s" % ("ligado" if Net.menu_visual else "desligado"), "run": _graphics_set.bind("menus")},
 		{"label": "Rastro do Caminheiro: %s" % ("ligado" if Net.trail_visual else "desligado"), "run": _graphics_set.bind("rastro")},
+		{"label": "Câmera: %s" % ("terceira pessoa" if Net.third_person else "primeira pessoa"), "run": _graphics_set.bind("camera")},
 	]
 
 
@@ -3078,6 +3081,9 @@ func _graphics_set(what: String) -> String:
 		"menus":
 			Net.menu_visual = not Net.menu_visual
 			text = "Menus na tela %s." % ("ligado" if Net.menu_visual else "desligado")
+		"camera":
+			Net.third_person = not Net.third_person
+			text = "Câmera em %s. O som continua saindo da cabeça do personagem." % ("terceira pessoa" if Net.third_person else "primeira pessoa")
 		"brilho":
 			Net.glow = not Net.glow
 			text = "Brilho nas luzes %s." % ("ligado" if Net.glow else "desligado")
@@ -4329,6 +4335,10 @@ func _run_auto_commands() -> void:
 				_say_who()
 			"PASSAROS":
 				print("[teste] pássaros por perto: %d" % birds.bird_count())
+			"TERCEIRA":  # testes: liga a câmera em terceira pessoa
+				Net.third_person = true
+				if view3d != null:
+					view3d.apply_quality()
 			"CAVALOS":
 				print("[teste] cavalos por perto: %d" % horses.horse_count())
 			"CALADO":  # testes, só quem hospeda: o Calado aparece 12 casas atrás
