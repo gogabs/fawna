@@ -32,10 +32,6 @@ const CONNECT_TIMEOUT := 30.0
 ## VSync desligado por padrão: com ele, o leitor de tela pode receber o foco
 ## com segundos de atraso (ver scenes/main.gd). Escolhido em Opções.
 var vsync := false
-## Navegação dos menus (flutuante, Caminheiro, pilhas, principal e opções).
-## Horizontal (padrão): Esquerda/Direita navegam, Baixo volta, Cima confirma.
-## Vertical: Cima/Baixo navegam, Esquerda volta, Direita confirma.
-var vertical_nav := false
 ## Gráficos desligados: dentro do jogo, para de desenhar (a janela fica parada;
 ## som e fala continuam) e gasta bem menos processador. Escolhido em Opções.
 var graphics_off := false
@@ -99,7 +95,6 @@ func load_settings() -> void:
 	minimap = config.get_value("video", "minimapa", minimap)
 	menu_visual = config.get_value("video", "menu_na_tela", menu_visual)
 	trail_visual = config.get_value("video", "rastro", trail_visual)
-	vertical_nav = config.get_value("controles", "navegacao_vertical", vertical_nav)
 
 
 func save_settings() -> void:
@@ -114,7 +109,6 @@ func save_settings() -> void:
 	config.set_value("video", "minimapa", minimap)
 	config.set_value("video", "menu_na_tela", menu_visual)
 	config.set_value("video", "rastro", trail_visual)
-	config.set_value("controles", "navegacao_vertical", vertical_nav)
 	config.save(SETTINGS_PATH)
 
 

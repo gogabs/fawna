@@ -45,7 +45,6 @@ func _process(delta: float) -> void:
 		_seen = _menu.revision
 		_left = SHOW_SECONDS
 		_canvas.snapshot = _menu.snapshot()
-		_canvas.vertical = Net.vertical_nav
 	elif _left <= 0.0:
 		return
 	_left = maxf(_left - delta, 0.0)
@@ -58,7 +57,6 @@ class _Drawing:
 
 	var snapshot := {}
 	var alpha := 0.0
-	var vertical := false
 
 	func _draw() -> void:
 		if alpha <= 0.0 or snapshot.is_empty():
@@ -88,7 +86,7 @@ class _Drawing:
 		if items.size() > ROWS:
 			var more := "%d de %d" % [index + 1, items.size()]
 			draw_string(font, Vector2(origin.x + WIDTH - PAD - 70.0, origin.y + PAD + 20.0), more, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, _faded(DIM_COLOR))
-		var hint := "↑ ↓ escolher   → confirmar   ← voltar" if vertical else "← → escolher   ↑ confirmar   ↓ voltar"
+		var hint := "↑ ↓ escolher   → confirmar   ← voltar"
 		draw_string(font, Vector2(origin.x + PAD + 4.0, origin.y + height - 10.0), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, _faded(DIM_COLOR))
 
 	func _faded(color: Color) -> Color:
