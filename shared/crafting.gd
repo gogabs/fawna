@@ -35,7 +35,9 @@ const MATERIAL_NAMES := {
 ## e "work" (batidas depois que os materiais entram).
 ##   name: [singular, plural]; article: "o"/"a" (para "o marco", "a fogueira");
 ##   one_per_region: só uma por região (o marco marca a região como um local);
-##   fire: pode ser acesa depois de pronta.
+##   fire: pode ser acesa depois de pronta;
+##   attach: só se começa colada do lado de fora da parede de uma destas
+##   construções grandes, pronta (o forno, no abrigo), uma por construção.
 const BUILDS := {
 	"marco": {
 		"name": ["marco", "marcos"],
@@ -54,6 +56,20 @@ const BUILDS := {
 		"stages": [
 			{"name": "o anel de pedras", "materials": {"pedra_media": 4, "pedra_pequena": 4}, "work": 3},
 			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 3, "silex": 1}, "work": 2},
+		],
+	},
+	# Forno de argila: colado na parede de fora de um abrigo pronto (e da
+	# taverna, quando houver). A cúpula de argila precisa secar antes da
+	# madeira. Aceso, cozinha (Cooking) e aquece quem está dentro do abrigo.
+	"forno": {
+		"name": ["forno", "fornos"],
+		"article": "o",
+		"fire": true,
+		"attach": ["abrigo"],
+		"stages": [
+			{"name": "a base de pedras", "materials": {"pedra_grande": 2, "pedra_media": 4}, "work": 3},
+			{"name": "a cúpula de argila", "materials": {"argila": 6}, "work": 4, "dry": 180.0},
+			{"name": "a madeira", "materials": {"madeira_media": 2, "madeira_pequena": 2, "silex": 1}, "work": 2},
 		],
 	},
 	"abrigo": {
@@ -102,7 +118,7 @@ const BUILDS := {
 }
 
 ## Ordem em que as construções aparecem no menu.
-const BUILD_ORDER := ["marco", "fogueira", "abrigo", "armazem", "oficina"]
+const BUILD_ORDER := ["marco", "fogueira", "abrigo", "forno", "armazem", "oficina"]
 
 ## Armazenamento: construções grandes prontas guardam itens, cada uma só de
 ## certas categorias (Bag.CATEGORIES). "per_cell" é o peso que cabe por casa do
@@ -204,7 +220,7 @@ const WORKSHOP := {
 			{"say": "Você dá as voltas da cabeçada e amarra com o cipó.", "knocks": 2, "sound": "encaixe"},
 		]},
 	# Protege o cavalo do frio (Herd.cold_slow).
-	"manto": {"name": ["manto de cavalo", "mantos de cavalo"], "article": "o",
+	"manto_cavalo": {"name": ["manto de cavalo", "mantos de cavalo"], "article": "o",
 		"materials": {"fibra": 16, "resina": 2},
 		"steps": [
 			{"say": "Você trança a fibra em tiras grossas.", "knocks": 4, "sound": "encaixe"},
@@ -212,7 +228,21 @@ const WORKSHOP := {
 			{"say": "Você passa resina por cima, para a água escorrer.", "knocks": 3, "sound": "encaixe"},
 		]},
 }
-const WORKSHOP_ORDER := ["tocha", "cabresto", "alforje", "manto"]
+const WORKSHOP_ORDER := ["tocha", "cabresto", "alforje", "manto_cavalo"]
+
+## Utensílios: também da bolsa, com passos, mas não se empunham. O pote sai
+## cru; só serve depois de queimado num forno aceso (Cooking, "pote").
+const UTENSILS := {
+	"pote_cru": {"name": ["pote de argila cru", "potes de argila crus"], "article": "o",
+		"materials": {"argila": 3},
+		"done": "Está na bolsa. Para servir, queime-o num forno aceso: Espaço no forno, Cozinhar.",
+		"steps": [
+			{"say": "Você amassa a argila com água até ela ficar lisa.", "knocks": 4, "sound": "encaixe"},
+			{"say": "Você enrola cordões de argila e sobe as paredes do pote.", "knocks": 5, "sound": "encaixe"},
+			{"say": "Você alisa o pote por dentro e por fora.", "knocks": 3, "sound": "encaixe"},
+		]},
+}
+const UTENSIL_ORDER := ["pote_cru"]
 
 
 static func material_text(item: String, amount: int) -> String:
@@ -286,6 +316,8 @@ static func build_title(kind: String) -> String:
 
 
 static func weapon_name(kind: String) -> String:
+	if UTENSILS.has(kind):
+		return UTENSILS[kind]["name"][0]
 	if TOOLS.has(kind):
 		return TOOLS[kind]["name"][0]
 	if WORKSHOP.has(kind):
@@ -299,6 +331,8 @@ static func recipe(kind: String) -> Dictionary:
 		return WEAPONS[kind]
 	if WORKSHOP.has(kind):
 		return WORKSHOP[kind]
+	if UTENSILS.has(kind):
+		return UTENSILS[kind]
 	return TOOLS.get(kind, {})
 
 
@@ -321,7 +355,19 @@ static func has_furniture(kind: String) -> bool:
 
 
 static func is_tool_recipe(kind: String) -> bool:
-	return TOOLS.has(kind) or WORKSHOP.has(kind)
+	return TOOLS.has(kind) or WORKSHOP.has(kind) or UTENSILS.has(kind)
+
+
+## Construções em que esta precisa ficar colada ([] se fica em qualquer lugar).
+static func attach_to(kind: String) -> Array:
+	return BUILDS.get(kind, {}).get("attach", [])
+
+
+## "acesa" ou "aceso", conforme o artigo da construção.
+static func agree(kind: String, feminine: String) -> String:
+	if BUILDS.get(kind, {}).get("article", "a") == "a":
+		return feminine
+	return feminine.left(-1) + "o"
 
 
 static func weapon_title(kind: String) -> String:

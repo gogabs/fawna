@@ -68,11 +68,16 @@ func context_of(peer: int) -> Dictionary:
 	var build: Dictionary = state.builds.at(cell)
 	var shelter := not build.is_empty() and Crafting.is_large(str(build["kind"])) \
 		and bool(build.get("done", false)) and Builds.inside(build, pos)
+	# Só a fogueira aquece em volta, mais quanto mais madeira tem; o forno é
+	# fechado e aquece o abrigo colado.
 	var fire := false
-	for spot: Vector2 in game.horrors._lit_fires(state.builds):
-		if spot.distance_to(pos) <= Body.FIRE_REACH:
+	var fire_fuel := 0.0
+	for other: Dictionary in state.builds.all():
+		if other["kind"] == "fogueira" and state.builds.is_lit(int(other["id"])) \
+				and WorldGen.cell_center(other["cell"]).distance_to(pos) <= Body.FIRE_REACH:
 			fire = true
-			break
+			fire_fuel = maxf(fire_fuel, state.builds.fuel_left(int(other["id"])) / Crafting.MAX_FUEL)
+	var oven := shelter and state.builds.warm_oven(int(build["id"]))
 	if state.world.thing_at(cell) == WorldGen.Thing.VAU:
 		state.wet_left[peer] = Body.WET_SECONDS
 	return {
@@ -80,7 +85,9 @@ func context_of(peer: int) -> Dictionary:
 		"night": game.daytime.is_night(),
 		"biome": state.world.biome_at(cell),
 		"fire": fire,
+		"fire_fuel": fire_fuel,
 		"shelter": shelter,
+		"oven": oven,
 		"torch": state.torch_left(peer) > 0.0,
 		"wet": float(state.wet_left.get(peer, 0.0)) > 0.0,
 		"species": state.species_of(peer),
@@ -208,6 +215,36 @@ func request_roast(item: String, amount: int) -> void:
 	roasted.rpc_id(id, str(result["into"]), int(result["amount"]))
 
 
+## Espaço no forno aceso > uma receita (Cooking). Os ingredientes saem já; o
+## que ela faz entra na bolsa depois dos segundos da receita.
+@rpc("any_peer", "call_local", "reliable")
+func request_cook(recipe: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	var result: Dictionary = game.state.cook_start(id, recipe)
+	if not result["ok"]:
+		if game.state.players.has(id):
+			cook_refused.rpc_id(id, str(result["reason"]), Cooking.missing_text(result.get("missing", {})))
+		return
+	game._dirty = true
+	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	cook_started.rpc_id(id, recipe, float(result["seconds"]))
+	get_tree().create_timer(float(result["seconds"])).timeout.connect(_finish_cook.bind(id, recipe))
+
+
+func _finish_cook(id: int, recipe: String) -> void:
+	var game := get_parent()
+	var made: Dictionary = game.state.cook_finish(id)
+	if made.is_empty() or not game.state.players.has(id):
+		return
+	game._dirty = true
+	game.inventory_changed.rpc_id(id, game.state.inventory_of(id), "", "")
+	cooked.rpc_id(id, recipe, made)
+	send_to(id)
+
+
 ## J com a enxada na terra à frente, fora de obra: cava atrás de raízes.
 @rpc("any_peer", "call_local", "reliable")
 func request_dig(cell: Vector2i) -> void:
@@ -287,7 +324,37 @@ func spoiling_state(soon: Dictionary) -> void:
 @rpc("authority", "call_local", "reliable")
 func roasted(into: String, amount: int) -> void:
 	_play(BodySounds.roast(), BODY_DB)
-	Speech.say("Você assa na fogueira e fica com %s." % Economy.item_text(into, amount), false)
+	Speech.say("Você assa no fogo e fica com %s." % Economy.item_text(into, amount), false)
+
+
+@rpc("authority", "call_local", "reliable")
+func cook_started(recipe: String, seconds: float) -> void:
+	Speech.say(str(Cooking.RECIPES.get(recipe, {}).get("say", "Você põe no forno.")), false)
+	var steps := maxi(1, int(seconds / 2.0))
+	for i in steps:
+		get_tree().create_timer(1.0 + 2.0 * i).timeout.connect(_play.bind(BodySounds.roast(), BODY_DB))
+
+
+@rpc("authority", "call_local", "reliable")
+func cooked(recipe: String, made: Dictionary) -> void:
+	var text := Economy.items_text(made)
+	if recipe == "pote":
+		Speech.say("O pote saiu do forno duro e vermelho: agora é um pote de argila. Com ele se faz ensopado.", false)
+	else:
+		Speech.say("Saiu do forno: %s. Está na bolsa." % text, false)
+
+
+@rpc("authority", "call_local", "reliable")
+func cook_refused(reason: String, detail: String) -> void:
+	match reason:
+		"sem_forno":
+			Speech.say("Para cozinhar, chegue perto de um forno aceso.")
+		"ocupado":
+			Speech.say("Ainda há algo seu no forno. Espere sair.")
+		"faltam":
+			Speech.say("Falta %s na sua bolsa." % detail if not detail.is_empty() else "Faltam ingredientes na sua bolsa.")
+		_:
+			Speech.say("Isso não se faz no forno.")
 
 
 @rpc("authority", "call_local", "reliable")

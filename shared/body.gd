@@ -25,9 +25,11 @@ const REVIVE := 30.0
 ## FAINT_SECONDS. O nível 0 é "bem".
 const LEVELS := [50.0, 25.0, 0.0]
 const FAINT_SECONDS := 60.0
-## Abatida (nível 2 ou mais em qualquer reserva): anda e trabalha mais devagar.
-const WEAK_SPEED := 0.85
-const WEAK_WORK := 0.75
+## Lentidão gradual: abaixo de SLOW_FROM (na reserva pior), a velocidade cai
+## em linha reta até WEAK_SPEED em zero, e o trabalho até WEAK_WORK.
+const SLOW_FROM := 50.0
+const WEAK_SPEED := 0.7
+const WEAK_WORK := 0.6
 
 ## Barra sonora: a cada vez que uma reserva cruza um destes valores (para
 ## baixo ou para cima), um toque soa no estéreo, da direita (cheia) para a
@@ -56,13 +58,32 @@ const COLD_BIOME_WINTER_DAYS := 0.133
 ## Molhado (cruzou um vau): o frio dobra por WET_SECONDS, se já estiver esfriando.
 const WET_FACTOR := 2.0
 const WET_SECONDS := 60.0
-## Tocha acesa na mão: a perda cai pela metade.
-const TORCH_FACTOR := 0.5
-## Fogueira acesa a até FIRE_REACH casas: o calor volta de zero a cheio em
-## FIRE_DAYS. Dentro de um abrigo pronto, não esfria e volta em SHELTER_DAYS.
+## Calor por tetos (ideia do Gabs): cada fonte de calor aquece até um limite
+## e não passa dele; acima do teto, o frio puxa de volta até ele. Sem fonte
+## nenhuma, o teto no frio é zero. Quando não faz frio, o teto é cheio e o
+## calor volta devagar, em WARM_DAYS. Valem o maior teto entre as fontes.
+##
+## Fogueira acesa a até FIRE_REACH casas: o teto vai de FIRE_LOW (quase sem
+## madeira) a FIRE_HIGH (com a madeira no máximo, Crafting.MAX_FUEL), e sobe
+## depressa (FIRE_DAYS para ir de zero a cheio).
 const FIRE_REACH := 8.0
+const FIRE_LOW := 35.0
+const FIRE_HIGH := 90.0
 const FIRE_DAYS := 0.067
+## Dentro de um abrigo pronto: teto SHELTER_CAP, subindo em SHELTER_DAYS.
+## Com o forno colado aceso: teto OVEN_CAP, subindo em OVEN_DAYS. O forno é
+## fechado: do lado de fora ele não aquece como a fogueira.
+const SHELTER_CAP := 60.0
 const SHELTER_DAYS := 0.25
+const OVEN_CAP := 90.0
+const OVEN_DAYS := 0.12
+## Tocha acesa na mão: a perda cai pela metade e não deixa passar de TORCH_CAP
+## para baixo.
+const TORCH_FACTOR := 0.5
+const TORCH_CAP := 20.0
+## Sem frio: o calor volta até cheio em WARM_DAYS.
+const WARM_DAYS := 0.25
+## O manto (ainda por fazer) somará ao teto de qualquer fonte e frearia a perda.
 
 ## Comida: quanto cada item sacia (fome) e aquece (calor), em pontos da
 ## reserva, como se diz ao comer ("Você come uma fruta.") e em quantos dias de
@@ -83,6 +104,10 @@ const FOODS := {
 	# Milho: cru enjoa como a raiz; assado sustenta e aquece.
 	"milho": {"food": 4.0, "warmth": 0.0, "eat": "uma espiga de milho crua", "keeps": 4.0, "raw": true},
 	"milho_assado": {"food": 15.0, "warmth": 6.0, "eat": "uma espiga assada, ainda quente", "keeps": 2.0},
+	# Do forno (Cooking): a broa sustenta e dura; o ensopado enche e aquece,
+	# mas estraga logo.
+	"broa": {"food": 40.0, "warmth": 4.0, "eat": "uma broa de milho", "keeps": 6.0},
+	"ensopado": {"food": 35.0, "warmth": 25.0, "eat": "um ensopado quente", "keeps": 0.5},
 }
 ## O que a comida vira quando estraga: só serve para jogar fora.
 const SPOILED := "estragada"
@@ -156,12 +181,18 @@ static func is_weak(entry: Dictionary) -> bool:
 	return level_of(float(entry.get("food", MAX))) >= 2 or level_of(float(entry.get("warmth", MAX))) >= 2
 
 
+## De 0 (bem, a reserva pior em SLOW_FROM ou mais) a 1 (vazia).
+static func weakness(entry: Dictionary) -> float:
+	var worst := minf(float(entry.get("food", MAX)), float(entry.get("warmth", MAX)))
+	return clampf(1.0 - worst / SLOW_FROM, 0.0, 1.0)
+
+
 static func speed_factor(entry: Dictionary) -> float:
-	return WEAK_SPEED if is_weak(entry) else 1.0
+	return lerpf(1.0, WEAK_SPEED, weakness(entry))
 
 
 static func work_factor(entry: Dictionary) -> float:
-	return WEAK_WORK if is_weak(entry) else 1.0
+	return lerpf(1.0, WEAK_WORK, weakness(entry))
 
 
 static func is_food(item: String) -> bool:
@@ -207,7 +238,7 @@ static func cold_days(season: int, night: bool, biome: int) -> float:
 
 ## Um passo do corpo. "ctx" diz onde a criatura está:
 ##   season (0-3), night (bool), biome (WorldGen.Biome), fire (fogueira perto),
-##   shelter (dentro de um abrigo pronto), torch (tocha acesa), wet (molhado),
+##   shelter (dentro de um abrigo pronto), oven (e o forno colado nele aceso), torch (tocha acesa), wet (molhado),
 ##   species, day_seconds.
 ## Muda "entry" no lugar e devolve os níveis {food, warmth} depois do passo.
 static func step(entry: Dictionary, seconds: float, ctx: Dictionary) -> Dictionary:
@@ -217,22 +248,48 @@ static func step(entry: Dictionary, seconds: float, ctx: Dictionary) -> Dictiona
 	var food := float(entry.get("food", START))
 	food -= hunger_rate(season, day_seconds, species) * seconds
 	var warmth := float(entry.get("warmth", START))
-	if bool(ctx.get("fire", false)):
-		warmth += MAX / (FIRE_DAYS * day_seconds) * Species.effect(species, "fire_warm") * seconds
-	elif bool(ctx.get("shelter", false)):
-		warmth += MAX / (SHELTER_DAYS * day_seconds) * seconds
-	else:
-		var days := cold_days(season, bool(ctx.get("night", false)), int(ctx.get("biome", -1)))
-		if days > 0.0:
-			var loss := MAX / (days * day_seconds) * Species.effect(species, "cold")
-			if bool(ctx.get("torch", false)):
-				loss *= TORCH_FACTOR
-			if bool(ctx.get("wet", false)):
-				loss *= WET_FACTOR
-			warmth -= loss * seconds
+	var days := cold_days(season, bool(ctx.get("night", false)), int(ctx.get("biome", -1)))
+	var source := warmth_source(ctx, days > 0.0)
+	var cap: float = source["cap"]
+	if warmth < cap:
+		var rise := MAX / (float(source["days"]) * day_seconds)
+		if str(source["kind"]) == "fire":
+			rise *= Species.effect(species, "fire_warm")
+		warmth = minf(cap, warmth + rise * seconds)
+	elif warmth > cap and days > 0.0:
+		var loss := MAX / (days * day_seconds) * Species.effect(species, "cold")
+		if bool(ctx.get("torch", false)):
+			loss *= TORCH_FACTOR
+		if bool(ctx.get("wet", false)):
+			loss *= WET_FACTOR
+		warmth = maxf(cap, warmth - loss * seconds)
 	entry["food"] = clampf(food, 0.0, MAX)
 	entry["warmth"] = clampf(warmth, 0.0, MAX)
 	return {"food": level_of(entry["food"]), "warmth": level_of(entry["warmth"])}
+
+
+## A fonte de calor que vale agora: { kind, cap, days }. "kind": "fire",
+## "oven", "shelter", "torch", "warm" (sem frio) ou "" (nenhuma; teto zero).
+## "fire_fuel" no ctx: de 0 a 1, quanto de madeira a fogueira tem.
+static func warmth_source(ctx: Dictionary, cold := true) -> Dictionary:
+	var best := {"kind": "", "cap": 0.0, "days": 1.0}
+	var options := []
+	if not cold:
+		options.append({"kind": "warm", "cap": MAX, "days": WARM_DAYS})
+	if bool(ctx.get("fire", false)):
+		var fuel := clampf(float(ctx.get("fire_fuel", 1.0)), 0.0, 1.0)
+		options.append({"kind": "fire", "cap": lerpf(FIRE_LOW, FIRE_HIGH, fuel), "days": FIRE_DAYS})
+	if bool(ctx.get("shelter", false)):
+		if bool(ctx.get("oven", false)):
+			options.append({"kind": "oven", "cap": OVEN_CAP, "days": OVEN_DAYS})
+		else:
+			options.append({"kind": "shelter", "cap": SHELTER_CAP, "days": SHELTER_DAYS})
+	if bool(ctx.get("torch", false)):
+		options.append({"kind": "torch", "cap": TORCH_CAP, "days": SHELTER_DAYS})
+	for option: Dictionary in options:
+		if float(option["cap"]) > float(best["cap"]) or (float(option["cap"]) == float(best["cap"]) and float(option["days"]) < float(best["days"])):
+			best = option
+	return best
 
 
 ## Esforço (golpe, batida): um pouco mais de fome.

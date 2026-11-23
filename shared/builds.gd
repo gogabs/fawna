@@ -469,14 +469,28 @@ func cell_status(cell: Vector2i, region: Vector2i, ignore := -1) -> int:
 ## Por que não dá para começar uma construção pequena nesta casa ("" = dá).
 ## "lugar": a casa não está livre (água, trilha, recurso...);
 ## "perto": outra construção colada; "regiao": já há um marco nesta região.
+## Nas coladas (Crafting "attach", o forno): "encostar" (a casa não fica
+## junto da parede de fora de uma construção pronta do tipo certo) e
+## "ja_tem" (essa construção já tem a sua); a distância de SPACING não conta
+## para a construção em que ela se cola.
 func refusal(kind: String, cell: Vector2i) -> String:
 	if not Crafting.BUILDS.has(kind) or Crafting.is_large(kind):
 		return "desconhecida"
-	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell):
+	if world.thing_at(cell) != WorldGen.Thing.NADA or not world.is_passable(cell) or _by_cell.has(cell):
 		return "lugar"
+	var host_id := -1
+	var attach := Crafting.attach_to(kind)
+	if not attach.is_empty():
+		var host := wall_host(cell, attach)
+		if host.is_empty():
+			return "encostar"
+		if not attached_to(int(host["id"]), kind).is_empty():
+			return "ja_tem"
+		host_id = int(host["id"])
 	for dy in range(-SPACING, SPACING + 1):
 		for dx in range(-SPACING, SPACING + 1):
-			if _by_cell.has(cell + Vector2i(dx, dy)):
+			var other: int = _by_cell.get(cell + Vector2i(dx, dy), -1)
+			if other != -1 and other != host_id:
 				return "perto"
 	if Crafting.BUILDS[kind].get("one_per_region", false):
 		var region := world.region_of(cell)
@@ -484,6 +498,46 @@ func refusal(kind: String, cell: Vector2i) -> String:
 			if build["kind"] == kind and build["region"] == region:
 				return "regiao"
 	return ""
+
+
+## A construção grande e pronta, de um dos tipos "kinds", em cuja parede de
+## fora a casa "cell" encosta (de lado, não na diagonal, e nunca na porta).
+## {} se nenhuma.
+func wall_host(cell: Vector2i, kinds: Array) -> Dictionary:
+	for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var host := at(cell + dir)
+		if host.is_empty() or not kinds.has(str(host["kind"])) or not bool(host["done"]) or int(host["size"]) < 3:
+			continue
+		if cell + dir == door_cell(host["cell"], int(host["size"]), str(host["entrance"])) \
+				or Builds.footprint_cells(host["cell"], int(host["size"])).has(cell):
+			continue
+		return host
+	return {}
+
+
+## A construção colada (Crafting "attach") desta, do tipo "kind" ({} se não há).
+func attached_to(host_id: int, kind := "forno") -> Dictionary:
+	for build: Dictionary in _builds.values():
+		if build["kind"] != kind:
+			continue
+		var host := wall_host(build["cell"], Crafting.attach_to(kind))
+		if not host.is_empty() and int(host["id"]) == host_id:
+			return build
+	return {}
+
+
+## A construção em que esta está colada ({} se nenhuma ou se não é colada).
+func host_of(id: int) -> Dictionary:
+	var build := get_build(id)
+	if build.is_empty() or Crafting.attach_to(build["kind"]).is_empty():
+		return {}
+	return wall_host(build["cell"], Crafting.attach_to(build["kind"]))
+
+
+## Para quem está dentro de uma construção: ela tem um forno colado aceso?
+func warm_oven(host_id: int, at_time := -1.0) -> bool:
+	var oven := attached_to(host_id, "forno")
+	return not oven.is_empty() and bool(oven["done"]) and is_lit(int(oven["id"]), at_time)
 
 
 ## Começa uma construção pequena (vazia, na primeira etapa). Devolve { ok, reason, id }.
@@ -1703,7 +1757,7 @@ func spoken_name(id: int, at_time := -1.0) -> String:
 				return text + ", obra em fase de capina"
 		return text + " em obra"
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
-		return text + (" acesa" if is_lit(id, at_time) else " apagada")
+		return text + " " + Crafting.agree(build["kind"], "acesa" if is_lit(id, at_time) else "apagada")
 	if owner_slots(build) > 0:
 		return text + (" sem dono" if build["owners"].is_empty() else " de " + " e ".join(build["owners"]))
 	return text
@@ -1745,14 +1799,17 @@ func status_text(id: int, at_time := -1.0) -> String:
 		return text + dry_note
 	if Crafting.BUILDS[build["kind"]].get("fire", false):
 		var minutes := ceili(fuel_left(id, at_time) / 60.0)
+		var lit_word := Crafting.agree(build["kind"], "acesa")
+		var out_word := Crafting.agree(build["kind"], "apagada")
 		if is_lit(id, at_time):
-			return "%s acesa, com madeira para uns %d minuto%s." % [title, minutes, "" if minutes == 1 else "s"]
+			var cook := " Espaço abre o forno: cozinhar ou pôr madeira." if build["kind"] == "forno" else ""
+			return "%s %s, com madeira para uns %d minuto%s.%s" % [title, lit_word, minutes, "" if minutes == 1 else "s", cook]
 		var needs_flint: bool = bool(build.get("ignited", false)) and int(build.get("flint", 0)) <= 0
 		if float(build["fuel"]) > 0.0:
 			if needs_flint:
-				return "%s apagada, com madeira para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-			return "%s apagada, com madeira para uns %d minuto%s. Espaço bate as pedras para acender." % [title, minutes, "" if minutes == 1 else "s"]
-		return "%s apagada e sem madeira%s. Espaço põe uma madeira." % [title, ", e vai precisar de um sílex" if needs_flint else ""]
+				return "%s %s, com madeira para uns %d minuto%s, mas sem sílex. Espaço põe um sílex da bolsa; depois bate as pedras para acender." % [title, out_word, minutes, "" if minutes == 1 else "s"]
+			return "%s %s, com madeira para uns %d minuto%s. Espaço bate as pedras para acender." % [title, out_word, minutes, "" if minutes == 1 else "s"]
+		return "%s %s e sem madeira%s. Espaço põe uma madeira." % [title, out_word, ", e vai precisar de um sílex" if needs_flint else ""]
 	if int(build["size"]) > 1:
 		var text := "%s pronto, %d por %d casas, com a porta ao %s, %s. Espaço perto da porta abre ou fecha." % [
 			title, int(build["size"]), int(build["size"]), build["entrance"], "aberta" if build["door_open"] else "fechada"]

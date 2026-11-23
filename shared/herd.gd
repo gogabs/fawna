@@ -530,7 +530,7 @@ func cold_at(point: Vector2) -> bool:
 
 ## Liga ou desliga o tremor de frio do domesticado e avisa o dono ("chill").
 func _update_chill(horse: Dictionary, now_ms: int, out: Array) -> void:
-	var chilled := not (horse["gear"] as Dictionary).has("manto") and cold_at(position_of(horse, now_ms))
+	var chilled := not (horse["gear"] as Dictionary).has("manto_cavalo") and cold_at(position_of(horse, now_ms))
 	if chilled == bool(horse.get("chilled", false)):
 		return
 	horse["chilled"] = chilled
@@ -586,7 +586,7 @@ func riding_of(peer: int) -> int:
 ## Equipamento do cavalo (no dono, a até GEAR_REACH casas, ou montado). O
 ## alforje leva até PACK_CAPACITY de carga (os mesmos pesos da bolsa) e fica
 ## com o cavalo, salvo no mundo.
-const GEAR := ["alforje", "cabresto", "manto"]
+const GEAR := ["alforje", "cabresto", "manto_cavalo"]
 
 ## Frio no domesticado: onde a criatura perderia calor (Body.cold_days), longe
 ## de fogueira e sem o manto, ele treme, anda mais devagar (COLD_SLOW) e não

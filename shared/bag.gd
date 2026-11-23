@@ -64,11 +64,15 @@ const WEIGHTS := {
 	"tocha": 2,
 	"alforje": 2,
 	"cabresto": 1,
-	"manto": 3,
+	"manto_cavalo": 3,
 	"raiz": 1,
 	"raiz_assada": 1,
 	"castanha": 1,
 	"estragada": 1,
+	"broa": 2,
+	"ensopado": 2,
+	"pote": 3,
+	"pote_cru": 3,
 }
 const DEFAULT_WEIGHT := 1
 
@@ -86,6 +90,10 @@ const CATEGORIES := {
 	"cogumelo": "comida",
 	"milho": "comida",
 	"milho_assado": "comida",
+	"broa": "comida",
+	"ensopado": "comida",
+	"pote": "utensilio",
+	"pote_cru": "utensilio",
 	"castanha": "comida",
 	"estragada": "comida",
 }
@@ -120,12 +128,14 @@ const NAMES := {
 	"tocha": ["tocha", "tochas"],
 	"alforje": ["alforje", "alforjes"],
 	"cabresto": ["cabresto", "cabrestos"],
-	"manto": ["manto de cavalo", "mantos de cavalo"],
+	"manto_cavalo": ["manto de cavalo", "mantos de cavalo"],
+	"pote_cru": ["pote de argila cru", "potes de argila crus"],
+	"pote": ["pote de argila", "potes de argila"],
 }
 
 
 ## Itens cujo nome é feminino (o resto é "o"): "a lança de bambu".
-const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "madeira", "madeira_grande", "madeira_media", "madeira_pequena", "frutas", "faca", "tocha", "fibra", "resina"]
+const FEMININE := ["lanca", "clava", "enxada", "argila", "pedra_grande", "pedra_media", "pedra_pequena", "madeira", "madeira_grande", "madeira_media", "madeira_pequena", "frutas", "faca", "tocha", "fibra", "resina", "broa"]
 
 
 ## Nome falado com artigo: "o machado", "a lança de bambu".

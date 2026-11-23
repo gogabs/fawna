@@ -57,6 +57,9 @@ var _food_rng := RandomNumberGenerator.new()
 var faint_clock := {}
 ## id -> segundos que ainda faltam para secar depois de cruzar um vau.
 var wet_left := {}
+## Quem está com algo no forno: id -> { recipe, makes, build }. Até terminar,
+## não cozinha outra coisa.
+var cooking := {}
 ## nome da criatura -> item na mão não dominante ("" = livre). Ver Bag.OFFHAND.
 var offhand := {}
 ## nome da criatura -> hora (Unix) em que a tocha acesa na mão se apaga (0 = apagada).
@@ -331,6 +334,7 @@ func remove_player(id: int) -> void:
 		last_pos[players[id]["name"]] = players[id]["pos"]
 	builds.touch(owner_key(id))
 	players.erase(id)
+	cooking.erase(id)
 	_ability_ready.erase(id)
 	dashing.erase(id)
 	channels.erase(id)
@@ -451,6 +455,60 @@ func roast(id: int, item: String, amount: int, fires: Array) -> Dictionary:
 	inv[into] = int(inv.get(into, 0)) + count
 	Body.reconcile(lots_of(id), inv)
 	return {"ok": true, "item": item, "into": into, "amount": count}
+
+
+## O forno aceso ao alcance de quem está em "pos" ({} se nenhum).
+func oven_near(pos: Vector2) -> Dictionary:
+	for build: Dictionary in builds.all():
+		if build["kind"] == "forno" and bool(build["done"]) and builds.is_lit(int(build["id"])) \
+				and Builds.reach_distance(build, pos) <= Cooking.REACH:
+			return build
+	return {}
+
+
+## Começa uma receita do forno (Cooking): confere o forno aceso ao alcance e
+## os ingredientes, e já os tira da bolsa. O que ela faz só entra na bolsa em
+## cook_finish, passados "seconds". Devolve { ok, reason, seconds, makes,
+## missing } com reason "desconhecido", "receita", "sem_forno", "ocupado" (já
+## há algo no forno) ou "faltam".
+func cook_start(id: int, recipe: String) -> Dictionary:
+	if not players.has(id):
+		return {"ok": false, "reason": "desconhecido"}
+	if not Cooking.RECIPES.has(recipe):
+		return {"ok": false, "reason": "receita"}
+	if cooking.has(id):
+		return {"ok": false, "reason": "ocupado"}
+	var oven := oven_near(players[id]["pos"])
+	if oven.is_empty():
+		return {"ok": false, "reason": "sem_forno"}
+	var inv := inventory_of(id)
+	var planned := Cooking.plan(inv, recipe)
+	if not planned["missing"].is_empty():
+		return {"ok": false, "reason": "faltam", "missing": planned["missing"]}
+	var take: Dictionary = planned["take"]
+	for item: String in take:
+		inv[item] = int(inv[item]) - int(take[item])
+		if int(inv[item]) <= 0:
+			inv.erase(item)
+	Body.reconcile(lots_of(id), inv)
+	var made := Cooking.makes(recipe, take)
+	cooking[id] = {"recipe": recipe, "makes": made, "build": int(oven["id"])}
+	return {"ok": true, "seconds": float(Cooking.RECIPES[recipe]["seconds"]), "makes": made, "took": take}
+
+
+## A receita de "id" terminou: o que ela fez vai para a bolsa. Devolve o que
+## entrou ({} se não havia nada no forno ou a criatura saiu do mundo).
+func cook_finish(id: int) -> Dictionary:
+	var entry: Dictionary = cooking.get(id, {})
+	cooking.erase(id)
+	if entry.is_empty() or not players.has(id):
+		return {}
+	var inv := inventory_of(id)
+	var made: Dictionary = entry["makes"]
+	for item: String in made:
+		inv[item] = int(inv.get(item, 0)) + int(made[item])
+	Body.reconcile(lots_of(id), inv)
+	return made
 
 
 ## J com a enxada perto de uma rama (Plants): cava a raiz. Cada rama pede
@@ -601,7 +659,7 @@ func light_torch(id: int) -> Dictionary:
 		return {"ok": false, "reason": "ja_acesa"}
 	var pos: Vector2 = players[id]["pos"]
 	for build: Dictionary in builds.all():
-		if build["kind"] == "fogueira" and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
+		if Crafting.BUILDS[build["kind"]].get("fire", false) and builds.is_lit(int(build["id"])) and Builds.reach_distance(build, pos) <= BUILD_REACH:
 			torch_until[players[id]["name"]] = Time.get_unix_time_from_system() + torch_seconds(id)
 			return {"ok": true, "seconds": torch_seconds(id)}
 	var method := ignition_method(id)
