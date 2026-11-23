@@ -424,6 +424,19 @@ func _test_cold(world: WorldGen, spot: Vector2) -> void:
 	_check(herd.set_gear(1, id, "manto", true, inv, herd.position_of(horse, 750), 750) == "pos", "põe o manto")
 	herd.update(1000, {1: far})
 	_check(not bool(horse["chilled"]), "de manto, não treme no frio")
+	# Soltar: o equipamento volta para a bolsa e ele volta a ser selvagem.
+	horse["gear"]["alforje"] = 1
+	horse["pack"]["frutas"] = 2
+	var bag := {}
+	herd.mount(1, id, herd.position_of(horse, 1000), 1000)
+	_check(herd.release(1, id, bag, herd.position_of(horse, 1000), 1000) == "montado", "montado não solta")
+	herd.dismount(1, 1000)
+	_check(herd.release(1, id, bag, herd.position_of(horse, 1000), 1000) == "soltou", "solta o cavalo")
+	_check(int(bag.get("cabresto", 0)) == 1 and int(bag.get("manto", 0)) == 1 and int(bag.get("alforje", 0)) == 1 and int(bag.get("frutas", 0)) == 2, "cabresto, manto, alforje e o que tinha nele voltam para a bolsa (%s)" % [bag])
+	_check(int(horse["herd"]) >= 0 and str(horse["owner"]).is_empty() and str(horse["name"]).is_empty(), "solto, volta a ser selvagem, sem dono nem nome")
+	_check(not herd.owns_horse(1), "solto, a criatura pode domar outro")
+	_check(herd.is_friend(1, id, 1000), "logo depois de solto, ainda fica manso por perto")
+	_check(herd.halter(1, id, bag, herd.position_of(horse, 1000), 1000) == "domou", "dá para pôr o cabresto de novo")
 
 
 ## Alforje: pôr, guardar, pegar, não tirar cheio, salvar.

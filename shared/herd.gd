@@ -662,6 +662,69 @@ func move_pack(peer: int, horse_id: int, item: String, amount: int, putting: boo
 	return {"ok": true, "reason": "", "item": item, "amount": n}
 
 
+## O dono solta o cavalo: o cabresto volta para a bolsa "inv" e o cavalo volta
+## a ser selvagem, na manada mais perto (a até RELEASE_JOIN casas) ou sozinho
+## numa manada nova. O alforje (com o que tiver dentro) e o manto também voltam
+## para a bolsa. Ele ainda fica perto de quem o soltou por RELEASE_LINGER
+## segundos, manso (dá para pôr o cabresto de novo), e então vai embora.
+## Devolve "soltou", "longe" ou "montado".
+const RELEASE_JOIN := 48.0
+const RELEASE_LINGER := 20.0
+
+
+func release(peer: int, horse_id: int, inv: Dictionary, pos: Vector2, now_ms: int) -> String:
+	var horse := gear_horse(peer, horse_id, pos, now_ms)
+	if horse.is_empty():
+		return "longe"
+	if int(horse["rider"]) >= 0:
+		return "montado"
+	for bag: Dictionary in [horse["gear"], horse["pack"]]:
+		for item in bag:
+			inv[item] = int(inv.get(item, 0)) + int(bag[item])
+	if not (horse["gear"] as Dictionary).has("cabresto"):
+		inv["cabresto"] = int(inv.get("cabresto", 0)) + 1  # domado antes do cabresto
+	var here := position_of(horse, now_ms)
+	var herd := {}
+	var best := RELEASE_JOIN
+	for candidate in herds.values():
+		var d := _herd_center(candidate, now_ms).distance_to(here)
+		if d < best:
+			best = d
+			herd = candidate
+	if herd.is_empty():
+		var chunk := _chunk_of(here)
+		herd = {
+			"id": _next_id, "chunk": chunk, "home": here, "members": [],
+			"leave_ms": -1, "wary": {}, "calm_until_ms": 0, "alarm_ms": 0,
+			"biome": world.biome_at(WorldGen.cell_of(here)) if world != null else -1,
+		}
+		_next_id += 1
+		herds[herd["id"]] = herd
+		if not _chunks.has(chunk):
+			_chunks[chunk] = []
+		_chunks[chunk].append(herd["id"])
+	herd["members"].append(horse["id"])
+	horse["herd"] = herd["id"]
+	horse["owner"] = ""
+	horse["name"] = ""
+	horse["from"] = here
+	horse["to"] = here
+	horse["gait"] = Gait.STAND
+	horse["gear"] = {}
+	horse["pack"] = {}
+	horse["need"] = _rng.randi_range(FRUITS_TO_TAME[0], FRUITS_TO_TAME[1])
+	horse["trust"] = int(horse["need"])
+	horse["trust_peer"] = peer
+	horse["friend_until_ms"] = now_ms + int(RELEASE_LINGER * 1000.0)
+	horse["chilled"] = false
+	horse["aim"] = Vector2.INF
+	# Quem o via o perde e, na próxima sincronização, o vê de novo, selvagem.
+	for watcher in horse["watchers"]:
+		_pending.append([watcher, "gone", [horse["id"]]])
+	horse["watchers"] = {}
+	return "soltou"
+
+
 ## Avisa quem vê o cavalo de quem está montado nele ("" = ninguém).
 func _send_rider(horse: Dictionary, out: Array) -> void:
 	var key := str(peer_keys.get(int(horse["rider"]), "")) if int(horse["rider"]) >= 0 else ""

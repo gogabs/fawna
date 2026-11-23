@@ -118,6 +118,10 @@ func _confirm() -> String:
 	if item.get("close", false):  # só para o fim de um fluxo (ex.: escolher o nome)
 		reset()
 	elif _levels.size() == depth_before and is_same(_levels[-1], level):
+		# Quem hospeda recebe a resposta do servidor ainda dentro da ação: a
+		# bolsa já mudou e este nível pode ter ficado vazio aqui mesmo. "had"
+		# lembra que ele tinha opções, para o sync() devolver o foco ao pai.
+		level["had"] = true
 		_refresh(level)
 	return said if said is String else ""
 
@@ -135,7 +139,7 @@ func sync() -> String:
 		var level: Dictionary = _levels[i]
 		if not level.has("source"):
 			break
-		var had_items: bool = not level["items"].is_empty()
+		var had_items: bool = not level["items"].is_empty() or bool(level.get("had", false))
 		var items: Array = level["source"].call()
 		if had_items and items.is_empty():
 			break

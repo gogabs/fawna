@@ -318,6 +318,48 @@ func request_pack(horse_id: int, item: String, amount: int, putting: bool) -> vo
 	gear_result.rpc_id(id, horse_id, item, ("guardou" if putting else "pegou") if result["ok"] else "pack_" + str(result["reason"]), int(result.get("amount", 0)))
 
 
+## O dono solta o cavalo (Herd.release).
+@rpc("any_peer", "call_local", "reliable")
+func request_release(horse_id: int) -> void:
+	if not multiplayer.is_server() or herd == null:
+		return
+	var game := get_parent()
+	var id: int = game._sender_id()
+	if not game.state.players.has(id):
+		return
+	herd.peer_keys[id] = game.state.owner_key(id)
+	var horse_name := str(herd.horses.get(horse_id, {}).get("name", ""))
+	var inv: Dictionary = game.state.inventory_of(id)
+	var result := herd.release(id, horse_id, inv, game.state.players[id]["pos"], Time.get_ticks_msec())
+	if result == "soltou":
+		game._dirty = true
+		game.inventory_changed.rpc_id(id, inv, "", "")
+	release_result.rpc_id(id, horse_id, result, horse_name)
+
+
+const RELEASE_TEXT := {
+	"soltou": "Você tira o cabresto de %s e guarda o que estava nele. Ele fica um pouco perto de você e depois vai embora, livre.",
+	"longe": "Chegue mais perto do seu cavalo.",
+	"montado": "Desmonte antes de soltar o cavalo.",
+}
+
+
+@rpc("authority", "call_local", "reliable")
+func release_result(id: int, result: String, horse_name: String) -> void:
+	if not Net.auto_commands.is_empty():
+		print("[teste] soltar o cavalo: %s" % result)
+	if result == "soltou":
+		_gear.erase(id)
+		_chilled.erase(id)
+		if _horses.has(id):
+			_play(id, HorseSounds.voice("manso"), SOUND_DB["manso"], float(_horses[id]["pitch"]), HEAD_HEIGHT)
+	var text: String = RELEASE_TEXT.get(result, "")
+	if text.contains("%s"):
+		text = text % (horse_name if not horse_name.is_empty() else "seu cavalo")
+	if not text.is_empty():
+		Speech.say(text)
+
+
 ## Manda ao dono o equipamento e o conteúdo do alforje do cavalo.
 func _send_gear(peer: int, horse_id: int) -> void:
 	if not herd.horses.has(horse_id):
@@ -405,6 +447,8 @@ func horse_named(id: int, owner: String, horse_name: String) -> void:
 @rpc("authority", "call_local", "reliable")
 func horse_gear(id: int, gear: Dictionary, pack: Dictionary) -> void:
 	_gear[id] = {"gear": gear, "pack": pack}
+	# O alforje mudou: refaz o menu (o item que acabou devolve o foco ao pai).
+	get_parent()._sync_menu.call_deferred()
 
 
 ## Respostas a pôr e tirar equipamento: {cavalo} e {item} ("o alforje").
