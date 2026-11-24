@@ -13,8 +13,10 @@ extends Node3D
 const METERS_PER_CELL := WorldGen.METERS_PER_CELL
 const TURN_SECONDS := 0.12  # o giro do ouvinte é rápido, mas não instantâneo
 const COMPASS_DISTANCE := 1.4  # casas: o clique da bússola soa a uns 2 m
-## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa.
-const HRTF_GAIN_DB := 6.0
+## O HRTF atenua mais com a distância que o áudio 3D do Godot; compensa. Era
+## 6; subiu para 12 junto com a queda mais forte com a distância
+## (ResonanceSetup): perto soa mais presente, longe some mais.
+const HRTF_GAIN_DB := 12.0
 ## Reforço de lado por cima do HRTF: o panorama do Godot com força 2 deixa um
 ## som bem do lado só naquele ouvido (com 1, só 6 dB a mais). Medido no PC do
 ## Gabs; acima de 2 o panorama do Godot fica errático (3 deu 6 dB, 4 deu 0).
