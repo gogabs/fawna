@@ -233,9 +233,23 @@ func _exit_tree() -> void:
 	BodySounds.clear()
 
 
+## Quem está montado, para o 3D. O servidor tem WorldState.riding; quem só
+## joga (cliente de um servidor dedicado) não tem "state" e deduz pelos cavalos.
+func _riders() -> Dictionary:
+	if state != null:
+		return state.riding
+	var riders := {}
+	if horses == null:
+		return riders
+	for id in players:
+		if horses.is_riding_key(WorldState.owner_key_of_name(str(players[id]["name"]))):
+			riders[id] = true
+	return riders
+
+
 func _process(delta: float) -> void:
 	if view3d != null:
-		view3d.set_riders(state.riding)
+		view3d.set_riders(_riders())
 		view3d.set_self(_my_species(), horses != null and horses.riding_mine() >= 0, \
 				float(Bag.load_of(inventory, wielded, offhand)) / maxf(1.0, float(Bag.capacity_for(_my_species()))), wielded)
 	# Quem não consegue entrar em 30 s volta ao menu, em vez de ficar parado.
