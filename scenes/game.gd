@@ -76,6 +76,7 @@ const WIND_FADE := 2.5  # segundos para o vento mudar de volume
 const WIND_LAKE_RADIUS := 4
 const SWING_COOLDOWN := 0.45  # segundos entre golpes do machado (J)
 const SWING_TO_HIT := 0.12  # do sopro do golpe até a lâmina bater
+const SWING_TO_GROUND := 0.25  # do golpe até o som da terra/obra que vem do servidor (depois do sopro inteiro)
 const BUILD_REACH := 1.8  # casas: trabalhar numa obra (o servidor aceita até 1,9)
 const TORCH_NOISE_SECONDS := 8.0  # cada batida de pedra conta como tanto tempo exposto para o Calado
 const BURN_CHECK := 2.0  # segundos entre conferências de fogueiras que apagaram
@@ -2797,7 +2798,7 @@ func _swing() -> void:
 ## acerto que chega do servidor espera esse tempo, para soar depois do sopro.
 func hit_wait() -> float:
 	var elapsed := float(Time.get_ticks_msec() - _swing_ms) / 1000.0
-	return maxf(SWING_TO_HIT - elapsed, 0.0)
+	return maxf(SWING_TO_GROUND - elapsed, 0.0)
 
 
 ## H: pede ao servidor para usar a habilidade ativa da espécie.
