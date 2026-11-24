@@ -11,7 +11,9 @@ extends RefCounted
 ##   "run":  Callable executado ao confirmar; o menu não fecha: o foco fica
 ##           onde está e as opções são atualizadas
 ##   "info": texto falado ao confirmar, sem sair do lugar (itens sem ação)
-## Opcionais: "close" (com "run": fecha o menu depois, para o fim de um fluxo), "empty" (o que dizer se o submenu vier vazio) e os sons do
+## Opcionais: "close" (com "run": fecha o menu depois, para o fim de um fluxo),
+## "lock" (num submenu do primeiro nível: enquanto aberto, a criatura não anda;
+## ver locked()), "empty" (o que dizer se o submenu vier vazio) e os sons do
 ## submenu, no lugar dos genéricos: "open_sound" (ao entrar, em vez de
 ## "abrir"), "move_sound" (ao passar pelas opções, em vez de "mover") e
 ## "close_sound" (ao sair com Esquerda, em vez de "fechar").
@@ -57,7 +59,7 @@ func open_at(title: String, source: Callable) -> String:
 	revision += 1
 	reset()
 	_levels.append({"title": title, "items": source.call(), "index": 0, "source": source,
-		"move_sound": "mover", "close_sound": "fechar"})
+		"move_sound": "mover", "close_sound": "fechar", "lock": true})
 	sound.emit("abrir")
 	return "%s. %s" % [title, _describe(_levels[-1])]
 
@@ -76,6 +78,14 @@ func open_root(label: String) -> String:
 
 func depth() -> int:
 	return _levels.size()
+
+
+## Aberto um menu que prende a criatura no lugar: os que se abrem a partir de
+## algo do mundo (open_at: pilha, bancada, marco, escolha da espécie...) e os
+## do primeiro nível marcados com "lock" (a Bolsa). Os outros (Caminheiro,
+## Fabricar, Personagem...) deixam andar.
+func locked() -> bool:
+	return _levels.size() > 1 and bool(_levels[1].get("lock", false))
 
 
 func current_label() -> String:
@@ -121,7 +131,8 @@ func _confirm() -> String:
 	if item.has("open"):
 		var items: Array = item["open"].call()
 		_levels.append({"title": item["label"], "items": items, "index": 0, "source": item["open"],
-			"move_sound": item.get("move_sound", "mover"), "close_sound": item.get("close_sound", "fechar")})
+			"move_sound": item.get("move_sound", "mover"), "close_sound": item.get("close_sound", "fechar"),
+			"lock": item.get("lock", false)})
 		sound.emit(item.get("open_sound", "abrir"))
 		if items.is_empty():
 			return "%s: %s." % [item["label"], item.get("empty", "nada aqui por enquanto")]

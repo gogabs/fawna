@@ -92,6 +92,8 @@ const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir ca
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
 }
+## Andar e girar: ficam parados enquanto um menu está aberto (ver _menu_open).
+const MOVE_ACTIONS := ["andar_frente", "andar_tras", "passo_esquerda", "passo_direita", "girar_esquerda", "girar_direita"]
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
@@ -375,6 +377,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				Speech.say(_menu.press(MENU_ACTIONS[action]))
 			get_viewport().set_input_as_handled()
 			return
+	# Com a Bolsa ou um menu de algo do mundo aberto (pilha, bancada...), parada:
+	# andar e girar só tocam o som de limite, para quem não vê saber por quê.
+	if _menu_open():
+		for action: String in MOVE_ACTIONS:
+			if event.is_action(action):
+				if not event.is_echo():
+					_on_menu_sound("limite")
+				get_viewport().set_input_as_handled()
+				return
 	# Girar aceita a tecla segurada (repetição), com um intervalo.
 	for action: String in ["girar_esquerda", "girar_direita"]:
 		if event.is_action(action):
@@ -411,6 +422,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+
+## Aberto um menu que prende a criatura (a Bolsa ou um menu de algo do mundo,
+## ver FloatingMenu.locked): enquanto isso, andar e girar não fazem nada.
+func _menu_open() -> bool:
+	return _menu != null and _menu.locked()
+
+
+## A tecla de andar está apertada e vale (nenhum menu aberto).
+func _held(action: String) -> bool:
+	return not _menu_open() and Input.is_action_pressed(action)
 
 
 ## I e V: abrem direto a Bolsa ou o Caminheiro no menu das setas.
@@ -2082,6 +2104,8 @@ func _wanted_motion() -> Vector2:
 		return Vector2.ZERO  # subindo ou descendo do cavalo
 	if horses.riding_mine() >= 0:
 		return _ride_motion()
+	if _menu_open():
+		return Vector2.ZERO
 	var ahead := Input.get_axis("andar_tras", "andar_frente")
 	var side := Input.get_axis("passo_esquerda", "passo_direita")
 	if ahead == 0.0 and side == 0.0:
@@ -2100,7 +2124,7 @@ func _ride_motion() -> Vector2:
 	if _skid_speed > 0.0:
 		return _ride_skid()
 	var now := Time.get_ticks_msec()
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		if _ride_w_next < 0 or now >= _ride_w_next:
 			_ride_w_next = now + RIDE_HOLD_MS
 			var before := _ride_level
@@ -2109,7 +2133,7 @@ func _ride_motion() -> Vector2:
 				_spur()
 	else:
 		_ride_w_next = -1
-	if Input.is_action_pressed("andar_tras"):
+	if _held("andar_tras"):
 		if _ride_s_next < 0:
 			# Apertou agora: andando, freia um andar; parado, ré.
 			_ride_s_next = now + RIDE_BRAKE_MS
@@ -2138,7 +2162,7 @@ func _ride_skid() -> Vector2:
 	if _skid_speed > 0.0 and _clearance_dir(_skid_dir, 0.45) < 0.45:
 		_skid_speed = 0.0
 	_ride_level = 0
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		_ride_w_next = RIDE_KEY_HELD
 	return _skid_dir * _skid_speed
 
@@ -2193,7 +2217,7 @@ func _ride_halt(angle: float, speed: float) -> Vector2:
 	var horse: int = horses.riding_mine()
 	_ride_level = 0
 	_ride_angle = 0.0
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		_ride_w_next = RIDE_KEY_HELD
 	if speed < float(RIDE_SPEEDS[3]) * 0.75:
 		horses.request_voice.rpc_id(1, horse, "bufo")
@@ -3036,7 +3060,7 @@ func _menu_root() -> Array:
 		{"label": "Personagem", "open": _character_items},
 		{"label": "Caminheiro", "open": _caminheiro_items},
 		{"label": "Bolsa", "open": _bag_items, "empty": "vazia, carga plena %d" % Bag.capacity_for(_my_species()),
-			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar"},
+			"open_sound": "bolsa", "move_sound": "bolsa_mexer", "close_sound": "bolsa_fechar", "lock": true},
 		{"label": "Equipamento", "open": _equipment_items, "empty": "mãos livres"},
 		{"label": "Fabricar", "open": _craft_root},
 		{"label": "Configurações", "open": _settings_items},

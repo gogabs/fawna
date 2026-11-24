@@ -54,6 +54,12 @@ O menu das setas ganha **Depuração** quando o servidor a liga: num servidor de
 | Passo para o lado | A / D |
 | Girar 45° para a esquerda / direita | Q / E |
 | Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ↑ / ↓ escolhem, → confirma, ← volta |
+
+Com a Bolsa aberta, ou um menu aberto a partir de algo do mundo (pilha no chão,
+bancada da oficina, armazém, marco, escolha da espécie...), a criatura fica
+parada: andar e girar só tocam o som de limite. Volte com ← para andar de novo.
+Os outros menus das setas (Caminheiro, Fabricar, Personagem, Cavalo...) deixam
+andar.
 | Para onde estou olhando | F |
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
