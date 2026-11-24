@@ -547,6 +547,29 @@ func _diag_hrtf() -> void:
 		var src_gate = player.call("is_spatial_output_ready") if player.has_method("is_spatial_output_ready") else "?"
 		print("[diag-jogo] %s: diferença esquerdo-direito %+.1f dB (portão: %s, fonte pronta: %s)" % ["esquerda" if side < 0 else "direita", 10.0 * log(maxf(left_e, 1e-12) / maxf(right_e, 1e-12)) / log(10.0), gate, src_gate])
 	player.queue_free()
+	# Queda com a distância, numa fonte igual às dos cavalos e pássaros.
+	var far := make_far_voice(28.0)
+	far.stream = stream
+	far.panning_strength = HRTF_PANNING
+	var first_db := 0.0
+	for meters in [1.5, 3.0, 6.0, 12.0, 24.0, 36.0]:
+		var ahead := -_camera.global_transform.basis.z
+		far.global_position = _camera.global_position + ahead * meters
+		if not far.playing:
+			far.play()
+			await get_tree().create_timer(1.0).timeout  # a fonte nova demora a soar
+		await get_tree().create_timer(0.6).timeout
+		capture.clear_buffer()
+		await get_tree().create_timer(1.0).timeout
+		var buf := capture.get_buffer(capture.get_frames_available())
+		var energy := 0.0
+		for v in buf:
+			energy += v.x * v.x + v.y * v.y
+		var db := 10.0 * log(maxf(energy / maxi(buf.size() * 2, 1), 1e-18)) / log(10.0)
+		if meters == 1.5:
+			first_db = db
+		print("[diag-jogo] distância %.1f m: %.1f dB (%+.1f)" % [meters, db, db - first_db])
+	far.queue_free()
 	for i in AudioServer.get_bus_effect_count(master):
 		if AudioServer.get_bus_effect(master, i) == capture:
 			AudioServer.remove_bus_effect(master, i)

@@ -18,6 +18,7 @@ var _player: AudioStreamPlayer3D
 var _index := -1
 var _elapsed := 0.0
 var _first_db := 0.0
+var _offset := Vector3.ZERO
 
 
 func _initialize() -> void:
@@ -54,8 +55,25 @@ func _initialize() -> void:
 	_player = ClassDB.instantiate("ResonancePlayer")
 	_player.set("player_config", player_config)
 	_player.stream = _noise()
-	_player.panning_strength = 0.0
+	_player.panning_strength = 2.0 if "--panorama" in OS.get_cmdline_user_args() else 0.0
+	var args := OS.get_cmdline_user_args()
+	for arg in args:
+		if arg.begins_with("--fontes="):
+			# Outras fontes paradas, como no jogo (vozes, pássaros, cavalos...).
+			for i in int(arg.get_slice("=", 1)):
+				var extra: AudioStreamPlayer3D = ClassDB.instantiate("ResonancePlayer")
+				extra.set("player_config", player_config.duplicate())
+				extra.position = Vector3(50, 0, 50)
+				world.add_child(extra)
+		if arg.begins_with("--longe="):
+			_offset = Vector3(float(arg.get_slice("=", 1)), 0, float(arg.get_slice("=", 1)))
 	world.add_child(_player)
+	camera.position = _offset
+	if "--outra-camera" in args:
+		var eyes := Camera3D.new()
+		world.add_child(eyes)
+		eyes.position = _offset + Vector3(0, 1.6, 0)
+		eyes.make_current()
 	print("[distancia] modo %s, min %.1f m, max %.1f m" % [player_config.get("attenuation_mode"), player_config.get("min_distance"), player_config.get("max_distance")])
 
 
@@ -84,7 +102,7 @@ func _process(delta: float) -> bool:
 		_elapsed = 0.0
 		if _index >= DISTANCES_M.size():
 			return true
-		_player.position = Vector3(0, 0, -DISTANCES_M[_index])
+		_player.position = _offset + (Vector3(DISTANCES_M[_index], 0, 0) if "--lado" in OS.get_cmdline_user_args() else Vector3(0, 0, -DISTANCES_M[_index]))
 		if not _player.playing:
 			_player.play()
 	if _elapsed < 0.5:
