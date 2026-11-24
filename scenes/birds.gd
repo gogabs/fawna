@@ -44,7 +44,7 @@ func start_client(audio: SpatialAudio) -> void:
 	if not _voices.is_empty():
 		return
 	for i in VOICES:
-		var player := audio.make_far_voice(REACH)
+		var player := audio.make_far_voice(REACH, 6.0)  # canto se ouve longe: queda natural ao ar livre
 		if player == null:
 			return  # sem som (servidor dedicado ou teste sem tela)
 		player.name = "Passaro_%d" % i

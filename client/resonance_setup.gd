@@ -60,18 +60,19 @@ static func configure_player(config: Resource, min_distance: float, max_distance
 
 ## Alcance da fonte, em metros: além dele, silêncio. A curva é recalculada
 ## para a queda por metro ser a mesma em toda fonte, só o fim muda.
-static func set_reach(config: Resource, max_distance: float) -> void:
+## "far_db" troca a queda depois de KNEE_M (bichos grandes, que se ouvem longe).
+static func set_reach(config: Resource, max_distance: float, far_db := FAR_DB_PER_DOUBLING) -> void:
 	config.set("max_distance", max_distance)
-	config.set("attenuation_curve", distance_curve(config.get("min_distance"), max_distance))
+	config.set("attenuation_curve", distance_curve(config.get("min_distance"), max_distance, far_db))
 	config.set("attenuation_mode", ATTENUATION_CURVE)
 
 
 ## Volume (0 a 1) a "distance" metros, para uma fonte que alcança "reach".
-static func distance_gain(distance: float, min_distance: float, reach: float) -> float:
+static func distance_gain(distance: float, min_distance: float, reach: float, far_db := FAR_DB_PER_DOUBLING) -> float:
 	var d := maxf(distance, min_distance)
 	var db := -NEAR_DB_PER_DOUBLING * log(minf(d, KNEE_M) / min_distance) / log(2.0)
 	if d > KNEE_M:
-		db -= FAR_DB_PER_DOUBLING * log(d / KNEE_M) / log(2.0)
+		db -= far_db * log(d / KNEE_M) / log(2.0)
 	var gain := db_to_linear(db)
 	var fade_start := reach * (1.0 - EDGE_FADE)
 	if distance > fade_start:
@@ -81,14 +82,14 @@ static func distance_gain(distance: float, min_distance: float, reach: float) ->
 
 ## O addon lê a curva com X = (distância - mínima) / (alcance - mínima), de 0
 ## a 1, e Y = volume linear.
-static func distance_curve(min_distance: float, reach: float) -> Curve:
+static func distance_curve(min_distance: float, reach: float, far_db := FAR_DB_PER_DOUBLING) -> Curve:
 	var curve := Curve.new()
 	for i in CURVE_POINTS + 1:
 		var x := float(i) / CURVE_POINTS
 		# Mais pontos perto da fonte, onde a curva muda mais rápido.
 		x = x * x
 		var distance := min_distance + x * (reach - min_distance)
-		curve.add_point(Vector2(x, distance_gain(distance, min_distance, reach)), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+		curve.add_point(Vector2(x, distance_gain(distance, min_distance, reach, far_db)), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
 	curve.bake_resolution = 256
 	return curve
 
