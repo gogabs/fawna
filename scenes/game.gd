@@ -120,6 +120,7 @@ var torch_bearers: Array = []  # ids de quem leva uma tocha acesa (o servidor ma
 var _striking := false  # riscando a tocha: Espaço bate a pedra
 var _torch_ends := 0.0  # hora (Unix) em que a tocha acesa se apaga; 0 = apagada
 var _swing_cooldown := 0.0
+var _swing_ms := -100000  # quando saiu o último golpe (J), para o impacto vir depois do sopro
 var harvest: Harvest  # espelho do que já foi colhido ou golpeado (o servidor manda)
 var _harvest_timer := 0.0
 var _server_harvest_timer := 0.0
@@ -1353,7 +1354,14 @@ func build_changed(data: Dictionary, event: String, by_id: int, extra: Dictionar
 		"secador": Sounds.build_deposit(),
 	}.get(event)
 	if near and stream != null:
-		audio.play_at_point(where, stream, 0.0, true, event in ["trabalho", "faisca", "deposito", "limpando", "capinando"])
+		var hrtf: bool = event in ["trabalho", "faisca", "deposito", "limpando", "capinando"]
+		var wait := hit_wait() if mine and event in ["limpando", "limpo", "capinando", "capinado"] else 0.0
+		if wait > 0.0:
+			# A resposta do golpe chega antes do sopro terminar (quem hospeda
+			# recebe na hora): espera a lâmina bater.
+			get_tree().create_timer(wait).timeout.connect(audio.play_at_point.bind(where, stream, 0.0, true, hrtf))
+		else:
+			audio.play_at_point(where, stream, 0.0, true, hrtf)
 	if event == "secou":
 		if near:
 			Speech.say("A argila secou: a obra volta a render por inteiro.", false)
@@ -2736,6 +2744,7 @@ func _swing() -> void:
 	if _swing_cooldown > 0.0:
 		return
 	_swing_cooldown = SWING_COOLDOWN
+	_swing_ms = Time.get_ticks_msec()
 	_self_action("golpe")
 	_play(Sounds.axe_swing(), true)
 	request_horror_strike.rpc_id(1)
@@ -2782,6 +2791,13 @@ func _swing() -> void:
 		request_strike.rpc_id(1, target)
 	else:
 		request_swing.rpc_id(1)
+
+
+## Quanto falta, depois do último golpe (J), para a lâmina bater: o som do
+## acerto que chega do servidor espera esse tempo, para soar depois do sopro.
+func hit_wait() -> float:
+	var elapsed := float(Time.get_ticks_msec() - _swing_ms) / 1000.0
+	return maxf(SWING_TO_HIT - elapsed, 0.0)
 
 
 ## H: pede ao servidor para usar a habilidade ativa da espécie.
