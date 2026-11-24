@@ -91,6 +91,8 @@ const BAMBUZAL_CLOSED_WIELDING := "Bambuzal fechado. Golpeie com J para abrir ca
 const MENU_ACTIONS := {
 	"menu_cima": "cima", "menu_baixo": "baixo", "menu_esquerda": "esquerda", "menu_direita": "direita",
 }
+## Andar e girar: ficam parados enquanto um menu está aberto (ver _menu_open).
+const MOVE_ACTIONS := ["andar_frente", "andar_tras", "passo_esquerda", "passo_direita", "girar_esquerda", "girar_direita"]
 
 @onready var view: GameView = $View
 @onready var sfx: AudioStreamPlayer = $Sfx
@@ -373,6 +375,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				Speech.say(_menu.press(MENU_ACTIONS[action]))
 			get_viewport().set_input_as_handled()
 			return
+	# Com um menu aberto (pilha, bancada, bolsa...), a criatura fica parada:
+	# andar e girar só tocam o som de limite, para quem não vê saber por quê.
+	if _menu_open():
+		for action: String in MOVE_ACTIONS:
+			if event.is_action(action):
+				if not event.is_echo():
+					_on_menu_sound("limite")
+				get_viewport().set_input_as_handled()
+				return
 	# Girar aceita a tecla segurada (repetição), com um intervalo.
 	for action: String in ["girar_esquerda", "girar_direita"]:
 		if event.is_action(action):
@@ -409,6 +420,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+
+## Algum menu aberto, além do primeiro nível (que fica sempre ali, à espera
+## das setas): enquanto isso, andar e girar não fazem nada.
+func _menu_open() -> bool:
+	return _menu != null and _menu.depth() > 1
+
+
+## A tecla de andar está apertada e vale (nenhum menu aberto).
+func _held(action: String) -> bool:
+	return not _menu_open() and Input.is_action_pressed(action)
 
 
 ## I e V: abrem direto a Bolsa ou o Caminheiro no menu das setas.
@@ -2073,6 +2095,8 @@ func _wanted_motion() -> Vector2:
 		return Vector2.ZERO  # subindo ou descendo do cavalo
 	if horses.riding_mine() >= 0:
 		return _ride_motion()
+	if _menu_open():
+		return Vector2.ZERO
 	var ahead := Input.get_axis("andar_tras", "andar_frente")
 	var side := Input.get_axis("passo_esquerda", "passo_direita")
 	if ahead == 0.0 and side == 0.0:
@@ -2091,7 +2115,7 @@ func _ride_motion() -> Vector2:
 	if _skid_speed > 0.0:
 		return _ride_skid()
 	var now := Time.get_ticks_msec()
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		if _ride_w_next < 0 or now >= _ride_w_next:
 			_ride_w_next = now + RIDE_HOLD_MS
 			var before := _ride_level
@@ -2100,7 +2124,7 @@ func _ride_motion() -> Vector2:
 				_spur()
 	else:
 		_ride_w_next = -1
-	if Input.is_action_pressed("andar_tras"):
+	if _held("andar_tras"):
 		if _ride_s_next < 0:
 			# Apertou agora: andando, freia um andar; parado, ré.
 			_ride_s_next = now + RIDE_BRAKE_MS
@@ -2129,7 +2153,7 @@ func _ride_skid() -> Vector2:
 	if _skid_speed > 0.0 and _clearance_dir(_skid_dir, 0.45) < 0.45:
 		_skid_speed = 0.0
 	_ride_level = 0
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		_ride_w_next = RIDE_KEY_HELD
 	return _skid_dir * _skid_speed
 
@@ -2184,7 +2208,7 @@ func _ride_halt(angle: float, speed: float) -> Vector2:
 	var horse: int = horses.riding_mine()
 	_ride_level = 0
 	_ride_angle = 0.0
-	if Input.is_action_pressed("andar_frente"):
+	if _held("andar_frente"):
 		_ride_w_next = RIDE_KEY_HELD
 	if speed < float(RIDE_SPEEDS[3]) * 0.75:
 		horses.request_voice.rpc_id(1, horse, "bufo")
@@ -3629,7 +3653,7 @@ func _caminheiro_items() -> Array:
 		{"label": "Itens no chão", "open": _caminheiro_piles, "empty": "nenhum por perto"},
 	]
 	if _caminheiro.active:
-		items.append({"label": "Apagar o cristal", "run": _stop_tracking})
+		items.append({"label": "Apagar o cristal", "run": _stop_tracking, "close": true})
 	return items
 
 
@@ -3643,7 +3667,7 @@ func _caminheiro_places() -> Array:
 	for build: Dictionary in marcos:
 		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(build["cell"])))
 		items.append({"label": "%s, %s" % [build["name"], meters],
-			"run": _track.bind(_approach_point(build["cell"]), "o povoado " + build["name"]), "stay": true})
+			"run": _track.bind(_approach_point(build["cell"]), "o povoado " + build["name"]), "close": true})
 	items.append_array(_neighbor_region_items())
 	return items
 
@@ -3661,7 +3685,7 @@ func _neighbor_region_items() -> Array:
 		var landmark := world.region_landmark(next)
 		var meters := Compass.meters(_pos.distance_to(landmark))
 		items.append({"label": "Região %s, %s, %s" % [names[step], world.place_name(WorldGen.cell_of(landmark)), meters],
-			"run": _track.bind(landmark, "a região %s" % names[step])})
+			"run": _track.bind(landmark, "a região %s" % names[step]), "close": true})
 	return items
 
 
@@ -3684,7 +3708,7 @@ func _caminheiro_piles() -> Array:
 		var what := _pile_name(cell)
 		var meters := Compass.meters(_pos.distance_to(WorldGen.cell_center(cell)))
 		items.append({"label": "%s, %s" % [what.left(1).to_upper() + what.substr(1), meters],
-			"run": _track.bind(WorldGen.cell_center(cell), "a " + what, cell), "stay": true})
+			"run": _track.bind(WorldGen.cell_center(cell), "a " + what, cell), "close": true})
 	return items
 
 
@@ -3737,7 +3761,7 @@ func _pick_from(cell: Vector2i, key: String) -> String:
 func _caminheiro_resources() -> Array:
 	var items := []
 	for entry: Array in CAMINHEIRO_RESOURCES:
-		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "stay": true})
+		items.append({"label": entry[0], "run": _track_resource.bind(entry[1], entry[2]), "close": true})
 	if Species.has_tag(_my_species(), "forrageador"):
 		items.append({"label": "Espécies de plantas", "open": _caminheiro_species})
 	return items
@@ -3750,7 +3774,7 @@ func _caminheiro_species() -> Array:
 	for species: String in Plants.ORDER:
 		var spoken := Plants.name_of(species)
 		var label := "%s (%s)" % [spoken.left(1).to_upper() + spoken.substr(1), Plants.category_name(species)]
-		items.append({"label": label, "run": _track_resource.bind([species], Plants.with_article(species)), "stay": true})
+		items.append({"label": label, "run": _track_resource.bind([species], Plants.with_article(species)), "close": true})
 	return items
 
 
@@ -3856,7 +3880,7 @@ func _caminheiro_builds() -> Array:
 		var meters := Compass.meters(Builds.reach_distance(build, _pos))
 		var place: String = Crafting.BUILDS[build["kind"]]["article"] + " " + spoken
 		items.append({"label": "%s, %s" % [spoken.left(1).to_upper() + spoken.substr(1), meters],
-			"run": _track.bind(_approach_point(_build_goal_cell(build)), place), "stay": true})
+			"run": _track.bind(_approach_point(_build_goal_cell(build)), place), "close": true})
 	return items
 
 
