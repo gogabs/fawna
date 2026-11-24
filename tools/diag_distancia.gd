@@ -25,6 +25,7 @@ var _first_db := 0.0
 var _offset := Vector3.ZERO
 var _camera: Camera3D
 var _eyes: Camera3D
+var _swaps_per_step := 0
 
 
 func _initialize() -> void:
@@ -72,6 +73,8 @@ func _initialize() -> void:
 				extra.set("player_config", player_config.duplicate())
 				extra.position = Vector3(50, 0, 50)
 				world.add_child(extra)
+		if arg.begins_with("--trocas="):
+			_swaps_per_step = int(arg.get_slice("=", 1))
 		if arg.begins_with("--longe="):
 			_offset = Vector3(float(arg.get_slice("=", 1)), 0, float(arg.get_slice("=", 1)))
 	world.add_child(_player)
@@ -123,6 +126,8 @@ func _process(delta: float) -> bool:
 			# O jeito antigo (player.stream = ...): a fonte perde o Steam Audio.
 			_player.stream = _noise()
 		else:
+			for i in _swaps_per_step:
+				_player.call("set_stream", _noise())
 			_player.call("set_stream", _noise())  # como SpatialAudio.set_stream
 		_player.play()
 	if _elapsed < 0.5:

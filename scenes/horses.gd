@@ -38,8 +38,11 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## Volume de cada som. Tudo bem baixinho, como o resto do mundo. Os cascos
 ## gravados estão 14 dB abaixo nos arquivos (para caber o pico sem distorcer).
 ## No jogo, o Gabs achou tudo alto, o galope principalmente: o geral desceu
-## 6 dB, os cascos mais 4 e o galope mais 8.
-const HORSES_DB := -16.0
+## 6 dB, os cascos mais 4 e o galope mais 8. Só que esse ajuste foi feito
+## com as fontes tocando secas (ver SpatialAudio.set_stream): todo cavalo
+## soava como se estivesse a 1,5 m, a qualquer distância. Com a queda com a
+## distância valendo, -16 deixava a manada inaudível; subiu 10 dB.
+const HORSES_DB := -6.0
 const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -12.0, "bufo": -4.0, "manso": -4.0, "relincho": 0.0, "alarme": 2.0, "derrapada": -2.0}  # vozes +6 dB (Gabs, estavam baixinhas)
 ## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
 ## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
