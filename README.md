@@ -55,9 +55,11 @@ O menu das setas ganha **Depuração** quando o servidor a liga: num servidor de
 | Girar 45° para a esquerda / direita | Q / E |
 | Menu flutuante (Caminheiro, Bolsa, Equipamento) | setas: ↑ / ↓ escolhem, → confirma, ← volta |
 
-Com um menu aberto (Bolsa, pilha no chão, bancada da oficina...), a criatura
-fica parada: andar e girar só tocam o som de limite. Volte com ← até o fim para
-andar de novo.
+Com a Bolsa aberta, ou um menu aberto a partir de algo do mundo (pilha no chão,
+bancada da oficina, armazém, marco, escolha da espécie...), a criatura fica
+parada: andar e girar só tocam o som de limite. Volte com ← para andar de novo.
+Os outros menus das setas (Caminheiro, Fabricar, Personagem, Cavalo...) deixam
+andar.
 | Para onde estou olhando | F |
 | Coletar | Espaço |
 | Golpear com o machado (empunhado) | J |
@@ -158,8 +160,8 @@ por minuto vindo da direção a seguir, que aponta um pouco à frente na rota e
 só gira aos poucos, como um carro fazendo a curva: nunca pula, nem ao trocar
 de beacon. Ao chegar ao destino, o cristal se apaga. Se você se afastar muito da rota, ela é traçada de
 novo; "Apagar o cristal" aparece no menu enquanto ele está aceso. Ao escolher
-um destino, o menu fecha, para você já poder andar; escolher de novo o destino
-aceso apaga o cristal.
+um destino, o foco do menu fica onde está; escolher de novo o destino aceso
+apaga o cristal.
 
 ### Fome e frio
 
