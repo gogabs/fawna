@@ -158,6 +158,11 @@ func _sync_horses(delta: float) -> void:
 		var heading: Vector2 = _horses_node.horse_heading(id)
 		if gait != Herd.Gait.STAND and heading.length() > 0.01:
 			node.rotation.y = lerp_angle(node.rotation.y, atan2(-heading.x, -heading.y), minf(1.0, delta * 6.0))
+		elif gait == Herd.Gait.STAND:
+			# Montado e parado: o cavalo vira junto com quem monta.
+			var facing: int = _horses_node.rider_heading(id)
+			if facing >= 0:
+				node.rotation.y = lerp_angle(node.rotation.y, -Compass.angle(facing), minf(1.0, delta * 6.0))
 		node.position = goal
 		# O relógio do passo avança no ritmo do andar e do ânimo do cavalo.
 		var hz: float = (HORSE_GALLOP_HZ if gait == Herd.Gait.GALLOP else (HORSE_TROT_HZ if gait == Herd.Gait.TROT else HORSE_WALK_HZ)) * _horses_node.horse_tempo(id)
