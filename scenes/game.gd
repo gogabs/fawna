@@ -3573,18 +3573,19 @@ func _stow() -> String:
 const CAMINHEIRO_RESOURCES := [
 	["Arbustos", [WorldGen.Thing.ARBUSTO, WorldGen.Thing.ARBUSTO_FRUTAS], "o arbusto"],
 	["Argila", [WorldGen.Thing.ARGILA], "a argila"],
-	["Árvores", [WorldGen.Thing.ARVORE, WorldGen.Thing.GALHOS], "a árvore"],
+	["Árvores", [WorldGen.Thing.ARVORE], "a árvore"],
 	["Bambu", [WorldGen.Thing.BAMBU], "o bambu"],
 	["Capim", [WorldGen.Thing.FIBRA], "o capim"],
 	["Cogumelos", [WorldGen.Thing.COGUMELO], "o cogumelo"],
+	["Lenha", [WorldGen.Thing.GALHOS], "a lenha"],
 	["Pedras", [WorldGen.Thing.PEDRAS], "as pedras"],
 	["Ramas", [WorldGen.Thing.RAMA], "a rama"],
 	["Sílex", [WorldGen.Thing.SILEX], "o sílex"],
 	["Trepadeiras", [WorldGen.Thing.CIPO], "a trepadeira"],
 ]
 ## Quem não é Forrageador vê só a categoria da planta (arbusto, rama,
-## trepadeira, capim, cogumelo): a espécie se descobre ao colher. Árvores
-## leva também aos galhos caídos, que ficam ao pé delas.
+## trepadeira, capim, cogumelo): a espécie se descobre ao colher. Lenha leva
+## aos galhos caídos no chão (madeira média e pequena), ao pé das árvores.
 ## O Forrageador tem ainda "Espécies de plantas", com cada espécie (Plants):
 ## os destinos podem ter nomes de espécie (String) junto das coisas do mundo.
 ## Até onde (em casas, em linha reta) o Caminheiro enxerga:
