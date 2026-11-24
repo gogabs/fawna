@@ -11,13 +11,13 @@ const ATTENUATION_CURVE := 2  # ResonancePlayerConfig.attenuation_mode
 ## a cada vez que a distância dobra) deixava sons longe parecendo perto: uma
 ## árvore caindo a 36 m soava só 10 dB abaixo de uma a 12 m. Agora, até
 ## KNEE_M cai como antes; dali em diante cai FAR_DB_PER_DOUBLING a cada dobro.
-## Os sons do mundo subiram 6 dB (SpatialAudio.HRTF_GAIN_DB) para compensar:
-## bem perto soam mais cheios, e a partir de uns 4 m já ficam mais baixos que
+## Os sons do mundo subiram 3 dB (SpatialAudio.HRTF_GAIN_DB) para compensar:
+## bem perto soam mais cheios, e a partir de uns 5 m já ficam mais baixos que
 ## antes. Música e interface não mudam. E no último trecho do alcance de cada
 ## fonte o som some aos poucos, em vez de cortar de repente.
-const KNEE_M := 3.0
+const KNEE_M := 4.0
 const NEAR_DB_PER_DOUBLING := 6.0
-const FAR_DB_PER_DOUBLING := 15.0
+const FAR_DB_PER_DOUBLING := 10.0
 const EDGE_FADE := 0.2  # fração final do alcance em que o som vai sumindo
 const CURVE_POINTS := 48
 
