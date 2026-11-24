@@ -510,7 +510,13 @@ func roast_refused(reason: String) -> void:
 ## Resposta da enxada na terra: o som da terra sempre; fala só quando há o que dizer.
 @rpc("authority", "call_local", "reliable")
 func dug(reason: String) -> void:
-	_play(BodySounds.dig(), BODY_DB + 4.0)
+	# A resposta pode chegar antes do sopro da enxada (quem hospeda recebe na
+	# hora): a terra só soa depois que a lâmina bate.
+	var wait: float = get_parent().hit_wait()
+	if wait > 0.0:
+		get_tree().create_timer(wait).timeout.connect(_play.bind(BodySounds.dig(), BODY_DB + 4.0))
+	else:
+		_play(BodySounds.dig(), BODY_DB + 4.0)
 	match reason:
 		"terreno":
 			Speech.say("Não há rama ao alcance. A raiz só sai de uma rama.")
