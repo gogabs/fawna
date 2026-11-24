@@ -6,8 +6,12 @@ extends SceneTree
 ## barramento Master. Mostra o nível em dB relativo ao primeiro ponto.
 ##
 ## Uso, na raiz do projeto:
-##   godot --headless --path . --script tools/diag_distancia.gd [-- --antes]
-## Com --antes, mede como era antes (1/d do Steam Audio, sem absorção do ar).
+##   godot --headless --path . --script tools/diag_distancia.gd [-- opções]
+## --antes: curva antiga (1/d do Steam Audio, sem absorção do ar).
+## --atribuir: troca o som com "player.stream = ..." (o bug antigo: toca seco).
+## --lado: a fonte fica à direita em vez da frente.  --panorama: panorama 2.
+## --outra-camera: outra câmera atual, como a vista 3D.  --andar: o ouvinte anda.
+## --fontes=N: cria N fontes a mais.  --longe=M: tudo deslocado M metros.
 
 const DISTANCES_M := [1.5, 3.0, 6.0, 9.0, 12.0, 18.0, 24.0, 30.0, 36.0]
 const SECONDS_EACH := 1.2
@@ -19,6 +23,8 @@ var _index := -1
 var _elapsed := 0.0
 var _first_db := 0.0
 var _offset := Vector3.ZERO
+var _camera: Camera3D
+var _eyes: Camera3D
 
 
 func _initialize() -> void:
@@ -32,6 +38,7 @@ func _initialize() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
 	var camera := Camera3D.new()
+	_camera = camera
 	world.add_child(camera)
 	camera.make_current()
 	var listener := AudioListener3D.new()
@@ -71,6 +78,7 @@ func _initialize() -> void:
 	camera.position = _offset
 	if "--outra-camera" in args:
 		var eyes := Camera3D.new()
+		_eyes = eyes
 		world.add_child(eyes)
 		eyes.position = _offset + Vector3(0, 1.6, 0)
 		eyes.make_current()
@@ -102,9 +110,21 @@ func _process(delta: float) -> bool:
 		_elapsed = 0.0
 		if _index >= DISTANCES_M.size():
 			return true
+		if "--andar" in OS.get_cmdline_user_args():
+			# O ouvinte anda pelo mundo entre as medidas, como a criatura.
+			_offset = Vector3(40.0 * _index, 0, 0)
+			_camera.position = _offset
+			if _eyes != null:
+				_eyes.position = _offset + Vector3(0, 1.6, 0)
 		_player.position = _offset + (Vector3(DISTANCES_M[_index], 0, 0) if "--lado" in OS.get_cmdline_user_args() else Vector3(0, 0, -DISTANCES_M[_index]))
-		if not _player.playing:
-			_player.play()
+		# Como as vozes do jogo: cada som novo troca o stream da mesma fonte.
+		_player.stop()
+		if "--atribuir" in OS.get_cmdline_user_args():
+			# O jeito antigo (player.stream = ...): a fonte perde o Steam Audio.
+			_player.stream = _noise()
+		else:
+			_player.call("set_stream", _noise())  # como SpatialAudio.set_stream
+		_player.play()
 	if _elapsed < 0.5:
 		_capture.clear_buffer()
 	return false

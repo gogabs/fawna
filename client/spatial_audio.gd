@@ -114,6 +114,16 @@ func setup(world: WorldGen, harvest: Harvest = null) -> void:
 	_harvest = harvest
 
 
+## Troca o som de uma fonte. Use sempre isto, nunca "player.stream = ...":
+## numa variável do tipo AudioStreamPlayer3D, a atribuição vai direto ao
+## Godot e passa por cima do ResonancePlayer, que perde o invólucro do Steam
+## Audio. Aí a fonte toca seca: sem HRTF e sem cair de volume com a distância.
+## Era o que acontecia com toda fonte reaproveitada (vozes, cavalos, pássaros,
+## Caminheiro) a partir do segundo som.
+static func set_stream(player: AudioStreamPlayer3D, stream: AudioStream) -> void:
+	player.call("set_stream", stream)
+
+
 static func point_to_3d(point: Vector2) -> Vector3:
 	return Vector3(point.x, 0.0, point.y) * METERS_PER_CELL
 
@@ -243,7 +253,7 @@ func _play_on_voice(point: Vector2, stream: AudioStream, volume_db: float, pitch
 	_voice_order.erase(voice)
 	_voice_order.append(voice)
 	voice.stop()
-	voice.stream = stream
+	set_stream(voice, stream)
 	voice.pitch_scale = pitch
 	voice.volume_db = volume_db + HRTF_GAIN_DB
 	voice.position = point_to_3d(point)
@@ -314,7 +324,7 @@ func refresh_resources() -> void:
 		if stream == null:
 			continue
 		var player: AudioStreamPlayer3D = free.pop_back()
-		player.stream = stream
+		set_stream(player, stream)
 		player.volume_db = _resource_db()
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
@@ -350,7 +360,7 @@ func _refresh_fires() -> void:
 			continue
 		var stream := Sounds.fire_loop()
 		var player: AudioStreamPlayer3D = free.pop_back()
-		player.stream = stream
+		set_stream(player, stream)
 		player.volume_db = FIRE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
@@ -374,7 +384,7 @@ func set_torches(points: Array) -> void:
 		player.position = point_to_3d(sorted[i])
 		if not player.playing:
 			var stream := Sounds.torch_loop()
-			player.stream = stream
+			set_stream(player, stream)
 			player.volume_db = TORCH_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
 			player.play(randf() * stream.get_length())
 
@@ -408,7 +418,7 @@ func _refresh_piles() -> void:
 			continue
 		var stream := Sounds.pile_loop()
 		var player: AudioStreamPlayer3D = free.pop_back()
-		player.stream = stream
+		set_stream(player, stream)
 		player.volume_db = PILE_VOLUME_DB + (HRTF_GAIN_DB if using_hrtf else 0.0)
 		player.position = cell_to_3d(cell)
 		player.play(randf() * stream.get_length())
@@ -467,7 +477,7 @@ func _new_player(stream: AudioStream, volume_db: float, hrtf := true) -> AudioSt
 	# mais leve ainda dá a sensação de distância sem abafar.
 	player.attenuation_filter_cutoff_hz = DISTANCE_FILTER_HZ
 	player.attenuation_filter_db = DISTANCE_FILTER_DB
-	player.stream = stream
+	set_stream(player, stream)
 	player.volume_db = volume_db
 	return player
 
@@ -494,6 +504,7 @@ func _setup_resonance() -> void:
 	ResonanceSetup.configure_player(_player_config, METERS_PER_CELL, METERS_PER_CELL * (AMBIENT_RADIUS + 2))
 	using_hrtf = true
 	get_tree().create_timer(2.0).timeout.connect(_log_resonance_state)
+
 
 
 func _log_resonance_state() -> void:
@@ -547,9 +558,18 @@ func _diag_hrtf() -> void:
 		var src_gate = player.call("is_spatial_output_ready") if player.has_method("is_spatial_output_ready") else "?"
 		print("[diag-jogo] %s: diferença esquerdo-direito %+.1f dB (portão: %s, fonte pronta: %s)" % ["esquerda" if side < 0 else "direita", 10.0 * log(maxf(left_e, 1e-12) / maxf(right_e, 1e-12)) / log(10.0), gate, src_gate])
 	player.queue_free()
-	# Queda com a distância, numa fonte igual às dos cavalos e pássaros.
-	var far := make_far_voice(28.0)
-	far.stream = stream
+	# Queda com a distância, numa das vozes do jogo (criadas no começo, já
+	# registradas no Steam Audio; uma fonte nova demora a soar).
+	var far: AudioStreamPlayer3D = _voices[0] if not _voices.is_empty() else make_far_voice(28.0)
+	far.stop()
+	set_stream(far, stream)
+	far.volume_db = 0.0
+	# Cala o resto (ambiente, pássaros, cavalos) para medir só o ruído.
+	var paused: Array[AudioStreamPlayer3D] = []
+	for child in get_children():
+		if child is AudioStreamPlayer3D and child != far and child.playing and not child.stream_paused:
+			child.stream_paused = true
+			paused.append(child)
 	far.panning_strength = HRTF_PANNING
 	var first_db := 0.0
 	for meters in [1.5, 3.0, 6.0, 12.0, 24.0, 36.0]:
@@ -557,7 +577,6 @@ func _diag_hrtf() -> void:
 		far.global_position = _camera.global_position + ahead * meters
 		if not far.playing:
 			far.play()
-			await get_tree().create_timer(1.0).timeout  # a fonte nova demora a soar
 		await get_tree().create_timer(0.6).timeout
 		capture.clear_buffer()
 		await get_tree().create_timer(1.0).timeout
@@ -568,8 +587,13 @@ func _diag_hrtf() -> void:
 		var db := 10.0 * log(maxf(energy / maxi(buf.size() * 2, 1), 1e-18)) / log(10.0)
 		if meters == 1.5:
 			first_db = db
-		print("[diag-jogo] distância %.1f m: %.1f dB (%+.1f)" % [meters, db, db - first_db])
-	far.queue_free()
+		var info = far.call("get_simulation_info") if far.has_method("get_simulation_info") else {}
+		var cfg: Resource = far.get("player_config")
+		print("[diag-jogo] distância %.1f m: %.1f dB (%+.1f) | sim %s | modo %s dist_on %s | ouvinte %s fonte %s" % [meters, db, db - first_db, info, cfg.get("attenuation_mode") if cfg else "-", cfg.get("distance_attenuation") if cfg else "-", _camera.global_position, far.global_position])
+	far.stop()
+	for child in paused:
+		if is_instance_valid(child):
+			child.stream_paused = false
 	for i in AudioServer.get_bus_effect_count(master):
 		if AudioServer.get_bus_effect(master, i) == capture:
 			AudioServer.remove_bus_effect(master, i)

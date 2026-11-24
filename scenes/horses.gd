@@ -999,7 +999,7 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float, height:
 	voice["horse"] = id
 	voice["height"] = height
 	player.stop()
-	player.stream = stream
+	SpatialAudio.set_stream(player, stream)
 	player.volume_db = volume_db + HORSES_DB + (SpatialAudio.HRTF_GAIN_DB if voice["hrtf"] else 0.0)
 	player.pitch_scale = pitch
 	player.position = _to_3d(horse_point(id), height)

@@ -184,7 +184,7 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float) -> void
 	var player: AudioStreamPlayer3D = voice["player"]
 	voice["bird"] = id
 	player.stop()
-	player.stream = stream
+	SpatialAudio.set_stream(player, stream)
 	player.volume_db = volume_db + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
 	player.pitch_scale = pitch
 	player.position = bird_position(id)
