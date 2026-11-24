@@ -865,6 +865,24 @@ func horse_heading(id: int) -> Vector2:
 	return (horse["to"] as Vector2) - (horse["from"] as Vector2)
 
 
+## Para onde olha quem monta o cavalo (Compass), ou -1 se ninguém monta.
+## Parado, o cavalo gira junto com o cavaleiro (Q/E), em vez de esperar andar.
+func rider_heading(id: int) -> int:
+	if id == _riding:
+		return get_parent()._heading
+	if not _horses.has(id):
+		return -1
+	var key := str(_horses[id].get("rider", ""))
+	if key.is_empty():
+		return -1
+	var players: Dictionary = get_parent().players
+	for pid in players:
+		var data: Dictionary = players[pid]
+		if WorldState.owner_key_of_name(str(data.get("name", ""))) == key:
+			return int(data.get("heading", -1))
+	return -1
+
+
 func horse_count() -> int:
 	return _horses.size()
 
