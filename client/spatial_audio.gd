@@ -189,12 +189,21 @@ func play_at(cell: Vector2i, stream: AudioStream, volume_db := 0.0) -> void:
 
 
 const VOICE_COUNT := 32
+## Até onde as vozes alcançam: o mais longe que um som curto toca (a queda de
+## uma árvore, a 24 casas), com folga. Quem decide se toca é o jogo.
+const VOICE_REACH := 28.0  # casas
 
 
 func _setup_voices() -> void:
+	var config: Resource = null
+	if using_hrtf:
+		config = _player_config.duplicate()
+		ResonanceSetup.set_reach(config, METERS_PER_CELL * VOICE_REACH)
 	for i in VOICE_COUNT:
 		var voice := _new_player(null, 0.0)
 		voice.name = "Voz_%d" % i
+		if config != null:
+			voice.set("player_config", config)
 		add_child(voice)
 		_voices.append(voice)
 		_voice_order.append(voice)
@@ -430,7 +439,7 @@ func make_far_voice(reach: float) -> AudioStreamPlayer3D:
 	var player := _new_player(null, 0.0)
 	if using_hrtf:
 		var config: Resource = _player_config.duplicate()
-		config.set("max_distance", METERS_PER_CELL * reach)
+		ResonanceSetup.set_reach(config, METERS_PER_CELL * reach)
 		player.set("player_config", config)
 	else:
 		player.max_distance = METERS_PER_CELL * reach
