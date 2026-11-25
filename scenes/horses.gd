@@ -38,9 +38,16 @@ const GALLOP_SNORTS := [2.5, 5.0]
 ## Volume de cada som. Tudo bem baixinho, como o resto do mundo. Os cascos
 ## gravados estão 14 dB abaixo nos arquivos (para caber o pico sem distorcer).
 ## No jogo, o Gabs achou tudo alto, o galope principalmente: o geral desceu
-## 6 dB, os cascos mais 4 e o galope mais 8.
-const HORSES_DB := -16.0
-const SOUND_DB := {"casco": 0.0, "galope": -4.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -12.0, "bufo": -4.0, "manso": -4.0, "relincho": 0.0, "alarme": 2.0, "derrapada": -2.0}  # vozes +6 dB (Gabs, estavam baixinhas)
+## 6 dB, os cascos mais 4 e o galope mais 8. Só que esse ajuste foi feito
+## com as fontes tocando secas (ver SpatialAudio.set_stream): todo cavalo
+## soava como se estivesse a 1,5 m, a qualquer distância. Com a queda com a
+## distância valendo, -16 deixava a manada inaudível; subiu 10 dB, e os
+## cascos (casco, galope) mais 4.
+const HORSES_DB := -6.0
+## Queda com a distância mais suave que a dos outros sons (6 dB por dobro, a
+## natural ao ar livre): bicho grande, casco e relincho se ouvem longe.
+const FAR_DB_PER_DOUBLING := 6.0
+const SOUND_DB := {"casco": 4.0, "galope": 0.0, "casco_gerado": -14.0, "galope_gerado": -10.0, "pasto": -12.0, "bufo": -4.0, "manso": -4.0, "relincho": 0.0, "alarme": 2.0, "derrapada": -2.0}  # vozes +6 dB (Gabs, estavam baixinhas)
 ## O cavalo em que você monta soa embaixo de você, sem posição no espaço, em
 ## vozes próprias (RIDDEN_VOICES, para nenhum outro som cortar uma passada).
 ## Cada chão é levado ao pico dos seus passos (STEP_PEAK_DB, medido nos
@@ -114,7 +121,7 @@ func _make_voices() -> void:
 		return
 	for i in VOICES:
 		# Sempre a mesma fonte de antes (que soa); só o panorama muda.
-		var player := _audio.make_far_voice(REACH)
+		var player := _audio.make_far_voice(REACH, FAR_DB_PER_DOUBLING)
 		if player == null:
 			return
 		player.name = "Cavalo_%d" % i
@@ -999,7 +1006,7 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float, height:
 	voice["horse"] = id
 	voice["height"] = height
 	player.stop()
-	player.stream = stream
+	SpatialAudio.set_stream(player, stream)
 	player.volume_db = volume_db + HORSES_DB + (SpatialAudio.HRTF_GAIN_DB if voice["hrtf"] else 0.0)
 	player.pitch_scale = pitch
 	player.position = _to_3d(horse_point(id), height)

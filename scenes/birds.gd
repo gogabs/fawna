@@ -13,7 +13,10 @@ const ARC_HEIGHT := 1.6  # metros: o voo sobe um pouco no meio do caminho
 ## Volumes de origem. Os pássaros ficam longe, então a distância já os deixa
 ## bem baixinhos; cantos discretos, abaixo da fala. BIRDS_DB baixa todos de
 ## uma vez (o Gabs achou os pássaros altos na 0.3.0, e ainda altos com -6).
-const BIRDS_DB := -12.0
+## Esse ajuste foi feito com as fontes tocando secas (ver
+## SpatialAudio.set_stream), sem cair com a distância; com a queda valendo,
+## subiu 10 dB.
+const BIRDS_DB := -2.0
 const SONG_DB := {
 	Aviary.Species.SABIA: -9.0 + BIRDS_DB, Aviary.Species.CARRICA: -17.0 + BIRDS_DB, Aviary.Species.ROLINHA: -11.0 + BIRDS_DB,
 	Aviary.Species.CORVO: -10.0 + BIRDS_DB, Aviary.Species.CORUJA: -12.0 + BIRDS_DB, Aviary.Species.GAVIAO: -9.0 + BIRDS_DB,
@@ -41,7 +44,7 @@ func start_client(audio: SpatialAudio) -> void:
 	if not _voices.is_empty():
 		return
 	for i in VOICES:
-		var player := audio.make_far_voice(REACH)
+		var player := audio.make_far_voice(REACH, 6.0)  # canto se ouve longe: queda natural ao ar livre
 		if player == null:
 			return  # sem som (servidor dedicado ou teste sem tela)
 		player.name = "Passaro_%d" % i
@@ -184,7 +187,7 @@ func _play(id: int, stream: AudioStream, volume_db: float, pitch: float) -> void
 	var player: AudioStreamPlayer3D = voice["player"]
 	voice["bird"] = id
 	player.stop()
-	player.stream = stream
+	SpatialAudio.set_stream(player, stream)
 	player.volume_db = volume_db + (SpatialAudio.HRTF_GAIN_DB if _audio.using_hrtf else 0.0)
 	player.pitch_scale = pitch
 	player.position = bird_position(id)

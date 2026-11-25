@@ -54,7 +54,7 @@ func start_client(audio: SpatialAudio) -> void:
 		_breath = audio.make_far_voice(Horrors.HEARING)
 		if _breath != null:
 			_breath.name = "Calado"
-			_breath.stream = HorrorSounds.calado_breath()
+			SpatialAudio.set_stream(_breath, HorrorSounds.calado_breath())
 			_breath.volume_db = SILENT_DB
 	if _filter == null and DisplayServer.get_name() != "headless":
 		_filter = AudioEffectLowPassFilter.new()

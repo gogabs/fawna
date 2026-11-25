@@ -80,7 +80,7 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 			var player := audio.make_far_voice(BEAT_DISTANCE + 6.0)
 			if player != null:
 				player.name = "Caminheiro_batida_%d" % i
-				player.stream = Sounds.heartbeat()
+				SpatialAudio.set_stream(player, Sounds.heartbeat())
 				_beat_players.append(player)
 		var layer_stream := Sounds.heartbeat_suck()
 		if layer_stream != null:
@@ -88,7 +88,7 @@ func setup(world: WorldGen, audio: SpatialAudio) -> void:
 				var player := audio.make_far_voice(BEAT_DISTANCE + 6.0)
 				if player != null:
 					player.name = "Caminheiro_suga_%d" % i
-					player.stream = layer_stream
+					SpatialAudio.set_stream(player, layer_stream)
 					_layer_players.append(player)
 
 
@@ -242,7 +242,7 @@ func _beat(pos: Vector2, beacon: Vector2) -> void:
 		off = absf(rad_to_deg(_forward.angle_to(_heading)))
 	_follow_heading(pos)
 	var player := _beat_players[index]
-	player.stream = Sounds.heartbeat_level(roundi(openness * (BEAT_LEVELS - 1)))
+	SpatialAudio.set_stream(player, Sounds.heartbeat_level(roundi(openness * (BEAT_LEVELS - 1))))
 	# A batida entra depois da suga.
 	get_tree().create_timer(SUCK_LEAD).timeout.connect(func():
 		if active:
