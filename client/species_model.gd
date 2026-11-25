@@ -251,6 +251,12 @@ static func _add_ears(head: Node3D, shapes: Dictionary, kind: String, fur: Mater
 			ear.add_child(inner_piece)
 
 
+## Quanto o corpo sobe ao montar: os quadris (a ~1,14 m com a subida antiga
+## de 0,34 m) vão até o lombo do cavalo.
+static func mount_lift() -> float:
+	return 0.34 + HorseModel.BACK_HEIGHT - 1.13
+
+
 ## Duração de cada ação pontual (segundos). Cada evento (um golpe, um trabalho na obra) toca uma vez.
 const ACTIONS := {
 	"golpe": 0.45, "comer": 1.3, "coleta": 0.9, "obra": 1.2, "salto": 0.6, "uivo": 1.8,
@@ -344,15 +350,15 @@ static func animate(root: Node3D, speed: float, time: float, id: int, delta: flo
 			leg_z = absf(sin(phase * TAU + (0.0 if side == 0 else PI * 0.5))) * 0.35 * (1.0 if side == 0 else -1.0) * signf(motion.x) * -1.0
 			leg_x *= 0.3
 			arm_x *= 0.3
-		if mounted:  # sentado: coxas para a frente, mãos na rédea
-			leg_x = -1.3
-			leg_z = 0.12 * sign_
-			arm_x = -0.75
+		if mounted:  # sentado: coxas para a frente, abertas em volta do lombo, mãos na rédea
+			leg_x = 0.75
+			leg_z = -0.55 * sign_
+			arm_x = 0.75
 		leg.rotation.x = lerpf(leg.rotation.x, leg_x, k)
 		leg.rotation.z = lerpf(leg.rotation.z, leg_z, k)
 		arm.rotation.x = lerpf(arm.rotation.x, arm_x, k)
 	var bob := absf(sin(phase * TAU)) * 0.05 * (swing / 0.3) if moving else 0.012 * sin(time * 1.6 + id)
-	var lift := 0.34 if mounted else 0.0
+	var lift := mount_lift() if mounted else 0.0
 	# O corpo guarda o seu valor-base (sem a ação por cima), para a ação não se acumular.
 	var base_y := lerpf(float(root.get_meta("base_y", 0.0)), bob + lift, minf(1.0, delta * 12.0))
 	root.set_meta("base_y", base_y)

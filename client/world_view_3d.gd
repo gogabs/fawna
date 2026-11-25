@@ -198,6 +198,8 @@ func refresh_builds() -> void:
 ## (terceira), sem entrar no chão. O som não depende dela.
 func _place_camera(feet: Vector3) -> void:
 	var yaw := _camera.rotation.y
+	if _self_mounted:  # montado, os olhos sobem com o corpo
+		feet += Vector3.UP * SpeciesModel.mount_lift()
 	if not Net.third_person:
 		_camera.position = feet + Vector3.UP * EYE_HEIGHT
 		_camera.rotation.x = 0.0
