@@ -155,21 +155,22 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 		forearm.rotation.x = PI + 0.28  # grosso no cotovelo, dobra um pouco para a frente
 		_piece(arm, shapes["blob"], Vector3(0.0, -0.75, -0.1), Vector3(0.2, 0.2, 0.2), skin)  # palma
 		_piece(arm, shapes["box"], Vector3(0.0, -0.84, -0.12), Vector3(0.2, 0.1, 0.14), dark)  # bloco dos dedos (ponta escura)
-		if side == 0:  # tocha na mão esquerda (escondida até haver uma)
+		if side < 0:  # tocha na mão esquerda (escondida até haver uma)
 			var torch := Node3D.new()
 			torch.name = "Tocha"
 			torch.position = Vector3(0.0, -0.8, -0.12)
-			torch.rotation.x = -0.5
+			torch.rotation.x = -0.8  # erguida à frente, a chama longe do corpo
 			torch.visible = false
 			arm.add_child(torch)
-			_piece(torch, shapes["trunk"], Vector3(0.0, 0.0, 0.0), Vector3(0.09, 0.5, 0.09), _material(Color("5a4630")))
+			_piece(torch, shapes["trunk"], Vector3(0.0, 0.1, 0.0), Vector3(0.09, 0.5, 0.09), _material(Color("5a4630")))
 			var flame_material := StandardMaterial3D.new()
 			flame_material.albedo_color = Color("ff9a2e")
 			flame_material.emission_enabled = true
 			flame_material.emission = Color("ff7a1a")
 			flame_material.emission_energy_multiplier = 2.0
-			var flame := _piece(torch, shapes["cone"], Vector3(0.0, 0.34, 0.0), Vector3(0.12, 0.26, 0.12), flame_material)
+			var flame := _piece(torch, shapes["cone"], Vector3(0.0, 0.44, 0.0), Vector3(0.12, 0.26, 0.12), flame_material)
 			flame.name = "Chama"
+			flame.rotation.x = 0.8  # a chama sobe, mesmo com o cabo inclinado
 		if side == 1:  # ferramenta na mão direita (escondida até empunhar algo)
 			var held := Node3D.new()
 			held.name = "Ferramenta"
