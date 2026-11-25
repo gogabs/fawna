@@ -128,17 +128,31 @@ static func build(species_id: String, shapes: Dictionary) -> Node3D:
 	if "pontas" in extras:  # pontas brancas, como neve: ao redor do pescoço
 		_piece(body, shapes["blob"], Vector3(0.0, 1.4, 0.0), Vector3(0.44 * w, 0.14, 0.34 * w), _material(Color("e6e8ea")))
 	# Braços: pendem dos ombros, um pouco mais longos que os de gente, com
-	# ombro e cotovelo marcados e mãos grandes.
+	# ombro e cotovelo marcados e mãos grandes. O ombro nasce na borda do peito
+	# (meio enterrado nele, para não sobrar fresta), e o braço abre um pouco
+	# para fora até a mão passar ao lado dos quadris sem atravessá-los.
+	var chest_half := 0.31 * w * shoulder  # meia largura do peito (elipsoide)
+	var arm_y := 1.32
+	var chest_at_arm := chest_half * sqrt(1.0 - pow((arm_y - 1.2) / 0.24, 2.0))
+	var arm_x := chest_at_arm + 0.02
+	var waist_half := 0.21 * w * waist
+	var hip_half := 0.25 * w * (1.0 + (waist - 1.0) * 0.5) * hips
+	var spread := 0.06
+	# Cotovelo (~0,38 m abaixo do ombro) passa a cintura; antebraço (~0,6 m) passa os quadris.
+	spread = maxf(spread, asin(clampf((waist_half + 0.08 * arm_t - arm_x) / 0.38, -1.0, 1.0)))
+	spread = maxf(spread, asin(clampf((hip_half + 0.07 * arm_t - arm_x) / 0.6, -1.0, 1.0)))
 	for side in [-1, 1]:
 		var arm := Node3D.new()
 		arm.name = "Braco%d" % (0 if side < 0 else 1)
-		arm.position = Vector3(side * (0.3 * w * shoulder + 0.1), 1.32, 0.0)
+		arm.position = Vector3(side * arm_x, arm_y, 0.0)
+		arm.rotation.z = side * spread
 		body.add_child(arm)
-		_piece(arm, shapes["blob"], Vector3(0.0, -0.02, 0.0), Vector3(0.2, 0.2, 0.2) * arm_t, fur)  # ombro
-		_piece(arm, shapes["trunk"], Vector3(0.0, -0.2, 0.0), Vector3(0.7 * arm_t, 0.36, 0.7 * arm_t), fur)
-		_piece(arm, shapes["blob"], Vector3(0.0, -0.38, 0.0), Vector3(0.2, 0.2, 0.2) * arm_t, fur)  # cotovelo
-		var forearm := _piece(arm, shapes["trunk"], Vector3(0.0, -0.55, -0.05), Vector3(0.58 * arm_t, 0.36, 0.58 * arm_t), fur)
-		forearm.rotation.x = 0.28  # o antebraço dobra um pouco no cotovelo
+		_piece(arm, shapes["blob"], Vector3(0.0, -0.01, 0.0), Vector3(0.26, 0.26, 0.24) * arm_t, fur)  # ombro
+		var upper := _piece(arm, shapes["trunk"], Vector3(0.0, -0.2, 0.0), Vector3(0.62 * arm_t, 0.38, 0.62 * arm_t), fur)
+		upper.rotation.x = PI  # grosso no ombro, afina até o cotovelo
+		_piece(arm, shapes["blob"], Vector3(0.0, -0.38, -0.01), Vector3(0.17, 0.17, 0.17) * arm_t, fur)  # cotovelo
+		var forearm := _piece(arm, shapes["trunk"], Vector3(0.0, -0.55, -0.05), Vector3(0.5 * arm_t, 0.38, 0.5 * arm_t), fur)
+		forearm.rotation.x = PI + 0.28  # grosso no cotovelo, dobra um pouco para a frente
 		_piece(arm, shapes["blob"], Vector3(0.0, -0.75, -0.1), Vector3(0.2, 0.2, 0.2), skin)  # palma
 		_piece(arm, shapes["box"], Vector3(0.0, -0.84, -0.12), Vector3(0.2, 0.1, 0.14), dark)  # bloco dos dedos (ponta escura)
 		if side == 0:  # tocha na mão esquerda (escondida até haver uma)
