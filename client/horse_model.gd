@@ -17,6 +17,11 @@ const LEG_DARKEN := 0.7  # as canelas são mais escuras que o corpo
 ## Fase de cada perna (0 e 1 na frente, esquerda e direita; 2 e 3 atrás) em
 ## cada andar: no trote, as pernas em diagonal andam juntas; no galope, os
 ## pares da frente e de trás.
+## Tamanho do cavalo em relação às medidas das peças: 1,25 deixa o lombo a
+## ~1,4 m, um pônei robusto ao lado de personagens de 1,4 a 1,95 m.
+const SIZE := 1.25
+## Quanto o lombo sobe com o SIZE: o cavaleiro montado senta mais alto.
+const BACK_HEIGHT := 1.13 * SIZE
 const PHASES_WALK := [0.0, PI, PI * 0.5, PI * 1.5]
 const PHASES_TROT := [0.0, PI, PI, 0.0]
 const PHASES_GALLOP := [0.0, 0.35, 2.6, 2.95]
@@ -31,6 +36,7 @@ static func build(coat: int, shapes: Dictionary) -> Node3D:
 	var mane := _material(MANE_COLOR)
 	var hoof := _material(HOOF_COLOR)
 	var root := Node3D.new()
+	root.scale = Vector3.ONE * SIZE
 	var trunk := Node3D.new()
 	trunk.name = "Tronco"
 	root.add_child(trunk)
